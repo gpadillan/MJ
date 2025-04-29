@@ -40,7 +40,7 @@ from pages.deuda import (
     global_,
     año_2025,
     becas_isa,
-    becas_isa_25,
+    becas_isa_mes,
     becas_isa_26_27_28,
     pendiente_clientes
 )
@@ -131,7 +131,7 @@ def deuda_page():
     elif seccion == "Becas ISA - Año":
         becas_isa.render()
     elif seccion == "Becas ISA-25":
-        becas_isa_25.render()
+        becas_isa_mes.render()
     elif seccion == "Becas ISA Futuro":
         becas_isa_26_27_28.render()
     elif seccion == "Pendiente Clientes":
