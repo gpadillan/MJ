@@ -1,19 +1,22 @@
-# ❌ No subir archivos sensibles o locales
+# No subir credenciales sensibles
 credenciales.json
 
-# ❌ No subir archivos de entorno virtual
+# No subir entornos virtuales
 .venv/
 __pycache__/
 *.pyc
 
-# ❌ No subir archivos temporales de usuario o sistema
+# No subir archivos temporales
 *.log
 .DS_Store
 *.sqlite3
 
-# ❌ No subir archivos subidos desde la app
+# No subir archivos subidos por la app
 uploaded/
 uploaded_admisiones/
 uploaded_data/
 admisiones_uploads/
 mnt/
+
+# No subir configuración de Streamlit local
+.streamlit/secrets.toml
