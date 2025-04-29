@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import gspread
+from google.oauth2.service_account import Credentials
 from datetime import datetime
 import os
 
@@ -34,13 +36,34 @@ def cargar_marca_tiempo():
             return f.read().strip()
     return None
 
+# 📋 Cargar Google Sheet
+@st.cache_data
+def cargar_google_sheet():
+    try:
+        SCOPES = [
+            "https://www.googleapis.com/auth/spreadsheets"
+        ]
+
+        credentials = Credentials.from_service_account_info(
+            st.secrets["gspread"],
+            scopes=SCOPES
+        )
+        client = gspread.authorize(credentials)
+        sheet = client.open_by_key("1CPhL56knpvaYZznGF-YgIuHWWCWPtWGpkSgbf88GJFQ")
+        worksheet = sheet.get_worksheet(0)
+        data = worksheet.get_all_records()
+        return pd.DataFrame(data)
+    except Exception as e:
+        st.error(f"❌ Error al cargar los datos: {e}")
+        return None
+
 # Importar submódulos
 from pages.deuda import (
     gestion_datos,
     global_,
     año_2025,
     becas_isa,
-    becas_isa_mes,
+    becas_isa_25,
     becas_isa_26_27_28,
     pendiente_clientes
 )
@@ -103,9 +126,9 @@ def deuda_page():
         seccion = st.selectbox("Selecciona una subcategoría:", [
             "Gestión de Datos",
             "Global",
-            "Pendiente por Año",
+            "Pendiente por año",
             "Becas ISA - Año",
-            "Becas ISA-mes",
+            "Becas ISA - Mes",
             "Becas ISA Futuro",
             "Pendiente Clientes"
         ])
@@ -126,12 +149,12 @@ def deuda_page():
         gestion_datos.render()
     elif seccion == "Global":
         global_.render()
-    elif seccion == "Pendiente por Año":
+    elif seccion == "Pendiente por año":
         año_2025.render()
     elif seccion == "Becas ISA - Año":
         becas_isa.render()
-    elif seccion == "Becas ISA-mes":
-        becas_isa_mes.render()
+    elif seccion == "Becas ISA - Mes":
+        becas_isa_25.render()
     elif seccion == "Becas ISA Futuro":
         becas_isa_26_27_28.render()
     elif seccion == "Pendiente Clientes":
