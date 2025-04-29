@@ -43,7 +43,6 @@ def cargar_google_sheet():
         SCOPES = [
             "https://www.googleapis.com/auth/spreadsheets"
         ]
-
         credentials = Credentials.from_service_account_info(
             st.secrets["gspread"],
             scopes=SCOPES
@@ -63,13 +62,12 @@ from pages.deuda import (
     global_,
     año_2025,
     becas_isa,
-    becas_isa_25,
+    becas_isa_25,  # ✅ Import añadido
     becas_isa_26_27_28,
     pendiente_clientes
 )
 
 def deuda_page():
-    # Inicializar estado si falta
     if 'excel_data' not in st.session_state:
         st.session_state['excel_data'] = None
     if 'excel_filename' not in st.session_state:
@@ -77,7 +75,6 @@ def deuda_page():
     if 'upload_time' not in st.session_state:
         st.session_state['upload_time'] = None
 
-    # Cargar desde disco si es necesario
     if st.session_state['excel_data'] is None or st.session_state['upload_time'] is None:
         df_guardado = cargar_excel_guardado()
         if df_guardado is not None:
@@ -85,7 +82,6 @@ def deuda_page():
             st.session_state['excel_filename'] = EXCEL_FILENAME
             st.session_state['upload_time'] = cargar_marca_tiempo() or "Fecha no disponible"
 
-    # Mostrar encabezado
     col1, col2 = st.columns([0.8, 0.2])
     with col1:
         st.header("📂 Sección: Deuda")
@@ -96,7 +92,6 @@ def deuda_page():
                 unsafe_allow_html=True
             )
 
-    # Si no hay Excel aún, mostrar opciones
     if st.session_state['excel_data'] is None:
         if st.session_state['role'] == "admin":
             archivo = st.file_uploader("📤 Sube un archivo Excel", type=["xlsx", "xls"])
@@ -117,10 +112,8 @@ def deuda_page():
             st.warning("⚠️ El administrador aún no ha subido el archivo.")
         return
 
-    # Mostrar confirmación
     st.success(f"📎 Archivo cargado: {st.session_state['excel_filename']}")
 
-    # Subcategorías y papelera para admin
     col1, col2 = st.columns([0.85, 0.15])
     with col1:
         seccion = st.selectbox("Selecciona una subcategoría:", [
@@ -144,7 +137,6 @@ def deuda_page():
                     os.remove(TIEMPO_FILENAME)
                 st.rerun()
 
-    # Enrutamiento
     if seccion == "Gestión de Datos":
         gestion_datos.render()
     elif seccion == "Global":
