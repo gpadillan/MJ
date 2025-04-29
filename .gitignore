@@ -1,0 +1,19 @@
+# ❌ No subir archivos sensibles o locales
+credenciales.json
+
+# ❌ No subir archivos de entorno virtual
+.venv/
+__pycache__/
+*.pyc
+
+# ❌ No subir archivos temporales de usuario o sistema
+*.log
+.DS_Store
+*.sqlite3
+
+# ❌ No subir archivos subidos desde la app
+uploaded/
+uploaded_admisiones/
+uploaded_data/
+admisiones_uploads/
+mnt/
