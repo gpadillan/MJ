@@ -1,7 +1,5 @@
 import streamlit as st
 import pandas as pd
-import gspread
-from google.oauth2.service_account import Credentials
 from datetime import datetime
 import os
 
@@ -36,38 +34,19 @@ def cargar_marca_tiempo():
             return f.read().strip()
     return None
 
-# 📋 Cargar Google Sheet
-@st.cache_data
-def cargar_google_sheet():
-    try:
-        SCOPES = [
-            "https://www.googleapis.com/auth/spreadsheets"
-        ]
-        credentials = Credentials.from_service_account_info(
-            st.secrets["gspread"],
-            scopes=SCOPES
-        )
-        client = gspread.authorize(credentials)
-        sheet = client.open_by_key("1CPhL56knpvaYZznGF-YgIuHWWCWPtWGpkSgbf88GJFQ")
-        worksheet = sheet.get_worksheet(0)
-        data = worksheet.get_all_records()
-        return pd.DataFrame(data)
-    except Exception as e:
-        st.error(f"❌ Error al cargar los datos: {e}")
-        return None
-
 # Importar submódulos
 from pages.deuda import (
     gestion_datos,
     global_,
     año_2025,
     becas_isa,
-    becas_isa_25,  # ✅ Import añadido
+    becas_isa_25,
     becas_isa_26_27_28,
     pendiente_clientes
 )
 
 def deuda_page():
+    # Inicializar estado si falta
     if 'excel_data' not in st.session_state:
         st.session_state['excel_data'] = None
     if 'excel_filename' not in st.session_state:
@@ -75,6 +54,7 @@ def deuda_page():
     if 'upload_time' not in st.session_state:
         st.session_state['upload_time'] = None
 
+    # Cargar desde disco si es necesario
     if st.session_state['excel_data'] is None or st.session_state['upload_time'] is None:
         df_guardado = cargar_excel_guardado()
         if df_guardado is not None:
@@ -82,6 +62,7 @@ def deuda_page():
             st.session_state['excel_filename'] = EXCEL_FILENAME
             st.session_state['upload_time'] = cargar_marca_tiempo() or "Fecha no disponible"
 
+    # Mostrar encabezado
     col1, col2 = st.columns([0.8, 0.2])
     with col1:
         st.header("📂 Sección: Deuda")
@@ -92,6 +73,7 @@ def deuda_page():
                 unsafe_allow_html=True
             )
 
+    # Si no hay Excel aún, mostrar opciones
     if st.session_state['excel_data'] is None:
         if st.session_state['role'] == "admin":
             archivo = st.file_uploader("📤 Sube un archivo Excel", type=["xlsx", "xls"])
@@ -112,16 +94,18 @@ def deuda_page():
             st.warning("⚠️ El administrador aún no ha subido el archivo.")
         return
 
+    # Mostrar confirmación
     st.success(f"📎 Archivo cargado: {st.session_state['excel_filename']}")
 
+    # Subcategorías y papelera para admin
     col1, col2 = st.columns([0.85, 0.15])
     with col1:
         seccion = st.selectbox("Selecciona una subcategoría:", [
             "Gestión de Datos",
             "Global",
-            "Pendiente por año",
+            "Pendiente por Año",
             "Becas ISA - Año",
-            "Becas ISA - Mes",
+            "Becas ISA-25",
             "Becas ISA Futuro",
             "Pendiente Clientes"
         ])
@@ -137,15 +121,16 @@ def deuda_page():
                     os.remove(TIEMPO_FILENAME)
                 st.rerun()
 
+    # Enrutamiento
     if seccion == "Gestión de Datos":
         gestion_datos.render()
     elif seccion == "Global":
         global_.render()
-    elif seccion == "Pendiente por año":
+    elif seccion == "Pendiente por Año":
         año_2025.render()
     elif seccion == "Becas ISA - Año":
         becas_isa.render()
-    elif seccion == "Becas ISA - Mes":
+    elif seccion == "Becas ISA-25":
         becas_isa_25.render()
     elif seccion == "Becas ISA Futuro":
         becas_isa_26_27_28.render()

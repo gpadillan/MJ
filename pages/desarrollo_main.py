@@ -2,13 +2,15 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import datetime  # 🚀 Necesario para la fecha
+from datetime import datetime
 
 @st.cache_data
 def cargar_google_sheet():
     try:
-        # ✅ Usar credenciales desde secrets de Streamlit
-        credentials = Credentials.from_service_account_info(st.secrets["gspread"])
+        credentials = Credentials.from_service_account_info(
+            st.secrets["gspread"],
+            scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
+        )
         client = gspread.authorize(credentials)
         sheet = client.open_by_key("1CPhL56knpvaYZznGF-YgIuHWWCWPtWGpkSgbf88GJFQ")
         worksheet = sheet.get_worksheet(0)
@@ -19,10 +21,8 @@ def cargar_google_sheet():
         return None
 
 def desarrollo_page():
-    # 📅 Obtener fecha actual
     fecha_actual = datetime.today().strftime("%d/%m/%Y")
 
-    # 🖼️ Mostrar el título con la fecha al lado
     st.markdown(
         f"<h1>🚀 Área Desarrollo Profesional <span style='font-size:18px; color: gray;'>🗓️ {fecha_actual}</span></h1>",
         unsafe_allow_html=True
@@ -52,31 +52,24 @@ def desarrollo_page():
     if seleccion == "Principal":
         from pages.desarrollo import principal
         principal.render(df)
-
     elif seleccion == "Total alumnado consultor":
         from pages.desarrollo import total_alumnado_consultor
         total_alumnado_consultor.render(df)
-
     elif seleccion == "Riesgo económico":
         from pages.desarrollo import riesgo_economico
         riesgo_economico.render(df)
-
     elif seleccion == "Alumnado riesgo consultor":
         from pages.desarrollo import alumnado_riesgo_consultor
         alumnado_riesgo_consultor.render(df)
-
     elif seleccion == "Cierre expediente 2025":
         from pages.desarrollo import cierre_expediente_2025
         cierre_expediente_2025.render(df)
-
     elif seleccion == "Cierre expediente total":
         from pages.desarrollo import cierre_expediente_total
         cierre_expediente_total.render(df)
-
     elif seleccion == "Inserciones / empresa":
         from pages.desarrollo import inserciones_empresa
         inserciones_empresa.render(df)
-
     elif seleccion == "Objetivos %":
         from pages.desarrollo import objetivos_porcentaje
         objetivos_porcentaje.render(df)
