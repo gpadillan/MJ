@@ -2,20 +2,13 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
+from datetime import datetime  # 🚀 Necesario para la fecha
 
 @st.cache_data
 def cargar_google_sheet():
-    SERVICE_ACCOUNT_FILE = "credenciales.json"
-    SCOPES = [
-        "https://www.googleapis.com/auth/spreadsheets.readonly",
-        "https://www.googleapis.com/auth/drive.readonly"
-    ]
-
     try:
-        credentials = Credentials.from_service_account_file(
-            SERVICE_ACCOUNT_FILE,
-            scopes=SCOPES
-        )
+        # ✅ Usar credenciales desde secrets de Streamlit
+        credentials = Credentials.from_service_account_info(st.secrets["gspread"])
         client = gspread.authorize(credentials)
         sheet = client.open_by_key("1CPhL56knpvaYZznGF-YgIuHWWCWPtWGpkSgbf88GJFQ")
         worksheet = sheet.get_worksheet(0)
@@ -26,7 +19,14 @@ def cargar_google_sheet():
         return None
 
 def desarrollo_page():
-    st.title("🚀 Área Desarrollo Profesional")
+    # 📅 Obtener fecha actual
+    fecha_actual = datetime.today().strftime("%d/%m/%Y")
+
+    # 🖼️ Mostrar el título con la fecha al lado
+    st.markdown(
+        f"<h1>🚀 Área Desarrollo Profesional <span style='font-size:18px; color: gray;'>🗓️ {fecha_actual}</span></h1>",
+        unsafe_allow_html=True
+    )
 
     df = cargar_google_sheet()
 
