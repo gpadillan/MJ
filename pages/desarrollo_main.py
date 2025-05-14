@@ -7,8 +7,9 @@ from datetime import datetime
 @st.cache_data
 def cargar_google_sheet():
     try:
-        credentials = Credentials.from_service_account_info(
-            st.secrets["gspread"],
+        # ✅ Usar archivo local de credenciales (solo en local)
+        credentials = Credentials.from_service_account_file(
+            "credenciales.json",
             scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
         )
         client = gspread.authorize(credentials)
@@ -38,13 +39,8 @@ def desarrollo_page():
 
     subcategorias = [
         "Principal",
-        "Total alumnado consultor",
         "Riesgo económico",
-        "Alumnado riesgo consultor",
-        "Cierre expediente 2025",
-        "Cierre expediente total",
-        "Inserciones / empresa",
-        "Objetivos %"
+        "Cierre expediente total"
     ]
 
     seleccion = st.selectbox("Selecciona una subcategoría:", subcategorias)
@@ -52,24 +48,9 @@ def desarrollo_page():
     if seleccion == "Principal":
         from pages.desarrollo import principal
         principal.render(df)
-    elif seleccion == "Total alumnado consultor":
-        from pages.desarrollo import total_alumnado_consultor
-        total_alumnado_consultor.render(df)
     elif seleccion == "Riesgo económico":
         from pages.desarrollo import riesgo_economico
         riesgo_economico.render(df)
-    elif seleccion == "Alumnado riesgo consultor":
-        from pages.desarrollo import alumnado_riesgo_consultor
-        alumnado_riesgo_consultor.render(df)
-    elif seleccion == "Cierre expediente 2025":
-        from pages.desarrollo import cierre_expediente_2025
-        cierre_expediente_2025.render(df)
     elif seleccion == "Cierre expediente total":
         from pages.desarrollo import cierre_expediente_total
         cierre_expediente_total.render(df)
-    elif seleccion == "Inserciones / empresa":
-        from pages.desarrollo import inserciones_empresa
-        inserciones_empresa.render(df)
-    elif seleccion == "Objetivos %":
-        from pages.desarrollo import objetivos_porcentaje
-        objetivos_porcentaje.render(df)

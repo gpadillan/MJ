@@ -1,6 +1,6 @@
-import streamlit as st
 import pandas as pd
 import plotly.express as px
+import streamlit as st
 import os
 from datetime import datetime
 
@@ -34,7 +34,6 @@ def render(df=None):
     df['PRÁCTCAS/GE'] = df['PRÁCTCAS/GE'].astype(str).str.strip().str.upper()
     df['CONSULTOR EIP'] = df['CONSULTOR EIP'].astype(str).str.strip().str.upper()
 
-    # Se muestran todos los valores posibles de PRÁCTCAS/GE y CONSULTOR EIP, sin filtrar
     opciones_practicas = sorted(df['PRÁCTCAS/GE'].dropna().unique())
     opciones_consultores = sorted(df['CONSULTOR EIP'].dropna().unique())
 
@@ -88,51 +87,43 @@ def render(df=None):
 
     total_alumnos = conteo_area['Cantidad'].sum()
 
-    col_indicador = next((c for c in df.columns if "INDICADOR" in c and "3" in c), None)
+    # 🔄 Riesgo económico por 3 meses de diferencia
+    df['FIN CONV'] = pd.to_datetime(df['FIN CONV'], errors='coerce')
+    df['MES 3M'] = pd.to_datetime(df['MES 3M'], errors='coerce')
 
-    if col_indicador:
-        df['INDICADOR 3MESES'] = df[col_indicador].astype(str).str.strip().str.upper()
-        df['CONSECUCIÓN GE'] = df['CONSECUCIÓN GE'].astype(str).str.strip().str.upper()
-        df['DEVOLUCIÓN GE'] = df['DEVOLUCIÓN GE'].astype(str).str.strip().str.upper()
-        df['INAPLICACIÓN GE'] = df['INAPLICACIÓN GE'].astype(str).str.strip().str.upper()
-        df['PRÁCTCAS/GE'] = df['PRÁCTCAS/GE'].astype(str).str.strip().str.upper()
-        df['CONSULTOR EIP'] = df['CONSULTOR EIP'].astype(str).str.strip().str.upper()
+    df_ge_activos = df[
+        (df['PRÁCTCAS/GE'] == 'GE') &
+        (df['CONSECUCIÓN GE'] == False) &
+        (df['DEVOLUCIÓN GE'] == False) &
+        (df['INAPLICACIÓN GE'] == False)
+    ].copy()
 
-        indicadores_validos = [
-            '1T', '2T', '3T', '4T', 'YA',
-            '1T 2024', '2024 1T', '2024 2T', '2T 2024',
-            '3T 2024', '4T 2024', '2024 4T',
-            '1T 2025', '2T 2025'
-        ]
+    df_ge_activos['DIF_MESES'] = (
+        (df_ge_activos['MES 3M'].dt.year - df_ge_activos['FIN CONV'].dt.year) * 12 +
+        (df_ge_activos['MES 3M'].dt.month - df_ge_activos['FIN CONV'].dt.month)
+    )
 
-        filtro_indicador_ge = (
-            df['INDICADOR 3MESES'].isin(indicadores_validos) &
-            ((df['CONSECUCIÓN GE'] == 'FALSE') | (df['CONSECUCIÓN GE'].isna())) &
-            ((df['DEVOLUCIÓN GE'] == 'FALSE') | (df['DEVOLUCIÓN GE'].isna())) &
-            ((df['INAPLICACIÓN GE'] == 'FALSE') | (df['INAPLICACIÓN GE'].isna())) &
-            (df['PRÁCTCAS/GE'].isin(seleccion_practicas)) &
-            (df['CONSULTOR EIP'].isin(seleccion_consultores)) &
-            (df['PRÁCTCAS/GE'] == 'GE')
-        )
+    hoy = pd.to_datetime("today")
 
-        total_ge_indicador = filtro_indicador_ge.sum()
+    df_resultado = df_ge_activos[
+        (df_ge_activos['DIF_MESES'] == 3) &
+        (df_ge_activos['FIN CONV'] <= hoy)
+    ].copy()
 
-        df_resultado = df.loc[filtro_indicador_ge, ['RIESGO ECONÓMICO']]
-        df_resultado['RIESGO ECONÓMICO'] = (
-            df_resultado['RIESGO ECONÓMICO']
-            .astype(str)
-            .str.replace("€", "", regex=False)
-            .str.replace(" ", "", regex=False)
-            .str.replace(".", "", regex=False)
-            .str.replace(",", ".", regex=False)
-            .astype(float)
-            .fillna(0)
-        )
-        suma_riesgo_eco = df_resultado['RIESGO ECONÓMICO'].sum()
-        suma_riesgo_formateada = f"{suma_riesgo_eco:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
-    else:
-        total_ge_indicador = 0
-        suma_riesgo_formateada = "0,00 €"
+    total_ge_indicador = len(df_resultado)
+
+    df_resultado['RIESGO ECONÓMICO'] = (
+        df_resultado['RIESGO ECONÓMICO']
+        .astype(str)
+        .str.replace("€", "", regex=False)
+        .str.replace(" ", "", regex=False)
+        .str.replace(".", "", regex=False)
+        .str.replace(",", ".", regex=False)
+        .astype(float)
+        .fillna(0)
+    )
+    suma_riesgo_eco = df_resultado['RIESGO ECONÓMICO'].sum()
+    suma_riesgo_formateada = f"{suma_riesgo_eco:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -171,3 +162,4 @@ def render(df=None):
         fig_pie_consultor.update_layout(height=500)
         st.subheader("Alumnado por Consultor")
         st.plotly_chart(fig_pie_consultor, use_container_width=True)
+

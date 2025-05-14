@@ -3,38 +3,38 @@ import pandas as pd
 from datetime import datetime
 import os
 
-# Carpeta de subida
+# Rutas
 UPLOAD_FOLDER = "uploaded"
 EXCEL_FILENAME = "archivo_cargado.xlsx"
 TIEMPO_FILENAME = os.path.join(UPLOAD_FOLDER, "ultima_subida.txt")
 
-# Función para guardar el Excel
+# Guardar Excel en disco
 def guardar_excel(df):
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     ruta = os.path.join(UPLOAD_FOLDER, EXCEL_FILENAME)
     df.to_excel(ruta, index=False)
 
-# Función para guardar la fecha/hora de subida
+# Guardar la fecha de carga
 def guardar_marca_tiempo(fecha_str):
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     with open(TIEMPO_FILENAME, "w") as f:
         f.write(fecha_str)
 
-# Función para cargar el Excel desde disco
+# Cargar Excel si existe
 def cargar_excel_guardado():
     ruta = os.path.join(UPLOAD_FOLDER, EXCEL_FILENAME)
     if os.path.exists(ruta):
         return pd.read_excel(ruta)
     return None
 
-# Función para cargar la fecha/hora desde disco
+# Cargar fecha/hora si existe
 def cargar_marca_tiempo():
     if os.path.exists(TIEMPO_FILENAME):
         with open(TIEMPO_FILENAME, "r") as f:
             return f.read().strip()
     return None
 
-# Importar submódulos
+# Importar subpáginas
 from pages.deuda import (
     gestion_datos,
     global_,
@@ -42,11 +42,11 @@ from pages.deuda import (
     becas_isa,
     becas_isa_mes,
     becas_isa_26_27_28,
-    pendiente_clientes
+    pendiente_clientes,
+    pendiente_cobro_isa  # <-- Nueva subcategoría
 )
 
 def deuda_page():
-    # Inicializar estado si falta
     if 'excel_data' not in st.session_state:
         st.session_state['excel_data'] = None
     if 'excel_filename' not in st.session_state:
@@ -54,7 +54,6 @@ def deuda_page():
     if 'upload_time' not in st.session_state:
         st.session_state['upload_time'] = None
 
-    # Cargar desde disco si es necesario
     if st.session_state['excel_data'] is None or st.session_state['upload_time'] is None:
         df_guardado = cargar_excel_guardado()
         if df_guardado is not None:
@@ -62,10 +61,9 @@ def deuda_page():
             st.session_state['excel_filename'] = EXCEL_FILENAME
             st.session_state['upload_time'] = cargar_marca_tiempo() or "Fecha no disponible"
 
-    # Mostrar encabezado
     col1, col2 = st.columns([0.8, 0.2])
     with col1:
-        st.header("📂 Sección: Deuda")
+        st.header("📂 Sección: Gestión de Cobro")
     with col2:
         if st.session_state.get("upload_time"):
             st.markdown(
@@ -73,7 +71,6 @@ def deuda_page():
                 unsafe_allow_html=True
             )
 
-    # Si no hay Excel aún, mostrar opciones
     if st.session_state['excel_data'] is None:
         if st.session_state['role'] == "admin":
             archivo = st.file_uploader("📤 Sube un archivo Excel", type=["xlsx", "xls"])
@@ -94,21 +91,31 @@ def deuda_page():
             st.warning("⚠️ El administrador aún no ha subido el archivo.")
         return
 
-    # Mostrar confirmación
     st.success(f"📎 Archivo cargado: {st.session_state['excel_filename']}")
 
-    # Subcategorías y papelera para admin
+    # Subcategorías
+    subcategorias = [
+        "Gestión de Datos",
+        "Global",
+        "Pendiente por años y meses año actual",
+        "Becas ISA - Total Años",
+        "Becas ISA - Año actual",
+        "Becas ISA Futuro",
+        "Pendiente Clientes",
+        "Pendiente Cobro ISA"
+    ]
+
+    if "subcategoria_deuda" not in st.session_state:
+        st.session_state["subcategoria_deuda"] = subcategorias[0]
+
     col1, col2 = st.columns([0.85, 0.15])
     with col1:
-        seccion = st.selectbox("Selecciona una subcategoría:", [
-            "Gestión de Datos",
-            "Global",
-            "Pendiente por Año",
-            "Becas ISA - Año",
-            "Becas ISA-25",
-            "Becas ISA Futuro",
-            "Pendiente Clientes"
-        ])
+        seccion = st.selectbox(
+            "Selecciona una subcategoría:",
+            subcategorias,
+            index=subcategorias.index(st.session_state["subcategoria_deuda"]),
+            key="subcategoria_deuda"
+        )
     with col2:
         if st.session_state['role'] == "admin":
             if st.button("🗑️", key="trash_reset", help="Eliminar archivo y reiniciar"):
@@ -121,18 +128,20 @@ def deuda_page():
                     os.remove(TIEMPO_FILENAME)
                 st.rerun()
 
-    # Enrutamiento
+    # Navegación
     if seccion == "Gestión de Datos":
         gestion_datos.render()
     elif seccion == "Global":
         global_.render()
-    elif seccion == "Pendiente por Año":
+    elif seccion == "Pendiente por años y meses año actual":
         año_2025.render()
-    elif seccion == "Becas ISA - Año":
+    elif seccion == "Becas ISA - Total Años":
         becas_isa.render()
-    elif seccion == "Becas ISA-25":
+    elif seccion == "Becas ISA - Año actual":
         becas_isa_mes.render()
     elif seccion == "Becas ISA Futuro":
         becas_isa_26_27_28.render()
     elif seccion == "Pendiente Clientes":
         pendiente_clientes.render()
+    elif seccion == "Pendiente Cobro ISA":
+        pendiente_cobro_isa.render()

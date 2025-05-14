@@ -4,7 +4,7 @@ from sidebar import show_sidebar
 from pages.admisiones import main_admisiones
 from pages.academica import academica_page
 from pages.desarrollo_main import desarrollo_page
-from pages.deuda_main import deuda_page
+from pages import deuda_main  # Mantenemos este import, solo cambia el nombre en navegación
 from pages.inicio import inicio_page  # Página de inicio personalizada
 
 # Variables de sesión
@@ -59,7 +59,7 @@ def add_custom_css():
     }
     </style>
     """, unsafe_allow_html=True)
-    
+
     if not st.session_state['logged_in']:
         st.markdown("""
         <style>
@@ -88,9 +88,9 @@ def main():
         elif st.session_state['current_page'] == "Academica":
             academica_page()
         elif st.session_state['current_page'] == "Desarrollo":
-            desarrollo_page()  # 🔥 Llama correctamente ahora
-        else:
-            deuda_page()
+            desarrollo_page()
+        elif st.session_state['current_page'] == "Gestión de Cobro":  # ✅ Cambio aquí
+            deuda_main.deuda_page()
 
 if __name__ == "__main__":
     main()
