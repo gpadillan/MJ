@@ -98,6 +98,8 @@ def render():
             for nombre, data in resultado_exportacion.items():
                 data.to_excel(writer, sheet_name=nombre, index=False)
 
+        buffer.seek(0)  # ← IMPORTANTE
+
         st.download_button(
             label="📥 Descargar hoja: Clientes con deuda",
             data=buffer.getvalue(),

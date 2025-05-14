@@ -42,6 +42,8 @@ def render():
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
         tabla_final.to_excel(writer, sheet_name="pendiente_cobro_isa", index=False)
+    
+    buffer.seek(0)  # ← IMPORTANTE
 
     st.download_button(
         label="📥 Descargar hoja: Pendiente Cobro ISA",

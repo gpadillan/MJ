@@ -87,6 +87,8 @@ def render():
         if "descarga_pendiente_cobro_isa" in st.session_state:
             st.session_state["descarga_pendiente_cobro_isa"].to_excel(writer, sheet_name="pendiente_cobro_isa", index=False)
 
+    buffer.seek(0)  # ← IMPORTANTE
+
     st.download_button(
         label="📥 Descargar Excel Consolidado",
         data=buffer.getvalue(),

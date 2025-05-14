@@ -93,6 +93,8 @@ def render():
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
         df_suma.to_excel(writer, index=False, sheet_name="pendiente_por_año")
 
+    buffer.seek(0)  # ← IMPORTANTE
+
     st.download_button(
         label="📥 Descargar hoja: Pendiente por Año",
         data=buffer.getvalue(),

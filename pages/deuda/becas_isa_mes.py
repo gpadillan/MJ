@@ -73,6 +73,8 @@ def render():
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
         suma_mensual.to_excel(writer, index=False, sheet_name="becas_isa_mes")
 
+    buffer.seek(0)  # ← IMPORTANTE
+
     st.download_button(
         label="📥 Descargar hoja: Becas ISA Mes",
         data=buffer.getvalue(),

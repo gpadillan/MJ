@@ -70,6 +70,8 @@ def render():
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
         suma_totales.to_excel(writer, index=False, sheet_name="becas_isa_26_27_28")
 
+    buffer.seek(0)  # ← IMPORTANTE
+
     st.download_button(
         label="📥 Descargar hoja: Becas ISA 26/27/28",
         data=buffer.getvalue(),
