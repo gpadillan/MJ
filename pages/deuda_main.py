@@ -54,28 +54,27 @@ def deuda_page():
     if 'upload_time' not in st.session_state:
         st.session_state['upload_time'] = None
 
-    # Cargar desde disco si es necesario
+    # Cargar automáticamente desde disco si no hay nada cargado aún
     if st.session_state['excel_data'] is None:
         df_guardado = cargar_excel_guardado()
         if df_guardado is not None:
             st.session_state['excel_data'] = df_guardado
             st.session_state['excel_filename'] = EXCEL_FILENAME
-
-    # Cargar tiempo si falta
-    if st.session_state['excel_data'] is not None and st.session_state['upload_time'] is None:
-        st.session_state['upload_time'] = cargar_marca_tiempo() or "Fecha no disponible"
+            st.session_state['upload_time'] = cargar_marca_tiempo()
 
     col1, col2 = st.columns([0.8, 0.2])
     with col1:
         st.header("📂 Sección: Gestión de Cobro")
     with col2:
-        if st.session_state.get("upload_time"):
-            st.markdown(
-                f"<div style='margin-top: 25px; font-size: 14px; color: gray;'>🕒 {st.session_state['upload_time']}<br><small>Última actualización por administrador</small></div>",
-                unsafe_allow_html=True
-            )
+        upload_time = st.session_state.get("upload_time")
+        if not upload_time:
+            upload_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        st.markdown(
+            f"<div style='margin-top: 25px; font-size: 14px; color: gray;'>🕒 Última actualización: {upload_time}</div>",
+            unsafe_allow_html=True
+        )
 
-    # Cargar archivo si es admin y aún no hay Excel
+    # Subida de archivo si no hay Excel cargado
     if st.session_state['excel_data'] is None:
         if st.session_state['role'] == "admin":
             archivo = st.file_uploader("📤 Sube un archivo Excel", type=["xlsx", "xls"])

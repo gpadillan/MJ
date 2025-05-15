@@ -1,9 +1,24 @@
 ﻿import streamlit as st
 import pandas as pd
 import io
+import os
+
+# Constantes
+UPLOAD_FOLDER = "uploaded"
+TIEMPO_FILENAME = os.path.join(UPLOAD_FOLDER, "ultima_subida.txt")
+
+def cargar_marca_tiempo():
+    if os.path.exists(TIEMPO_FILENAME):
+        with open(TIEMPO_FILENAME, "r") as f:
+            return f.read().strip()
+    return "Fecha no disponible"
 
 def render():
     st.header("📁 Gestión de Datos – Gestión de Cobro")
+
+    # Mostrar la hora de la última carga del archivo
+    ultima_actualizacion = cargar_marca_tiempo()
+    st.markdown(f"🕒 **Última actualización:** {ultima_actualizacion}")
 
     if 'excel_data' not in st.session_state or st.session_state['excel_data'] is None:
         st.warning("⚠️ No hay archivo cargado. Ve a la sección principal para subir un archivo.")
@@ -87,7 +102,7 @@ def render():
         if "descarga_pendiente_cobro_isa" in st.session_state:
             st.session_state["descarga_pendiente_cobro_isa"].to_excel(writer, sheet_name="pendiente_cobro_isa", index=False)
 
-    buffer.seek(0)  # ← IMPORTANTE
+    buffer.seek(0)
 
     st.download_button(
         label="📥 Descargar Excel Consolidado",
