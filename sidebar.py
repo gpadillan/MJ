@@ -21,7 +21,7 @@ def show_sidebar():
             st.session_state['current_page'] = "Desarrollo"
             st.rerun()
 
-        if st.sidebar.button("Gestión de Cobro"):  # ✅ Nombre actualizado aquí
+        if st.sidebar.button("Área Gestión de Cobro"):  # ✅ Nombre actualizado
             st.session_state['current_page'] = "Gestión de Cobro"
             st.rerun()
 

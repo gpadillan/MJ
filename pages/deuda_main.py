@@ -43,7 +43,7 @@ from pages.deuda import (
     becas_isa_mes,
     becas_isa_26_27_28,
     pendiente_clientes,
-    pendiente_cobro_isa  # <-- Nueva subcategoría
+    pendiente_cobro_isa
 )
 
 def deuda_page():

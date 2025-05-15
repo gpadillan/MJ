@@ -89,7 +89,7 @@ def main():
             academica_page()
         elif st.session_state['current_page'] == "Desarrollo":
             desarrollo_page()
-        elif st.session_state['current_page'] == "Gestión de Cobro":  # ✅ Cambio aquí
+        elif st.session_state['current_page'] == "Gestión de Cobro":  # ✅ Nombre actualizado
             deuda_main.deuda_page()
 
 if __name__ == "__main__":
