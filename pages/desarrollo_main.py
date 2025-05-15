@@ -1,15 +1,16 @@
 import streamlit as st
 import pandas as pd
 import gspread
-from google.oauth2.service_account import Credentials
+from google.oauth2 import service_account
 from datetime import datetime
 
 @st.cache_data
 def cargar_google_sheet():
     try:
-        # ✅ Usar archivo local de credenciales (solo en local)
-        credentials = Credentials.from_service_account_file(
-            "credenciales.json",
+        # ✅ Cargar desde st.secrets (funciona en Streamlit Cloud)
+        creds = st.secrets["google_service_account"]
+        credentials = service_account.Credentials.from_service_account_info(
+            creds,
             scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
         )
         client = gspread.authorize(credentials)
