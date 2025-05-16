@@ -19,16 +19,11 @@ def render():
     columnas_totales = [f'Total {anio}' for anio in range(2018, 2030)]
     columnas_disponibles = [col for col in columnas_totales if col in df_beca.columns]
 
-    key_filtro = "filtro_becas_isa_anios"
-
-    if key_filtro not in st.session_state:
-        st.session_state[key_filtro] = columnas_disponibles
-
     seleccion = st.multiselect(
         "Selecciona los años que deseas analizar",
         columnas_disponibles,
-        default=st.session_state[key_filtro],
-        key=key_filtro
+        default=columnas_disponibles,
+        key="filtro_becas_isa_anios"
     )
 
     if not seleccion:
@@ -39,11 +34,11 @@ def render():
     suma_totales.columns = ['Año', 'Suma Total']
     suma_totales['Año'] = suma_totales['Año'].str.replace("Total ", "")
 
-    st.markdown("###")
-    st.dataframe(suma_totales, use_container_width=True)
-
     st.markdown("### Gráfico")
     st.bar_chart(data=suma_totales.set_index("Año"))
+
+    st.markdown("### Tabla")
+    st.dataframe(suma_totales, use_container_width=True)
 
     # Guardar para consolidado
     st.session_state["descarga_becas_isa"] = suma_totales
@@ -55,7 +50,7 @@ def render():
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
         suma_totales.to_excel(writer, index=False, sheet_name="becas_isa")
 
-    buffer.seek(0)  # ← IMPORTANTE
+    buffer.seek(0)
 
     st.download_button(
         label="📥 Descargar hoja: Becas ISA",

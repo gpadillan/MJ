@@ -33,27 +33,21 @@ def render():
         st.info(f"ℹ️ No hay meses disponibles en el archivo para {año_actual}.")
         return
 
-    key_filtro = "filtro_becas_isa_mes"
-    if key_filtro not in st.session_state:
-        st.session_state[key_filtro] = meses_disponibles
-
     meses_seleccionados = st.multiselect(
         f"Selecciona los meses de {año_actual}",
         meses_disponibles,
-        default=st.session_state[key_filtro]
+        default=meses_disponibles,
+        key="filtro_becas_isa_mes"
     )
-    st.session_state[key_filtro] = meses_seleccionados
 
     if not meses_seleccionados:
         st.info("Selecciona al menos un mes.")
         return
 
-    suma_mensual = df_beca[meses_seleccionados].sum().reset_index()
+    suma_mensual = df_beca[meses_seleccionados].apply(pd.to_numeric, errors='coerce').fillna(0).sum().reset_index()
     suma_mensual.columns = ['Mes', 'Suma Total']
 
-    st.markdown("### Suma mensual de Becas ISA")
-    st.dataframe(suma_mensual, use_container_width=True)
-
+    # Mostrar gráfico antes de la tabla
     fig = px.pie(
         suma_mensual,
         names="Mes",
@@ -62,6 +56,9 @@ def render():
     )
     fig.update_traces(textinfo='percent+label')
     st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("### Suma mensual de Becas ISA")
+    st.dataframe(suma_mensual, use_container_width=True)
 
     # Guardar para exportación consolidada
     st.session_state["descarga_becas_isa_mes"] = suma_mensual
@@ -73,7 +70,7 @@ def render():
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
         suma_mensual.to_excel(writer, index=False, sheet_name="becas_isa_mes")
 
-    buffer.seek(0)  # ← IMPORTANTE
+    buffer.seek(0)
 
     st.download_button(
         label="📥 Descargar hoja: Becas ISA Mes",

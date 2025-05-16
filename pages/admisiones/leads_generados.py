@@ -30,7 +30,6 @@ def app():
     df["anio"] = df["creado"].dt.year
     df["mes_anio"] = df["creado"].dt.month_name().map(traducciones_meses) + " " + df["anio"].astype(str)
 
-    # FILTROS
     st.subheader("Filtros")
     meses_disponibles = df[["mes_anio", "mes_num", "anio"]].dropna().drop_duplicates()
     meses_disponibles = meses_disponibles.sort_values(["anio", "mes_num"])
@@ -92,16 +91,22 @@ def app():
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("📘 Leads por Programa")
         conteo_programas = df_filtrado["programa"].value_counts().reset_index()
         conteo_programas.columns = ["Programa", "Cantidad"]
-        conteo_programas = conteo_programas.sort_values("Cantidad", ascending=False)
+
+        total_leads = conteo_programas["Cantidad"].sum()
+        st.subheader(f"📘 Leads por Programa –  TOTAL: {total_leads}")
+
+        # Ya no se inserta fila de total aquí
         st.dataframe(conteo_programas.style.background_gradient(cmap="Blues"), use_container_width=True)
 
     with col2:
-        st.subheader("📈 Leads por Propietario")
         conteo_propietarios = df_filtrado["propietario"].value_counts().reset_index()
         conteo_propietarios.columns = ["Propietario", "Cantidad"]
+
+        total_propietarios = conteo_propietarios["Cantidad"].sum()
+        st.subheader(f"📈 Leads por Propietario –  TOTAL: {total_propietarios}")
+
         fig_propietarios = px.bar(
             conteo_propietarios,
             x="Cantidad",
