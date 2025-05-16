@@ -16,8 +16,7 @@ def render():
     df['Forma Pago'] = df['Forma Pago'].astype(str).str.strip().str.upper()
 
     df_filtrado = df[
-        (df['Estado'] == "PENDIENTE") &
-        (df['Forma Pago'] == "BECAS ISA")
+        (df['Estado'] == "PENDIENTE") & (df['Forma Pago'] == "BECAS ISA")
     ]
 
     columnas_mostrar = ['Cliente', 'Proyecto', 'Curso', 'Comercial']
@@ -28,7 +27,6 @@ def render():
             st.error(f"❌ Falta la columna '{col}' en el archivo.")
             return
 
-    # ---- Preparar fechas
     df_filtrado['Fecha Inicio'] = pd.to_datetime(df_filtrado['Fecha Inicio'], errors='coerce')
     df_filtrado = df_filtrado.dropna(subset=['Fecha Inicio'])
 
@@ -48,7 +46,6 @@ def render():
         Numero_Clientes=('Cliente', 'nunique')
     ).reset_index().sort_values('Orden')
 
-    # ---- Gráfico
     fig = px.bar(
         resumen,
         x='Mes Año',
@@ -62,9 +59,19 @@ def render():
     fig.update_layout(coloraxis_showscale=False, yaxis_title="Importe Total (€)")
     st.plotly_chart(fig, use_container_width=True)
 
-    # ---- Tabla
-    tabla_final = df_filtrado[columnas_mostrar + ['Fecha Inicio', 'Fecha Factura', 'Importe Total Factura']]
-    tabla_final = tabla_final.sort_values(by='Fecha Inicio')
+    tabla_final = (
+        df_filtrado
+        .groupby('Cliente', as_index=False)
+        .agg({
+            'Proyecto': 'first',
+            'Curso': 'first',
+            'Comercial': 'first',
+            'Fecha Inicio': 'min',
+            'Fecha Factura': 'max',
+            'Importe Total Factura': 'sum'
+        })
+        .sort_values(by='Fecha Inicio')
+    )
 
     st.dataframe(tabla_final, use_container_width=True)
 
