@@ -26,7 +26,6 @@ def app():
     total_preventas_importe = df_preventas[columnas_importe].sum(numeric_only=True).sum() if columnas_importe else 0
     total_preventas_count = df_preventas.shape[0]
 
-    # ✅ Usar "fecha de cierre" para el análisis
     if 'fecha de cierre' in df_ventas.columns:
         df_ventas['fecha de cierre'] = pd.to_datetime(df_ventas['fecha de cierre'], dayfirst=True, errors='coerce')
         df_ventas['mes_num'] = df_ventas['fecha de cierre'].dt.month
@@ -48,45 +47,65 @@ def app():
     st.markdown(f"### 📊 Ventas y Preventas - {mes_seleccionado}")
 
     if 'nombre' in df_ventas.columns and 'propietario' in df_ventas.columns:
-        st.markdown("#### Distribución de Oportunidades y Propietario")
+        if mes_seleccionado == "Todos":
+            st.markdown("#### 📊 Oportunidades por Mes y Propietario")
 
-        resumen = df_ventas.groupby(['nombre', 'propietario']).size().reset_index(name='Total Oportunidades')
-        totales_propietario = resumen.groupby('propietario')['Total Oportunidades'].sum().reset_index()
-        totales_propietario['propietario_display'] = totales_propietario.apply(
-            lambda row: f"{row['propietario']} ({row['Total Oportunidades']})", axis=1
-        )
-        resumen = resumen.merge(totales_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
-        orden_propietarios = totales_propietario.sort_values(by='Total Oportunidades', ascending=False)['propietario_display'].tolist()
-        orden_masters = resumen.groupby('nombre')['Total Oportunidades'].sum().sort_values(ascending=False).index.tolist()
+            df_agg = df_ventas.groupby(['mes_anio', 'propietario']).size().reset_index(name='Total Oportunidades')
+            df_agg = df_agg.sort_values(by='mes_anio')
 
-        fig = px.scatter(
-            resumen,
-            x='nombre',
-            y='propietario_display',
-            size='Total Oportunidades',
-            color='propietario_display',
-            text='Total Oportunidades',
-            size_max=60,
-            height=600
-        )
+            fig = px.bar(
+                df_agg,
+                x='mes_anio',
+                y='Total Oportunidades',
+                color='propietario',
+                barmode='group',
+                text='Total Oportunidades',
+                title='Distribución Mensual de Oportunidades por Propietario'
+            )
+            fig.update_layout(xaxis_title="Mes", yaxis_title="Total Oportunidades", height=500)
+            fig.update_traces(textposition='outside')
+            st.plotly_chart(fig, use_container_width=True)
 
-        fig.update_traces(
-            textposition='middle center',
-            textfont_size=16,
-            textfont_color='white',
-            textfont_family='Arial Black',
-            marker=dict(line=dict(color='black', width=1.5))
-        )
+        else:
+            st.markdown("#### Distribución de Oportunidades y Propietario")
 
-        fig.update_layout(
-            xaxis_title='Máster',
-            yaxis_title='Propietario',
-            legend_title='Propietario (Total)'
-        )
-        fig.update_yaxes(categoryorder='array', categoryarray=orden_propietarios[::-1])
-        fig.update_xaxes(categoryorder='array', categoryarray=orden_masters)
+            resumen = df_ventas.groupby(['nombre', 'propietario']).size().reset_index(name='Total Oportunidades')
+            totales_propietario = resumen.groupby('propietario')['Total Oportunidades'].sum().reset_index()
+            totales_propietario['propietario_display'] = totales_propietario.apply(
+                lambda row: f"{row['propietario']} ({row['Total Oportunidades']})", axis=1
+            )
+            resumen = resumen.merge(totales_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
+            orden_propietarios = totales_propietario.sort_values(by='Total Oportunidades', ascending=False)['propietario_display'].tolist()
+            orden_masters = resumen.groupby('nombre')['Total Oportunidades'].sum().sort_values(ascending=False).index.tolist()
 
-        st.plotly_chart(fig, use_container_width=True)
+            fig = px.scatter(
+                resumen,
+                x='nombre',
+                y='propietario_display',
+                size='Total Oportunidades',
+                color='propietario_display',
+                text='Total Oportunidades',
+                size_max=60,
+                height=600
+            )
+
+            fig.update_traces(
+                textposition='middle center',
+                textfont_size=16,
+                textfont_color='white',
+                textfont_family='Arial Black',
+                marker=dict(line=dict(color='black', width=1.5))
+            )
+
+            fig.update_layout(
+                xaxis_title='Máster',
+                yaxis_title='Propietario',
+                legend_title='Propietario (Total)'
+            )
+            fig.update_yaxes(categoryorder='array', categoryarray=orden_propietarios[::-1])
+            fig.update_xaxes(categoryorder='array', categoryarray=orden_masters)
+
+            st.plotly_chart(fig, use_container_width=True)
 
         total_importe = df_ventas['importe'].sum() if 'importe' in df_ventas.columns else 0
         total_oportunidades = len(df_ventas)
