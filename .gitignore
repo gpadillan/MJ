@@ -1,22 +1,56 @@
-# No subir credenciales sensibles
+# -------------------------------
+# 🛡️ No subir credenciales sensibles
+# -------------------------------
+.env
 credenciales.json
 
-# No subir entornos virtuales
+# -------------------------------
+# 🧪 No subir entornos virtuales ni compilados
+# -------------------------------
 .venv/
+env/
+venv/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
 
-# No subir archivos temporales
+# -------------------------------
+# 🧹 No subir archivos temporales
+# -------------------------------
 *.log
 .DS_Store
 *.sqlite3
+*.db
+*.tmp
+*.bak
 
-# No subir archivos subidos por la app
+# -------------------------------
+# 📁 No subir archivos subidos por la app
+# -------------------------------
 uploaded/
 uploaded_admisiones/
 uploaded_data/
 admisiones_uploads/
 mnt/
 
-# No subir configuración de Streamlit local
+# -------------------------------
+# ⚙️ No subir configuración local de Streamlit
+# -------------------------------
 .streamlit/secrets.toml
+
+# -------------------------------
+# 📊 (Opcional) No subir Excel o exportaciones generadas
+# -------------------------------
+*.xlsx
+*.xls
+*.csv
+indicadores.xlsx
+indicadores_2025.xlsx
+
+# -------------------------------
+# 💻 No subir configuración local de VS Code
+# -------------------------------
+.vscode/
