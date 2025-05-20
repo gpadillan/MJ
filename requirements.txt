@@ -7,3 +7,5 @@ matplotlib>=3.7.0
 gspread
 google-auth
 xlsxwriter
+msal
+python-dotenv
