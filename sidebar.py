@@ -1,34 +1,29 @@
 import streamlit as st
 
-# Función para mostrar la barra lateral con navegación
 def show_sidebar():
     with st.sidebar:
-        st.markdown(f"### Bienvenido, {st.session_state['username']}")
+        st.markdown(f"### 👋 Bienvenido, {st.session_state['username']}")
         st.markdown("---")
 
-        # Opciones de navegación
-        st.markdown("### Navegación")
+        # Navegación principal
+        st.markdown("### 📂 Navegación")
 
-        if st.sidebar.button("Área de Admisiones"):
-            st.session_state['current_page'] = "Admisiones"
-            st.rerun()
+        nav_items = {
+            "Área de Admisiones": "Admisiones",
+            "Área Académica": "Academica",
+            "Área Desarrollo Profesional": "Desarrollo",
+            "Área Gestión de Cobro": "Gestión de Cobro"
+        }
 
-        if st.sidebar.button("Área Académica"):
-            st.session_state['current_page'] = "Academica"
-            st.rerun()
-
-        if st.sidebar.button("Área Desarrollo Profesional"):
-            st.session_state['current_page'] = "Desarrollo"
-            st.rerun()
-
-        if st.sidebar.button("Área Gestión de Cobro"):  # ✅ Nombre actualizado
-            st.session_state['current_page'] = "Gestión de Cobro"
-            st.rerun()
+        for label, page_key in nav_items.items():
+            if st.button(label):
+                st.session_state['current_page'] = page_key
+                st.rerun()
 
         st.markdown("---")
 
-        # Botón de cerrar sesión
-        if st.sidebar.button("Cerrar Sesión"):
+        # Cerrar sesión
+        if st.button("🚪 Cerrar Sesión"):
             st.session_state['logged_in'] = False
             st.session_state['username'] = ""
             st.session_state['excel_data'] = None

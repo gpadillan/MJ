@@ -2,12 +2,12 @@ import streamlit as st
 from auth import login_page
 from sidebar import show_sidebar
 from pages.admisiones import main_admisiones
-from pages.academica import academica_page
+from pages.academica.academica_main import academica_page
 from pages.desarrollo_main import desarrollo_page
-from pages import deuda_main  # Mantenemos este import, solo cambia el nombre en navegación
-from pages.inicio import inicio_page  # Página de inicio personalizada
+from pages import deuda_main
+from pages.inicio import inicio_page
 
-# Variables de sesión
+# Inicialización de sesión
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 if 'username' not in st.session_state:
@@ -33,7 +33,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed" if not st.session_state['logged_in'] else "expanded"
 )
 
-# Estilos CSS personalizados
+# Estilos personalizados
 def add_custom_css():
     st.markdown("""
     <style>
@@ -79,18 +79,21 @@ def main():
     if not st.session_state['logged_in']:
         login_page()
     else:
-        show_sidebar()
+        show_sidebar()  # Maneja el menú lateral
 
-        if st.session_state['current_page'] == "Inicio":
+        current = st.session_state['current_page']
+
+        if current == "Inicio":
             inicio_page()
-        elif st.session_state['current_page'] == "Admisiones":
+        elif current == "Admisiones":
             main_admisiones.app()
-        elif st.session_state['current_page'] == "Academica":
-            academica_page()
-        elif st.session_state['current_page'] == "Desarrollo":
+        elif current == "Academica":
+            academica_page()  # ✅ Ahora funcionará correctamente
+        elif current == "Desarrollo":
             desarrollo_page()
-        elif st.session_state['current_page'] == "Gestión de Cobro":  # ✅ Nombre actualizado
+        elif current == "Gestión de Cobro":
             deuda_main.deuda_page()
 
+# Punto de entrada
 if __name__ == "__main__":
     main()
