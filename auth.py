@@ -7,6 +7,7 @@ USUARIOS = {
     "JorgeG": {"password": "Mainjobs=50-", "role": "viewer"},
     "Juanantonio": {"password": "Mainjobs=50-", "role": "viewer"},
     "GabrielAles": {"password": "Mainjobs=50-", "role": "viewer"},
+    "SusanaPerez": {"password": "Mainjobs=50-", "role": "viewer"},
 }
 
 # Función para verificar credenciales
