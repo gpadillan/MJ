@@ -17,40 +17,45 @@ def cargar_marca_tiempo():
 def render():
     st.header("📁 Gestión de Datos – Gestión de Cobro")
 
-    # Cargar el DataFrame desde los bytes si es necesario
-    if (
-        st.session_state.get("uploaded_excel_bytes") 
-        and st.session_state.get("excel_data") is None
-    ):
-        st.session_state["excel_data"] = pd.read_excel(
-            io.BytesIO(st.session_state["uploaded_excel_bytes"])
-        )
-
     # Subida de archivo Excel
     archivo_excel = st.file_uploader("📤 Sube el archivo Excel para Gestión de Cobro", type=["xlsx"])
     if archivo_excel is not None:
         content = archivo_excel.read()
+
+        # Guardar en sesión
         st.session_state["uploaded_excel_bytes"] = content
         st.session_state["excel_filename"] = archivo_excel.name
         st.session_state["upload_time"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
-        # Guardar marca de tiempo en disco
+        # ⚠️ Cargar DataFrame forzando todas las columnas como texto
+        st.session_state["excel_data"] = pd.read_excel(io.BytesIO(content), dtype=str)
+
+        # Guardar timestamp en disco
         os.makedirs(UPLOAD_FOLDER, exist_ok=True)
         with open(TIEMPO_FILENAME, "w") as f:
             f.write(st.session_state["upload_time"])
 
-        st.success("✅ Archivo cargado exitosamente.")
-        st.rerun()
+        st.success("✅ Archivo cargado y procesado correctamente.")
+
+    # Si el DataFrame aún no está en memoria pero sí los bytes, cargarlo
+    if (
+        "excel_data" not in st.session_state
+        and "uploaded_excel_bytes" in st.session_state
+    ):
+        st.session_state["excel_data"] = pd.read_excel(
+            io.BytesIO(st.session_state["uploaded_excel_bytes"]),
+            dtype=str
+        )
 
     # Mostrar hora de última carga
     upload_time = st.session_state.get("upload_time", cargar_marca_tiempo())
     st.markdown(f"🕒 **Última actualización:** {upload_time}")
 
-    if 'excel_data' not in st.session_state or st.session_state['excel_data'] is None:
+    if "excel_data" not in st.session_state or st.session_state["excel_data"] is None:
         st.warning("⚠️ No hay archivo cargado.")
         return
 
-    df = st.session_state['excel_data']
+    df = st.session_state["excel_data"]
     st.markdown("### Vista previa del archivo cargado")
     st.dataframe(df, use_container_width=True)
 
