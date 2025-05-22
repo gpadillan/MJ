@@ -3,6 +3,7 @@ import os
 import pandas as pd
 from datetime import datetime
 
+# Carpetas y archivos
 UPLOAD_FOLDER = "uploaded_admisiones"
 VENTAS_FILE = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
 PREVENTAS_FILE = os.path.join(UPLOAD_FOLDER, "preventas.xlsx")
