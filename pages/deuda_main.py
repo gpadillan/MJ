@@ -66,40 +66,16 @@ def deuda_page():
     with col1:
         st.header("📂 Sección: Gestión de Cobro")
     with col2:
-        upload_time = st.session_state.get("upload_time")
-        if not upload_time:
-            upload_time = "Fecha no disponible"
+        upload_time = st.session_state.get("upload_time", "Fecha no disponible")
         st.markdown(
             f"<div style='margin-top: 25px; font-size: 14px; color: gray;'>🕒 Última actualización: {upload_time}</div>",
             unsafe_allow_html=True
         )
 
-    # Subida de archivo
-    if st.session_state['role'] == "admin":
-        archivo = st.file_uploader("📤 Sube un archivo Excel", type=["xlsx", "xls"])
-        if archivo:
-            try:
-                xls = pd.ExcelFile(archivo)
-                df = pd.read_excel(xls, sheet_name=xls.sheet_names[0])
-                upload_time_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-
-                # Guardar en sesión
-                st.session_state['excel_data'] = df
-                st.session_state['excel_filename'] = archivo.name
-                st.session_state['upload_time'] = upload_time_str
-
-                # Guardar en disco
-                guardar_excel(df)
-                guardar_marca_tiempo(upload_time_str)
-
-                st.success(f"✅ Archivo cargado y guardado: {archivo.name}")
-                st.rerun()
-            except Exception as e:
-                st.error(f"❌ Error al procesar el archivo: {e}")
-    else:
-        if st.session_state['excel_data'] is None:
-            st.warning("⚠️ El administrador aún no ha subido el archivo.")
-            return
+    # Si el usuario no es admin y no hay archivo cargado
+    if st.session_state['role'] != "admin" and st.session_state['excel_data'] is None:
+        st.warning("⚠️ El administrador aún no ha subido el archivo.")
+        return
 
     # Mostrar archivo cargado
     if st.session_state['excel_data'] is not None:
@@ -140,7 +116,7 @@ def deuda_page():
                     os.remove(TIEMPO_FILENAME)
                 st.rerun()
 
-    # Navegación
+    # Navegación entre subcategorías
     if seccion == "Gestión de Datos":
         gestion_datos.render()
     elif seccion == "Global":
