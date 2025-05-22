@@ -7,6 +7,7 @@ from datetime import datetime
 # Constantes
 UPLOAD_FOLDER = "uploaded"
 TIEMPO_FILENAME = os.path.join(UPLOAD_FOLDER, "ultima_subida.txt")
+EXCEL_FILENAME = os.path.join(UPLOAD_FOLDER, "archivo_cargado.xlsx")
 
 def cargar_marca_tiempo():
     if os.path.exists(TIEMPO_FILENAME):
@@ -17,35 +18,35 @@ def cargar_marca_tiempo():
 def render():
     st.header("📁 Gestión de Datos – Gestión de Cobro")
 
-    # Subida de archivo Excel
+    # 🔁 Cargar desde disco si hay un archivo y no hay datos en memoria
+    if (
+        "excel_data" not in st.session_state
+        and os.path.exists(EXCEL_FILENAME)
+    ):
+        with open(EXCEL_FILENAME, "rb") as f:
+            content = f.read()
+            st.session_state["uploaded_excel_bytes"] = content
+            st.session_state["excel_data"] = pd.read_excel(io.BytesIO(content), dtype=str)
+
+    # 📤 Subida de archivo Excel
     archivo_excel = st.file_uploader("📤 Sube el archivo Excel para Gestión de Cobro", type=["xlsx"])
     if archivo_excel is not None:
         content = archivo_excel.read()
 
-        # Guardar en sesión
         st.session_state["uploaded_excel_bytes"] = content
         st.session_state["excel_filename"] = archivo_excel.name
         st.session_state["upload_time"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-
-        # ⚠️ Cargar DataFrame forzando todas las columnas como texto
         st.session_state["excel_data"] = pd.read_excel(io.BytesIO(content), dtype=str)
 
-        # Guardar timestamp en disco
+        # Guardar archivo en disco para persistencia
         os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+        with open(EXCEL_FILENAME, "wb") as f:
+            f.write(content)
+
         with open(TIEMPO_FILENAME, "w") as f:
             f.write(st.session_state["upload_time"])
 
-        st.success("✅ Archivo cargado y procesado correctamente.")
-
-    # Si el DataFrame aún no está en memoria pero sí los bytes, cargarlo
-    if (
-        "excel_data" not in st.session_state
-        and "uploaded_excel_bytes" in st.session_state
-    ):
-        st.session_state["excel_data"] = pd.read_excel(
-            io.BytesIO(st.session_state["uploaded_excel_bytes"]),
-            dtype=str
-        )
+        st.success("✅ Archivo cargado y guardado correctamente.")
 
     # Mostrar hora de última carga
     upload_time = st.session_state.get("upload_time", cargar_marca_tiempo())
