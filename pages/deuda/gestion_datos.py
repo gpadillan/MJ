@@ -18,15 +18,16 @@ def cargar_marca_tiempo():
 def render():
     st.header("📁 Gestión de Datos – Gestión de Cobro")
 
-    # 🔁 Cargar desde disco si hay un archivo y no hay datos en memoria
+    # 🔁 Cargar automáticamente el archivo desde disco si está presente
     if (
         "excel_data" not in st.session_state
-        and os.path.exists(EXCEL_FILENAME)
+        or st.session_state["excel_data"] is None
     ):
-        with open(EXCEL_FILENAME, "rb") as f:
-            content = f.read()
-            st.session_state["uploaded_excel_bytes"] = content
-            st.session_state["excel_data"] = pd.read_excel(io.BytesIO(content), dtype=str)
+        if os.path.exists(EXCEL_FILENAME):
+            with open(EXCEL_FILENAME, "rb") as f:
+                content = f.read()
+                st.session_state["uploaded_excel_bytes"] = content
+                st.session_state["excel_data"] = pd.read_excel(io.BytesIO(content), dtype=str)
 
     # 📤 Subida de archivo Excel
     archivo_excel = st.file_uploader("📤 Sube el archivo Excel para Gestión de Cobro", type=["xlsx"])
@@ -47,6 +48,7 @@ def render():
             f.write(st.session_state["upload_time"])
 
         st.success("✅ Archivo cargado y guardado correctamente.")
+        st.rerun()
 
     # Mostrar hora de última carga
     upload_time = st.session_state.get("upload_time", cargar_marca_tiempo())
