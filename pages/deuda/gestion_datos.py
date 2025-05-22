@@ -17,20 +17,34 @@ def cargar_marca_tiempo():
 def render():
     st.header("📁 Gestión de Datos – Gestión de Cobro")
 
+    # Cargar el DataFrame desde los bytes si es necesario
+    if (
+        st.session_state.get("uploaded_excel_bytes") 
+        and st.session_state.get("excel_data") is None
+    ):
+        st.session_state["excel_data"] = pd.read_excel(
+            io.BytesIO(st.session_state["uploaded_excel_bytes"])
+        )
+
     # Subida de archivo Excel
     archivo_excel = st.file_uploader("📤 Sube el archivo Excel para Gestión de Cobro", type=["xlsx"])
     if archivo_excel is not None:
-        df = pd.read_excel(archivo_excel)
-        st.session_state["excel_data"] = df
+        content = archivo_excel.read()
+        st.session_state["uploaded_excel_bytes"] = content
+        st.session_state["excel_filename"] = archivo_excel.name
+        st.session_state["upload_time"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
+        # Guardar marca de tiempo en disco
         os.makedirs(UPLOAD_FOLDER, exist_ok=True)
         with open(TIEMPO_FILENAME, "w") as f:
-            f.write(datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+            f.write(st.session_state["upload_time"])
+
         st.success("✅ Archivo cargado exitosamente.")
         st.rerun()
 
     # Mostrar hora de última carga
-    ultima_actualizacion = cargar_marca_tiempo()
-    st.markdown(f"🕒 **Última actualización:** {ultima_actualizacion}")
+    upload_time = st.session_state.get("upload_time", cargar_marca_tiempo())
+    st.markdown(f"🕒 **Última actualización:** {upload_time}")
 
     if 'excel_data' not in st.session_state or st.session_state['excel_data'] is None:
         st.warning("⚠️ No hay archivo cargado.")
