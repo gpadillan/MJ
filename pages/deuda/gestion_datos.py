@@ -2,6 +2,7 @@
 import pandas as pd
 import io
 import os
+from datetime import datetime
 
 # Constantes
 UPLOAD_FOLDER = "uploaded"
@@ -16,12 +17,23 @@ def cargar_marca_tiempo():
 def render():
     st.header("📁 Gestión de Datos – Gestión de Cobro")
 
-    # Mostrar la hora de la última carga del archivo
+    # Subida de archivo Excel
+    archivo_excel = st.file_uploader("📤 Sube el archivo Excel para Gestión de Cobro", type=["xlsx"])
+    if archivo_excel is not None:
+        df = pd.read_excel(archivo_excel)
+        st.session_state["excel_data"] = df
+        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+        with open(TIEMPO_FILENAME, "w") as f:
+            f.write(datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+        st.success("✅ Archivo cargado exitosamente.")
+        st.rerun()
+
+    # Mostrar hora de última carga
     ultima_actualizacion = cargar_marca_tiempo()
     st.markdown(f"🕒 **Última actualización:** {ultima_actualizacion}")
 
     if 'excel_data' not in st.session_state or st.session_state['excel_data'] is None:
-        st.warning("⚠️ No hay archivo cargado. Ve a la sección principal para subir un archivo.")
+        st.warning("⚠️ No hay archivo cargado.")
         return
 
     df = st.session_state['excel_data']
@@ -103,7 +115,6 @@ def render():
             st.session_state["descarga_pendiente_cobro_isa"].to_excel(writer, sheet_name="pendiente_cobro_isa", index=False)
 
     buffer.seek(0)
-
     st.download_button(
         label="📥 Descargar Excel Consolidado",
         data=buffer.getvalue(),
