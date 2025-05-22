@@ -30,7 +30,9 @@ def render():
         st.info("Selecciona al menos un año.")
         return
 
-    suma_totales = df_beca[seleccion].sum().reset_index()
+    # ✅ Convertir columnas seleccionadas a números reales
+    df_beca[seleccion] = df_beca[seleccion].apply(pd.to_numeric, errors="coerce")
+    suma_totales = df_beca[seleccion].sum(numeric_only=True).reset_index()
     suma_totales.columns = ['Año', 'Suma Total']
     suma_totales['Año'] = suma_totales['Año'].str.replace("Total ", "")
 

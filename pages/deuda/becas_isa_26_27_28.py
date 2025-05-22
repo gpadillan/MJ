@@ -19,8 +19,8 @@ def render():
         return
 
     año_actual = datetime.today().year
-
     columnas_total = [col for col in df_beca.columns if col.startswith('Total ')]
+
     columnas_futuras = []
     for col in columnas_total:
         partes = col.split()
@@ -33,7 +33,6 @@ def render():
         st.warning(f"⚠️ No hay columnas de años futuros disponibles después de {año_actual}.")
         return
 
-    # ⚠️ No se asigna a session_state después del widget
     seleccion = st.multiselect(
         f"Selecciona los años futuros a visualizar después de {año_actual}:",
         options=columnas_futuras,
@@ -45,7 +44,9 @@ def render():
         st.info("Selecciona al menos un año para visualizar.")
         return
 
-    suma_totales = df_beca[seleccion].sum().reset_index()
+    # ✅ Convertir a numérico antes de sumar
+    df_beca[seleccion] = df_beca[seleccion].apply(pd.to_numeric, errors="coerce")
+    suma_totales = df_beca[seleccion].sum(numeric_only=True).reset_index()
     suma_totales.columns = ['Año', 'Suma Total']
     suma_totales['Año'] = suma_totales['Año'].str.replace("Total ", "")
 
@@ -70,7 +71,7 @@ def render():
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
         suma_totales.to_excel(writer, index=False, sheet_name="becas_isa_26_27_28")
 
-    buffer.seek(0)  # ← IMPORTANTE
+    buffer.seek(0)
 
     st.download_button(
         label="📥 Descargar hoja: Becas ISA 26/27/28",
