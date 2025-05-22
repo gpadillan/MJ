@@ -18,7 +18,7 @@ def cargar_marca_tiempo():
 def render():
     st.header("📁 Gestión de Datos – Gestión de Cobro")
 
-    # 🔁 Cargar automáticamente el archivo desde disco si está presente
+    # ✅ Cargar el Excel desde disco para TODOS los usuarios si session_state está vacío o nulo
     if (
         "excel_data" not in st.session_state
         or st.session_state["excel_data"] is None
