@@ -32,7 +32,6 @@ def principal_page():
 
     UPLOAD_FOLDER = "uploaded_admisiones"
     GESTION_FOLDER = "uploaded"
-    ACADEMICO_FILE = os.path.join("uploaded_academica", "Indicadores Académicos EIP.xlsx")
     VENTAS_FILE = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
     PREVENTAS_FILE = os.path.join(UPLOAD_FOLDER, "preventas.xlsx")
     GESTION_FILE = os.path.join(GESTION_FOLDER, "archivo_cargado.xlsx")
@@ -53,7 +52,7 @@ def principal_page():
     importes_por_mes = {}
     estados = {}
 
-    # Ventas
+    # === VENTAS ===
     if os.path.exists(VENTAS_FILE):
         df_ventas = pd.read_excel(VENTAS_FILE)
         if "fecha de cierre" in df_ventas.columns:
@@ -67,7 +66,7 @@ def principal_page():
                 matriculas_por_mes[m] = len(df_mes)
                 importes_por_mes[m] = df_mes.get('importe', pd.Series(0)).sum()
 
-    # Preventas
+    # === PREVENTAS ===
     if os.path.exists(PREVENTAS_FILE):
         df_preventas = pd.read_excel(PREVENTAS_FILE)
         total_preventas = len(df_preventas)
@@ -75,7 +74,7 @@ def principal_page():
         if columnas_importe:
             total_preventas_importe = df_preventas[columnas_importe].sum(numeric_only=True).sum()
 
-    # Gestión de cobro
+    # === GESTIÓN DE COBRO ===
     if os.path.exists(GESTION_FILE):
         df_gestion = pd.read_excel(GESTION_FILE)
         if "Estado" in df_gestion.columns:
@@ -93,7 +92,7 @@ def principal_page():
                 df_estado_totales["Total"] = df_estado_totales.sum(axis=1)
                 estados = df_estado_totales["Total"].to_dict()
 
-    # Tarjetas por mes
+    # === MATRÍCULAS POR MES ===
     st.markdown(f"### 📅 Matrículas por Mes ({anio_actual})")
     meses = [
         (traduccion_meses[m], matriculas_por_mes.get(m, 0), f"{importes_por_mes.get(m, 0):,.2f}".replace(",", "."))
@@ -104,13 +103,13 @@ def principal_page():
         for j, (mes, matriculas, importe) in enumerate(meses[i:i+4]):
             cols[j].markdown(render_info_card(mes, matriculas, importe), unsafe_allow_html=True)
 
-    # Totales generales
+    # === TOTALES GENERALES ===
     st.markdown("### Total General")
     col1, col2 = st.columns(2)
     col1.markdown(render_info_card("Matrículas Totales", total_matriculas, f"{sum(importes_por_mes.values()):,.2f}".replace(",", "."), "#c8e6c9"), unsafe_allow_html=True)
     col2.markdown(render_info_card("Preventas", total_preventas, f"{total_preventas_importe:,.2f}".replace(",", "."), "#ffe0b2"), unsafe_allow_html=True)
 
-    # Gestión de Cobro
+    # === GESTIÓN DE COBRO – SECCIÓN SEPARADA ===
     if estados:
         st.markdown("---")
         st.markdown("## 💼 Gestión de Cobro")
@@ -121,18 +120,23 @@ def principal_page():
             for j, (estado, total) in enumerate(estado_items[i:i+4]):
                 cols[j].markdown(render_import_card(f"Estado: {estado}", f"{total:,.2f}".replace(",", ".")), unsafe_allow_html=True)
 
-    # Indicadores Académicos
-    if os.path.exists(ACADEMICO_FILE):
-        try:
-            data = pd.read_excel(ACADEMICO_FILE, sheet_name=None)
-            hoja = "CONSOLIDADO ACADÉMICO"
-            if hoja in data:
-                df = data[hoja]
+    # === INDICADORES ACADÉMICOS DESDE SESSION_STATE ===
+    if "academica_excel_data" in st.session_state:
+        data = st.session_state["academica_excel_data"]
+        hoja = "CONSOLIDADO ACADÉMICO"
 
-                st.markdown("---")
-                st.markdown("## 🎓 Indicadores Académicos")
+        if hoja in data:
+            df = data[hoja]
 
-                indicadores = [("Alumnos/as", df.iloc[1, 1])]
+            st.markdown("---")
+            st.markdown("## 🎓 Indicadores Académicos")
+
+            indicadores = []
+
+            try:
+                total_alumnos = int(df.iloc[1, 1])
+                indicadores.append(("Alumnos/as", total_alumnos))
+
                 for i in range(2, 10):
                     nombre = str(df.iloc[i, 1])
                     valor = df.iloc[i, 2]
@@ -164,5 +168,6 @@ def principal_page():
                 total_cert = int(df.iloc[13, 2])
                 st.markdown(render_import_card("Total Certificaciones", f"{total_cert}", "#dcedc8"), unsafe_allow_html=True)
 
-        except Exception as e:
-            st.warning(f"❌ Error al cargar el archivo académico: {e}")
+            except Exception as e:
+                st.warning("⚠️ Error al procesar los indicadores académicos.")
+                st.exception(e)
