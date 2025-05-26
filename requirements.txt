@@ -9,3 +9,4 @@ google-auth
 xlsxwriter
 msal
 python-dotenv
+office365-rest-python-client
