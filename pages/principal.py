@@ -1,10 +1,9 @@
 import streamlit as st
 import pandas as pd
 import os
-import io
 from datetime import datetime
-from office365.sharepoint.client_context import ClientContext
-from office365.runtime.auth.client_credential import ClientCredential
+import io
+from sharepoint_utils import download_excel_as_dataframe
 
 # Tarjeta con matrícula e importe
 def render_info_card(title: str, value1, value2, color: str = "#e3f2fd"):
@@ -29,28 +28,16 @@ def render_import_card(title: str, value, color: str = "#ede7f6"):
         </div>
     """
 
-# Cargar Excel desde SharePoint (con corrección)
+# Leer desde SharePoint vía Graph API
 def cargar_academico_sharepoint():
     try:
-        tenant_id = st.secrets["academica"]["tenant_id"]
-        client_id = st.secrets["academica"]["client_id"]
-        client_secret = st.secrets["academica"]["client_secret"]
-        domain = st.secrets["academica"]["domain"]
-        site_name = st.secrets["academica"]["site_name"]
-        file_path = st.secrets["academica"]["file_path"]
-
-        site_url = f"https://{domain}/sites/{site_name}"
-        ctx = ClientContext(site_url).with_credentials(ClientCredential(client_id, client_secret))
-
-        file = ctx.web.get_file_by_server_relative_url(file_path)
-        file_response = io.BytesIO()
-        file.download(file_response).execute_query()
-        file_response.seek(0)
-
-        return pd.read_excel(file_response)
+        config = st.secrets["academica"]
+        buffer = download_excel_as_dataframe(config)
+        if buffer:
+            return pd.read_excel(buffer)
     except Exception as e:
         st.warning(f"Error al conectar con SharePoint: {e}")
-        return None
+    return None
 
 # Página principal
 def principal_page():
