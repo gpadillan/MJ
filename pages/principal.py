@@ -1,20 +1,17 @@
 import streamlit as st
 import pandas as pd
 import os
+import io
 from datetime import datetime
+from office365.sharepoint.client_context import ClientContext
+from office365.runtime.auth.client_credential import ClientCredential
 
 # Tarjeta con matrícula e importe
 def render_info_card(title: str, value1, value2, color: str = "#e3f2fd"):
     return f"""
-        <div style='
-            padding: 8px;
-            background-color: {color};
-            border-radius: 8px;
-            font-size: 13px;
-            text-align: center;
-            border: 1px solid #ccc;
-            box-shadow: 1px 1px 5px rgba(0,0,0,0.1);
-        '>
+        <div style='padding: 8px; background-color: {color}; border-radius: 8px;
+                    font-size: 13px; text-align: center; border: 1px solid #ccc;
+                    box-shadow: 1px 1px 5px rgba(0,0,0,0.1);'>
             <strong>{title}</strong><br>
             👥 Matrículas: <strong>{value1}</strong><br>
             💶 Importe: <strong>{value2} €</strong>
@@ -24,20 +21,33 @@ def render_info_card(title: str, value1, value2, color: str = "#e3f2fd"):
 # Tarjeta solo con importe
 def render_import_card(title: str, value, color: str = "#ede7f6"):
     return f"""
-        <div style='
-            padding: 8px;
-            background-color: {color};
-            border-radius: 8px;
-            font-size: 13px;
-            text-align: center;
-            border: 1px solid #ccc;
-            box-shadow: 1px 1px 5px rgba(0,0,0,0.1);
-        '>
+        <div style='padding: 8px; background-color: {color}; border-radius: 8px;
+                    font-size: 13px; text-align: center; border: 1px solid #ccc;
+                    box-shadow: 1px 1px 5px rgba(0,0,0,0.1);'>
             <strong>{title}</strong><br>
             💶 <strong>{value} €</strong>
         </div>
     """
 
+# Cargar Excel desde SharePoint
+def cargar_academico_sharepoint():
+    try:
+        tenant_id = st.secrets["academica"]["tenant_id"]
+        client_id = st.secrets["academica"]["client_id"]
+        client_secret = st.secrets["academica"]["client_secret"]
+        domain = st.secrets["academica"]["domain"]
+        site_name = st.secrets["academica"]["site_name"]
+        file_path = st.secrets["academica"]["file_path"]
+
+        site_url = f"https://{domain}/sites/{site_name}"
+        ctx = ClientContext(site_url).with_credentials(ClientCredential(client_id, client_secret))
+        response = ctx.web.get_file_by_server_relative_url(file_path).download().execute_query()
+        return pd.read_excel(io.BytesIO(response.content))
+    except Exception as e:
+        st.warning(f"Error al conectar con SharePoint: {e}")
+        return None
+
+# Página principal
 def principal_page():
     st.title("📊 Panel Principal")
     st.markdown("## 📥 Admisiones")
@@ -47,12 +57,10 @@ def principal_page():
     VENTAS_FILE = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
     PREVENTAS_FILE = os.path.join(UPLOAD_FOLDER, "preventas.xlsx")
     GESTION_FILE = os.path.join(GESTION_FOLDER, "archivo_cargado.xlsx")
-    ACADEMICO_FILE = os.path.join(GESTION_FOLDER, "archivo_cargado.xlsx")
 
     traduccion_meses = {
-        1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
-        5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
-        9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
+        1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
+        7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
     }
 
     mes_actual = datetime.now().month
@@ -66,7 +74,7 @@ def principal_page():
     importes_por_mes = {}
     estados = {}
 
-    # === VENTAS ===
+    # Ventas
     if os.path.exists(VENTAS_FILE):
         df_ventas = pd.read_excel(VENTAS_FILE)
         if "fecha de cierre" in df_ventas.columns:
@@ -80,7 +88,7 @@ def principal_page():
                 matriculas_por_mes[m] = len(df_mes)
                 importes_por_mes[m] = df_mes.get('importe', pd.Series(0)).sum()
 
-    # === PREVENTAS ===
+    # Preventas
     if os.path.exists(PREVENTAS_FILE):
         df_preventas = pd.read_excel(PREVENTAS_FILE)
         total_preventas = len(df_preventas)
@@ -88,7 +96,7 @@ def principal_page():
         if columnas_importe:
             total_preventas_importe = df_preventas[columnas_importe].sum(numeric_only=True).sum()
 
-    # === GESTIÓN DE COBRO ===
+    # Gestión de cobro
     if os.path.exists(GESTION_FILE):
         df_gestion = pd.read_excel(GESTION_FILE)
         if "Estado" in df_gestion.columns:
@@ -106,28 +114,24 @@ def principal_page():
                 df_estado_totales["Total"] = df_estado_totales.sum(axis=1)
                 estados = df_estado_totales["Total"].to_dict()
 
-    # === MATRÍCULAS POR MES ===
+    # Tarjetas por mes
     st.markdown(f"### 📅 Matrículas por Mes ({anio_actual})")
     meses = [
-        (
-            traduccion_meses[m],
-            matriculas_por_mes.get(m, 0),
-            f"{importes_por_mes.get(m, 0):,.2f}".replace(",", ".")
-        )
+        (traduccion_meses[m], matriculas_por_mes.get(m, 0), f"{importes_por_mes.get(m, 0):,.2f}".replace(",", "."))
         for m in range(1, mes_actual + 1)
     ]
     for i in range(0, len(meses), 4):
         cols = st.columns(4)
-        for j, (nombre_mes, cantidad, importe) in enumerate(meses[i:i+4]):
-            cols[j].markdown(render_info_card(nombre_mes, cantidad, importe, "#e3f2fd"), unsafe_allow_html=True)
+        for j, (mes, matriculas, importe) in enumerate(meses[i:i+4]):
+            cols[j].markdown(render_info_card(mes, matriculas, importe), unsafe_allow_html=True)
 
-    # === TOTALES GENERALES ===
+    # Totales generales
     st.markdown("### Total General")
     col1, col2 = st.columns(2)
     col1.markdown(render_info_card("Matrículas Totales", total_matriculas, f"{sum(importes_por_mes.values()):,.2f}".replace(",", "."), "#c8e6c9"), unsafe_allow_html=True)
     col2.markdown(render_info_card("Preventas", total_preventas, f"{total_preventas_importe:,.2f}".replace(",", "."), "#ffe0b2"), unsafe_allow_html=True)
 
-    # === GESTIÓN DE COBRO ===
+    # Gestión de Cobro
     if estados:
         st.markdown("---")
         st.markdown("## 💼 Gestión de Cobro")
@@ -136,50 +140,41 @@ def principal_page():
         for i in range(0, len(estado_items), 4):
             cols = st.columns(4)
             for j, (estado, total) in enumerate(estado_items[i:i+4]):
-                cols[j].markdown(
-                    render_import_card(f"Estado: {estado}", f"{total:,.2f}".replace(",", "."), "#ede7f6"),
-                    unsafe_allow_html=True
-                )
+                cols[j].markdown(render_import_card(f"Estado: {estado}", f"{total:,.2f}".replace(",", ".")), unsafe_allow_html=True)
 
-    # === INDICADORES ACADÉMICOS ===
-    if os.path.exists(ACADEMICO_FILE):
-        xl = pd.ExcelFile(ACADEMICO_FILE)
-        if "CONSOLIDADO ACADÉMICO" in xl.sheet_names:
-            df_acad = xl.parse("CONSOLIDADO ACADÉMICO")
-            st.markdown("---")
-            st.markdown("## 🎓 Indicadores Académicos")
+    # Indicadores Académicos desde SharePoint
+    df_acad = cargar_academico_sharepoint()
+    if df_acad is not None:
+        st.markdown("---")
+        st.markdown("## 🎓 Indicadores Académicos")
 
-            indicadores = []
-            total_alumnos = df_acad.iloc[1, 1]
-            indicadores.append(("Alumnos/as", total_alumnos))
-
-            for i in range(2, 10):
-                nombre = str(df_acad.iloc[i, 1])
-                valor = df_acad.iloc[i, 2]
-                if pd.notna(nombre) and pd.notna(valor):
-                    if ("cumplimiento" in nombre.lower()) and isinstance(valor, (int, float)) and valor <= 1:
-                        valor = f"{valor:.0%}".replace(".", ",")
-                    elif isinstance(valor, float) and valor <= 1:
-                        valor = f"{valor:.2%}".replace(".", ",")
-                    indicadores.append((nombre, valor))
-
-            nombre = str(df_acad.iloc[10, 1])
-            valor = df_acad.iloc[10, 2]
-            if pd.notna(valor):
-                if isinstance(valor, float) and valor <= 1:
+        indicadores = [("Alumnos/as", df_acad.iloc[1, 1])]
+        for i in range(2, 10):
+            nombre = str(df_acad.iloc[i, 1])
+            valor = df_acad.iloc[i, 2]
+            if pd.notna(nombre) and pd.notna(valor):
+                if ("cumplimiento" in nombre.lower() and isinstance(valor, (int, float)) and valor <= 1):
+                    valor = f"{valor:.0%}".replace(".", ",")
+                elif isinstance(valor, float) and valor <= 1:
                     valor = f"{valor:.2%}".replace(".", ",")
                 indicadores.append((nombre, valor))
 
-            nombre = str(df_acad.iloc[11, 1])
-            valor = df_acad.iloc[11, 2]
-            if pd.notna(valor):
-                indicadores.append((nombre, int(valor)))
+        nombre = str(df_acad.iloc[10, 1])
+        valor = df_acad.iloc[10, 2]
+        if pd.notna(valor):
+            valor = f"{valor:.2%}".replace(".", ",") if isinstance(valor, float) else valor
+            indicadores.append((nombre, valor))
 
-            for i in range(0, len(indicadores), 4):
-                cols = st.columns(4)
-                for j, (titulo, valor) in enumerate(indicadores[i:i+4]):
-                    cols[j].markdown(render_import_card(titulo, valor, "#f0f4c3"), unsafe_allow_html=True)
+        nombre = str(df_acad.iloc[11, 1])
+        valor = df_acad.iloc[11, 2]
+        if pd.notna(valor):
+            indicadores.append((nombre, int(valor)))
 
-            st.markdown("### 🏅 Certificaciones")
-            total_cert = int(df_acad.iloc[13, 2])
-            st.markdown(render_import_card("Total Certificaciones", f"{total_cert}", "#dcedc8"), unsafe_allow_html=True)
+        for i in range(0, len(indicadores), 4):
+            cols = st.columns(4)
+            for j, (titulo, valor) in enumerate(indicadores[i:i+4]):
+                cols[j].markdown(render_import_card(titulo, valor, "#f0f4c3"), unsafe_allow_html=True)
+
+        st.markdown("### 🏅 Certificaciones")
+        total_cert = int(df_acad.iloc[13, 2])
+        st.markdown(render_import_card("Total Certificaciones", f"{total_cert}", "#dcedc8"), unsafe_allow_html=True)
