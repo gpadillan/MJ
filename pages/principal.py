@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
-import io
-from sharepoint_utils import download_excel_as_dataframe
 
 # Tarjeta con matrícula e importe
 def render_info_card(title: str, value1, value2, color: str = "#e3f2fd"):
@@ -28,24 +26,13 @@ def render_import_card(title: str, value, color: str = "#ede7f6"):
         </div>
     """
 
-# Leer desde SharePoint vía Graph API
-def cargar_academico_sharepoint():
-    try:
-        config = st.secrets["academica"]
-        buffer = download_excel_as_dataframe(config)
-        if buffer:
-            return pd.read_excel(buffer)
-    except Exception as e:
-        st.warning(f"Error al conectar con SharePoint: {e}")
-    return None
-
-# Página principal
 def principal_page():
     st.title("📊 Panel Principal")
     st.markdown("## 📥 Admisiones")
 
     UPLOAD_FOLDER = "uploaded_admisiones"
     GESTION_FOLDER = "uploaded"
+    ACADEMICO_FILE = os.path.join("uploaded_academica", "Indicadores Académicos EIP.xlsx")
     VENTAS_FILE = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
     PREVENTAS_FILE = os.path.join(UPLOAD_FOLDER, "preventas.xlsx")
     GESTION_FILE = os.path.join(GESTION_FOLDER, "archivo_cargado.xlsx")
@@ -134,39 +121,45 @@ def principal_page():
             for j, (estado, total) in enumerate(estado_items[i:i+4]):
                 cols[j].markdown(render_import_card(f"Estado: {estado}", f"{total:,.2f}".replace(",", ".")), unsafe_allow_html=True)
 
-    # Indicadores Académicos desde SharePoint
-    df_acad = cargar_academico_sharepoint()
-    if df_acad is not None:
-        st.markdown("---")
-        st.markdown("## 🎓 Indicadores Académicos")
+    # Indicadores Académicos
+    if os.path.exists(ACADEMICO_FILE):
+        try:
+            df = pd.read_excel(ACADEMICO_FILE, sheet_name="CONSOLIDADO ACADÉMICO")
+            st.markdown("---")
+            st.markdown("## 🎓 Indicadores Académicos")
 
-        indicadores = [("Alumnos/as", df_acad.iloc[1, 1])]
-        for i in range(2, 10):
-            nombre = str(df_acad.iloc[i, 1])
-            valor = df_acad.iloc[i, 2]
-            if pd.notna(nombre) and pd.notna(valor):
-                if "cumplimiento" in nombre.lower() and isinstance(valor, (int, float)) and valor <= 1:
-                    valor = f"{valor:.0%}".replace(".", ",")
-                elif isinstance(valor, float) and valor <= 1:
-                    valor = f"{valor:.2%}".replace(".", ",")
+            indicadores = [("Alumnos/as", df.iloc[1, 1])]
+            for i in range(2, 10):
+                nombre = str(df.iloc[i, 1])
+                valor = df.iloc[i, 2]
+                if pd.notna(nombre) and pd.notna(valor):
+                    if "cumplimiento" in nombre.lower() and isinstance(valor, (int, float)) and valor <= 1:
+                        valor = f"{valor:.0%}".replace(".", ",")
+                    elif isinstance(valor, float) and valor <= 1:
+                        valor = f"{valor:.2%}".replace(".", ",")
+                    indicadores.append((nombre, valor))
+
+            nombre = str(df.iloc[10, 1])
+            valor = df.iloc[10, 2]
+            if pd.notna(valor):
+                valor = f"{valor:.2%}".replace(".", ",") if isinstance(valor, float) else valor
                 indicadores.append((nombre, valor))
 
-        nombre = str(df_acad.iloc[10, 1])
-        valor = df_acad.iloc[10, 2]
-        if pd.notna(valor):
-            valor = f"{valor:.2%}".replace(".", ",") if isinstance(valor, float) else valor
-            indicadores.append((nombre, valor))
+            nombre = str(df.iloc[11, 1])
+            valor = df.iloc[11, 2]
+            if pd.notna(valor):
+                indicadores.append((nombre, int(valor)))
 
-        nombre = str(df_acad.iloc[11, 1])
-        valor = df_acad.iloc[11, 2]
-        if pd.notna(valor):
-            indicadores.append((nombre, int(valor)))
+            for i in range(0, len(indicadores), 4):
+                cols = st.columns(4)
+                for j, (titulo, valor) in enumerate(indicadores[i:i+4]):
+                    cols[j].markdown(render_import_card(titulo, valor, "#f0f4c3"), unsafe_allow_html=True)
 
-        for i in range(0, len(indicadores), 4):
-            cols = st.columns(4)
-            for j, (titulo, valor) in enumerate(indicadores[i:i+4]):
-                cols[j].markdown(render_import_card(titulo, valor, "#f0f4c3"), unsafe_allow_html=True)
+            st.markdown("### 🏅 Certificaciones")
+            total_cert = int(df.iloc[13, 2])
+            st.markdown(render_import_card("Total Certificaciones", f"{total_cert}", "#dcedc8"), unsafe_allow_html=True)
 
-        st.markdown("### 🏅 Certificaciones")
-        total_cert = int(df_acad.iloc[13, 2])
-        st.markdown(render_import_card("Total Certificaciones", f"{total_cert}", "#dcedc8"), unsafe_allow_html=True)
+        except Exception as e:
+            st.warning(f"❌ Error al cargar el archivo académico: {e}")
+    else:
+        st.info("📭 No se encontró el archivo académico.")
