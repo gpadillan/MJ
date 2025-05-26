@@ -3,7 +3,9 @@ import pandas as pd
 import os
 from datetime import datetime
 
-# Tarjeta con matrícula e importe
+from pages.academica.sharepoint_utils import get_access_token, get_site_id, download_excel
+
+# ===== Tarjetas de resumen visuales =====
 def render_info_card(title: str, value1, value2, color: str = "#e3f2fd"):
     return f"""
         <div style='padding: 8px; background-color: {color}; border-radius: 8px;
@@ -15,7 +17,6 @@ def render_info_card(title: str, value1, value2, color: str = "#e3f2fd"):
         </div>
     """
 
-# Tarjeta solo con importe
 def render_import_card(title: str, value, color: str = "#ede7f6"):
     return f"""
         <div style='padding: 8px; background-color: {color}; border-radius: 8px;
@@ -26,9 +27,24 @@ def render_import_card(title: str, value, color: str = "#ede7f6"):
         </div>
     """
 
+# ===== Cargar datos académicos desde SharePoint si no se han cargado antes =====
+def load_academica_data():
+    if "academica_excel_data" not in st.session_state:
+        try:
+            config = st.secrets["academica"]
+            token = get_access_token(config)
+            site_id = get_site_id(config, token)
+            file = download_excel(config, token, site_id)
+            excel_data = pd.read_excel(file, sheet_name=None)
+            st.session_state["academica_excel_data"] = excel_data
+        except Exception as e:
+            st.warning("⚠️ No se pudo cargar datos académicos automáticamente.")
+            st.exception(e)
+
+# ===== FUNCIÓN PRINCIPAL DE LA PÁGINA =====
 def principal_page():
     st.title("📊 Panel Principal")
-    st.markdown("## 📥 Admisiones")
+    load_academica_data()  # 🧠 Intenta precargar los datos académicos
 
     UPLOAD_FOLDER = "uploaded_admisiones"
     GESTION_FOLDER = "uploaded"
@@ -92,7 +108,8 @@ def principal_page():
                 df_estado_totales["Total"] = df_estado_totales.sum(axis=1)
                 estados = df_estado_totales["Total"].to_dict()
 
-    # === MATRÍCULAS POR MES ===
+    # === SECCIÓN ADMISIÓN: TARJETAS DE MES ===
+    st.markdown("## 📥 Admisiones")
     st.markdown(f"### 📅 Matrículas por Mes ({anio_actual})")
     meses = [
         (traduccion_meses[m], matriculas_por_mes.get(m, 0), f"{importes_por_mes.get(m, 0):,.2f}".replace(",", "."))
@@ -109,7 +126,7 @@ def principal_page():
     col1.markdown(render_info_card("Matrículas Totales", total_matriculas, f"{sum(importes_por_mes.values()):,.2f}".replace(",", "."), "#c8e6c9"), unsafe_allow_html=True)
     col2.markdown(render_info_card("Preventas", total_preventas, f"{total_preventas_importe:,.2f}".replace(",", "."), "#ffe0b2"), unsafe_allow_html=True)
 
-    # === GESTIÓN DE COBRO – SECCIÓN SEPARADA ===
+    # === SECCIÓN COBRO ===
     if estados:
         st.markdown("---")
         st.markdown("## 💼 Gestión de Cobro")
@@ -120,7 +137,7 @@ def principal_page():
             for j, (estado, total) in enumerate(estado_items[i:i+4]):
                 cols[j].markdown(render_import_card(f"Estado: {estado}", f"{total:,.2f}".replace(",", ".")), unsafe_allow_html=True)
 
-    # === INDICADORES ACADÉMICOS DESDE SESSION_STATE ===
+    # === SECCIÓN ACADÉMICA ===
     if "academica_excel_data" in st.session_state:
         data = st.session_state["academica_excel_data"]
         hoja = "CONSOLIDADO ACADÉMICO"
