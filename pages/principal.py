@@ -124,42 +124,45 @@ def principal_page():
     # Indicadores Académicos
     if os.path.exists(ACADEMICO_FILE):
         try:
-            df = pd.read_excel(ACADEMICO_FILE, sheet_name="CONSOLIDADO ACADÉMICO")
-            st.markdown("---")
-            st.markdown("## 🎓 Indicadores Académicos")
+            data = pd.read_excel(ACADEMICO_FILE, sheet_name=None)
+            hoja = "CONSOLIDADO ACADÉMICO"
+            if hoja in data:
+                df = data[hoja]
 
-            indicadores = [("Alumnos/as", df.iloc[1, 1])]
-            for i in range(2, 10):
-                nombre = str(df.iloc[i, 1])
-                valor = df.iloc[i, 2]
-                if pd.notna(nombre) and pd.notna(valor):
-                    if "cumplimiento" in nombre.lower() and isinstance(valor, (int, float)) and valor <= 1:
-                        valor = f"{valor:.0%}".replace(".", ",")
-                    elif isinstance(valor, float) and valor <= 1:
+                st.markdown("---")
+                st.markdown("## 🎓 Indicadores Académicos")
+
+                indicadores = [("Alumnos/as", df.iloc[1, 1])]
+                for i in range(2, 10):
+                    nombre = str(df.iloc[i, 1])
+                    valor = df.iloc[i, 2]
+                    if pd.notna(nombre) and pd.notna(valor):
+                        if "cumplimiento" in nombre.lower() and isinstance(valor, (int, float)) and valor <= 1:
+                            valor = f"{valor:.0%}".replace(".", ",")
+                        elif isinstance(valor, float) and valor <= 1:
+                            valor = f"{valor:.2%}".replace(".", ",")
+                        indicadores.append((nombre, valor))
+
+                nombre = str(df.iloc[10, 1])
+                valor = df.iloc[10, 2]
+                if pd.notna(valor):
+                    if isinstance(valor, float) and valor <= 1:
                         valor = f"{valor:.2%}".replace(".", ",")
                     indicadores.append((nombre, valor))
 
-            nombre = str(df.iloc[10, 1])
-            valor = df.iloc[10, 2]
-            if pd.notna(valor):
-                valor = f"{valor:.2%}".replace(".", ",") if isinstance(valor, float) else valor
-                indicadores.append((nombre, valor))
+                nombre = str(df.iloc[11, 1])
+                valor = df.iloc[11, 2]
+                if pd.notna(valor):
+                    indicadores.append((nombre, int(valor)))
 
-            nombre = str(df.iloc[11, 1])
-            valor = df.iloc[11, 2]
-            if pd.notna(valor):
-                indicadores.append((nombre, int(valor)))
+                for i in range(0, len(indicadores), 4):
+                    cols = st.columns(4)
+                    for j, (titulo, valor) in enumerate(indicadores[i:i+4]):
+                        cols[j].markdown(render_import_card(titulo, valor, "#f0f4c3"), unsafe_allow_html=True)
 
-            for i in range(0, len(indicadores), 4):
-                cols = st.columns(4)
-                for j, (titulo, valor) in enumerate(indicadores[i:i+4]):
-                    cols[j].markdown(render_import_card(titulo, valor, "#f0f4c3"), unsafe_allow_html=True)
-
-            st.markdown("### 🏅 Certificaciones")
-            total_cert = int(df.iloc[13, 2])
-            st.markdown(render_import_card("Total Certificaciones", f"{total_cert}", "#dcedc8"), unsafe_allow_html=True)
+                st.markdown("### 🏅 Certificaciones")
+                total_cert = int(df.iloc[13, 2])
+                st.markdown(render_import_card("Total Certificaciones", f"{total_cert}", "#dcedc8"), unsafe_allow_html=True)
 
         except Exception as e:
             st.warning(f"❌ Error al cargar el archivo académico: {e}")
-    else:
-        st.info("📭 No se encontró el archivo académico.")
