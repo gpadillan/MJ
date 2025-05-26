@@ -47,7 +47,7 @@ def render():
     suma_mensual = df_beca[meses_seleccionados].apply(pd.to_numeric, errors='coerce').fillna(0).sum().reset_index()
     suma_mensual.columns = ['Mes', 'Suma Total']
 
-    # Mostrar gráfico antes de la tabla
+    # 📈 Gráfico antes de la tabla
     fig = px.pie(
         suma_mensual,
         names="Mes",
@@ -57,18 +57,27 @@ def render():
     fig.update_traces(textinfo='percent+label')
     st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("### Suma mensual de Becas ISA")
-    st.dataframe(suma_mensual, use_container_width=True)
+    # 📋 Tabla con total acumulado
+    total_general = suma_mensual["Suma Total"].sum()
+    st.markdown(
+        f"### 📄 Suma mensual de Becas ISA – 🧮 Total acumulado: `{total_general:,.2f} €`"
+    )
 
-    # Guardar para exportación consolidada
-    st.session_state["descarga_becas_isa_mes"] = suma_mensual
+    df_total = suma_mensual.copy()
+    df_total.loc[len(df_total)] = ['TOTAL GENERAL', total_general]
 
+    st.dataframe(df_total, use_container_width=True)
+
+    # 💾 Guardar para exportación consolidada
+    st.session_state["descarga_becas_isa_mes"] = df_total
+
+    # 📤 Exportar Excel
     st.markdown("---")
     st.subheader("📥 Exportar esta hoja")
 
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-        suma_mensual.to_excel(writer, index=False, sheet_name="becas_isa_mes")
+        df_total.to_excel(writer, index=False, sheet_name="becas_isa_mes")
 
     buffer.seek(0)
 

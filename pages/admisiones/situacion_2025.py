@@ -8,7 +8,6 @@ UPLOAD_FOLDER = "uploaded_admisiones"
 EXCEL_FILE = os.path.join(UPLOAD_FOLDER, "matricula_programas_25.xlsx")
 
 def app():
-    # 🔵 Obtener el mes actual en español
     traducciones_meses = {
         "January": "Enero", "February": "Febrero", "March": "Marzo", "April": "Abril",
         "May": "Mayo", "June": "Junio", "July": "Julio", "August": "Agosto",
@@ -17,7 +16,6 @@ def app():
     now = datetime.now()
     mes_actual = traducciones_meses[now.strftime("%B")] + " " + now.strftime("%Y")
 
-    # 🔵 Mostrar el título con el mes actual
     st.markdown(f"<h1>📊 Matrículas por Programa y Propietario - {mes_actual}</h1>", unsafe_allow_html=True)
 
     try:
@@ -71,7 +69,7 @@ def app():
             df_filtrado = df_filtrado[df_filtrado["propietario"] == propietario_seleccionado]
 
         if propietario_seleccionado == "Todos":
-            st.metric(label="Total de ventas (matrículas)", value=df_filtrado.shape[0])
+            st.metric(label="Total alumnos V2", value=df_filtrado.shape[0])
         else:
             tabla_programas = (
                 df_filtrado.groupby("Programa")

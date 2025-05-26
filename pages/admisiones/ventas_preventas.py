@@ -9,6 +9,8 @@ VENTAS_FILE = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
 PREVENTAS_FILE = os.path.join(UPLOAD_FOLDER, "preventas.xlsx")
 
 def app():
+    año_actual = datetime.today().year
+
     traducciones_meses = {
         "January": "Enero", "February": "Febrero", "March": "Marzo", "April": "Abril",
         "May": "Mayo", "June": "Junio", "July": "Julio", "August": "Agosto",
@@ -125,7 +127,7 @@ def app():
             st.markdown(f"""
                 <div style='padding: 1rem; background-color: #f1f3f6; border-left: 5px solid #1f77b4;
                             border-radius: 8px;'>
-                    <h4 style='margin: 0;'>Matrículas</h4>
+                    <h4 style='margin: 0;'>Matrículas ({año_actual})</h4>
                     <p style='font-size: 1.5rem; font-weight: bold; margin: 0;'>{total_oportunidades}</p>
                 </div>
             """, unsafe_allow_html=True)

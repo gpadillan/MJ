@@ -1,4 +1,4 @@
-﻿import streamlit as st
+﻿import streamlit as st 
 import pandas as pd
 import io
 
@@ -30,27 +30,38 @@ def render():
         st.info("Selecciona al menos un año.")
         return
 
-    # ✅ Convertir columnas seleccionadas a números reales
     df_beca[seleccion] = df_beca[seleccion].apply(pd.to_numeric, errors="coerce")
     suma_totales = df_beca[seleccion].sum(numeric_only=True).reset_index()
     suma_totales.columns = ['Año', 'Suma Total']
     suma_totales['Año'] = suma_totales['Año'].str.replace("Total ", "")
 
-    st.markdown("### Gráfico")
+    # 🧮 Total acumulado
+    total_general = suma_totales['Suma Total'].sum()
+
+    # 📊 Gráfico antes de la tabla
+    st.markdown("### 📊 Gráfico")
     st.bar_chart(data=suma_totales.set_index("Año"))
 
-    st.markdown("### Tabla")
-    st.dataframe(suma_totales, use_container_width=True)
+    # 📋 Tabla con total
+    st.markdown(
+        f"### 📄 Suma total por año – 🧮 Total acumulado: `{total_general:,.2f} €`"
+    )
 
-    # Guardar para consolidado
-    st.session_state["descarga_becas_isa"] = suma_totales
+    df_total = suma_totales.copy()
+    df_total.loc[len(df_total)] = ['TOTAL GENERAL', total_general]
 
+    st.dataframe(df_total, use_container_width=True)
+
+    # 💾 Guardar para consolidado
+    st.session_state["descarga_becas_isa"] = df_total
+
+    # 📤 Exportar Excel
     st.markdown("---")
     st.subheader("📥 Exportar esta hoja")
 
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-        suma_totales.to_excel(writer, index=False, sheet_name="becas_isa")
+        df_total.to_excel(writer, index=False, sheet_name="becas_isa")
 
     buffer.seek(0)
 

@@ -69,7 +69,7 @@ def render():
     datos_meses.columns = ['Periodo', 'Suma Total']
 
     # 📊 Gráfico: Totales
-    st.markdown("###  Pendiente por años anteriores)")
+    st.markdown("###  Pendiente por años anteriores")
     fig_totales = px.bar(
         datos_totales,
         x='Periodo',
@@ -113,19 +113,26 @@ def render():
     df_suma['Orden'] = df_suma['Periodo'].apply(orden_custom)
     df_suma = df_suma.sort_values(by='Orden')
 
-    # 📋 Tabla
-    st.markdown("### 📄 Suma total por periodo (años + meses)")
-    st.dataframe(df_suma[['Periodo', 'Suma Total']], use_container_width=True)
+    # 📋 Tabla con total global
+    suma_general = df_suma['Suma Total'].sum()
+    st.markdown(
+        f"### 📄 Suma total por periodo (años + meses) – 🧮 Total acumulado: `{suma_general:,.2f} €`"
+    )
+
+    df_total = df_suma[['Periodo', 'Suma Total']].copy()
+    df_total.loc[len(df_total)] = ['TOTAL GENERAL', suma_general]
+
+    st.dataframe(df_total, use_container_width=True)
 
     # 💾 Guardar para otras vistas
-    st.session_state["descarga_año_2025"] = df_suma[['Periodo', 'Suma Total']]
+    st.session_state["descarga_año_2025"] = df_total
 
     # 📤 Exportar Excel
     st.markdown("---")
     st.subheader("📥 Exportar esta hoja combinada")
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-        df_suma[['Periodo', 'Suma Total']].to_excel(writer, index=False, sheet_name="pendiente_combinado")
+        df_total.to_excel(writer, index=False, sheet_name="pendiente_combinado")
     buffer.seek(0)
     st.download_button(
         label="📥 Descargar hoja: Pendiente por Años y Meses",
