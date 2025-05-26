@@ -29,7 +29,7 @@ def render_import_card(title: str, value, color: str = "#ede7f6"):
         </div>
     """
 
-# Cargar Excel desde SharePoint
+# Cargar Excel desde SharePoint (con corrección)
 def cargar_academico_sharepoint():
     try:
         tenant_id = st.secrets["academica"]["tenant_id"]
@@ -41,8 +41,13 @@ def cargar_academico_sharepoint():
 
         site_url = f"https://{domain}/sites/{site_name}"
         ctx = ClientContext(site_url).with_credentials(ClientCredential(client_id, client_secret))
-        response = ctx.web.get_file_by_server_relative_url(file_path).download().execute_query()
-        return pd.read_excel(io.BytesIO(response.content))
+
+        file = ctx.web.get_file_by_server_relative_url(file_path)
+        file_response = io.BytesIO()
+        file.download(file_response).execute_query()
+        file_response.seek(0)
+
+        return pd.read_excel(file_response)
     except Exception as e:
         st.warning(f"Error al conectar con SharePoint: {e}")
         return None
@@ -153,7 +158,7 @@ def principal_page():
             nombre = str(df_acad.iloc[i, 1])
             valor = df_acad.iloc[i, 2]
             if pd.notna(nombre) and pd.notna(valor):
-                if ("cumplimiento" in nombre.lower() and isinstance(valor, (int, float)) and valor <= 1):
+                if "cumplimiento" in nombre.lower() and isinstance(valor, (int, float)) and valor <= 1:
                     valor = f"{valor:.0%}".replace(".", ",")
                 elif isinstance(valor, float) and valor <= 1:
                     valor = f"{valor:.2%}".replace(".", ",")
