@@ -1,11 +1,14 @@
 import streamlit as st
 from auth import login_page
 from sidebar import show_sidebar
+
+# Páginas activas
 from pages.admisiones import main_admisiones
 from pages.academica.academica_main import academica_page
 from pages.desarrollo_main import desarrollo_page
 from pages import deuda_main
 from pages.inicio import inicio_page
+from pages.principal import principal_page  # ✅ Principal activa
 
 # Inicialización de sesión
 if 'logged_in' not in st.session_state:
@@ -79,7 +82,7 @@ def main():
     if not st.session_state['logged_in']:
         login_page()
     else:
-        show_sidebar()  # Maneja el menú lateral
+        show_sidebar()
 
         current = st.session_state['current_page']
 
@@ -88,11 +91,13 @@ def main():
         elif current == "Admisiones":
             main_admisiones.app()
         elif current == "Academica":
-            academica_page()  # ✅ Ahora funcionará correctamente
+            academica_page()
         elif current == "Desarrollo":
             desarrollo_page()
         elif current == "Gestión de Cobro":
             deuda_main.deuda_page()
+        elif current == "Principal":  # ✅ Página Principal habilitada
+            principal_page()
 
 # Punto de entrada
 if __name__ == "__main__":

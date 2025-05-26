@@ -9,6 +9,7 @@ def show_sidebar():
         st.markdown("### 📂 Navegación")
 
         nav_items = {
+            "Área Principal": "Principal",  # ✅ Agregada
             "Área de Admisiones": "Admisiones",
             "Área Académica": "Academica",
             "Área Desarrollo Profesional": "Desarrollo",
@@ -22,7 +23,6 @@ def show_sidebar():
 
         st.markdown("---")
 
-        # Cerrar sesión
         if st.button("🚪 Cerrar Sesión"):
             st.session_state['logged_in'] = False
             st.session_state['username'] = ""
