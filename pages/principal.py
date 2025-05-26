@@ -2,10 +2,9 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
-
 from pages.academica.sharepoint_utils import get_access_token, get_site_id, download_excel
 
-# ===== Tarjetas de resumen visuales =====
+# ========== Tarjetas visuales ==========
 def render_info_card(title: str, value1, value2, color: str = "#e3f2fd"):
     return f"""
         <div style='padding: 8px; background-color: {color}; border-radius: 8px;
@@ -23,11 +22,11 @@ def render_import_card(title: str, value, color: str = "#ede7f6"):
                     font-size: 13px; text-align: center; border: 1px solid #ccc;
                     box-shadow: 1px 1px 5px rgba(0,0,0,0.1);'>
             <strong>{title}</strong><br>
-            💶 <strong>{value} €</strong>
+            <strong>{value}</strong>
         </div>
     """
 
-# ===== Cargar datos académicos desde SharePoint si no se han cargado antes =====
+# ========== Cargar académicos desde SharePoint si no están ==========
 def load_academica_data():
     if "academica_excel_data" not in st.session_state:
         try:
@@ -41,10 +40,10 @@ def load_academica_data():
             st.warning("⚠️ No se pudo cargar datos académicos automáticamente.")
             st.exception(e)
 
-# ===== FUNCIÓN PRINCIPAL DE LA PÁGINA =====
+# ========== FUNCIÓN PRINCIPAL ==========
 def principal_page():
     st.title("📊 Panel Principal")
-    load_academica_data()  # 🧠 Intenta precargar los datos académicos
+    load_academica_data()
 
     UPLOAD_FOLDER = "uploaded_admisiones"
     GESTION_FOLDER = "uploaded"
@@ -108,9 +107,10 @@ def principal_page():
                 df_estado_totales["Total"] = df_estado_totales.sum(axis=1)
                 estados = df_estado_totales["Total"].to_dict()
 
-    # === SECCIÓN ADMISIÓN: TARJETAS DE MES ===
+    # === ADMISIÓN ===
     st.markdown("## 📥 Admisiones")
     st.markdown(f"### 📅 Matrículas por Mes ({anio_actual})")
+
     meses = [
         (traduccion_meses[m], matriculas_por_mes.get(m, 0), f"{importes_por_mes.get(m, 0):,.2f}".replace(",", "."))
         for m in range(1, mes_actual + 1)
@@ -120,13 +120,12 @@ def principal_page():
         for j, (mes, matriculas, importe) in enumerate(meses[i:i+4]):
             cols[j].markdown(render_info_card(mes, matriculas, importe), unsafe_allow_html=True)
 
-    # === TOTALES GENERALES ===
     st.markdown("### Total General")
     col1, col2 = st.columns(2)
     col1.markdown(render_info_card("Matrículas Totales", total_matriculas, f"{sum(importes_por_mes.values()):,.2f}".replace(",", "."), "#c8e6c9"), unsafe_allow_html=True)
     col2.markdown(render_info_card("Preventas", total_preventas, f"{total_preventas_importe:,.2f}".replace(",", "."), "#ffe0b2"), unsafe_allow_html=True)
 
-    # === SECCIÓN COBRO ===
+    # === COBRO ===
     if estados:
         st.markdown("---")
         st.markdown("## 💼 Gestión de Cobro")
@@ -137,44 +136,29 @@ def principal_page():
             for j, (estado, total) in enumerate(estado_items[i:i+4]):
                 cols[j].markdown(render_import_card(f"Estado: {estado}", f"{total:,.2f}".replace(",", ".")), unsafe_allow_html=True)
 
-    # === SECCIÓN ACADÉMICA ===
+    # === ACADÉMICA ===
     if "academica_excel_data" in st.session_state:
         data = st.session_state["academica_excel_data"]
         hoja = "CONSOLIDADO ACADÉMICO"
 
         if hoja in data:
             df = data[hoja]
-
             st.markdown("---")
             st.markdown("## 🎓 Indicadores Académicos")
 
             indicadores = []
-
             try:
-                total_alumnos = int(df.iloc[1, 1])
-                indicadores.append(("Alumnos/as", total_alumnos))
-
-                for i in range(2, 10):
-                    nombre = str(df.iloc[i, 1])
-                    valor = df.iloc[i, 2]
-                    if pd.notna(nombre) and pd.notna(valor):
-                        if "cumplimiento" in nombre.lower() and isinstance(valor, (int, float)) and valor <= 1:
-                            valor = f"{valor:.0%}".replace(".", ",")
-                        elif isinstance(valor, float) and valor <= 1:
-                            valor = f"{valor:.2%}".replace(".", ",")
-                        indicadores.append((nombre, valor))
-
-                nombre = str(df.iloc[10, 1])
-                valor = df.iloc[10, 2]
-                if pd.notna(valor):
-                    if isinstance(valor, float) and valor <= 1:
-                        valor = f"{valor:.2%}".replace(".", ",")
-                    indicadores.append((nombre, valor))
-
-                nombre = str(df.iloc[11, 1])
-                valor = df.iloc[11, 2]
-                if pd.notna(valor):
-                    indicadores.append((nombre, int(valor)))
+                indicadores.append(("🧑‍🎓 Alumnos/as", int(df.iloc[1, 1])))
+                indicadores.append(("🎯 Éxito académico", f"{df.iloc[2, 2]:.2%}".replace(".", ",")))
+                indicadores.append(("🚫 Absentismo", f"{df.iloc[3, 2]:.2%}".replace(".", ",")))
+                indicadores.append(("⚠️ Riesgo", f"{df.iloc[4, 2]:.2%}".replace(".", ",")))
+                indicadores.append(("📅 Cumpl. Fechas Docente", f"{df.iloc[5, 2]:.0%}".replace(".", ",")))
+                indicadores.append(("📅 Cumpl. Fechas Alumnado", f"{df.iloc[6, 2]:.0%}".replace(".", ",")))
+                indicadores.append(("📄 Cierre Exp. Académico", f"{df.iloc[7, 2]:.2%}".replace(".", ",")))
+                indicadores.append(("😃 Satisfacción Alumnado", f"{df.iloc[8, 2]:.2%}".replace(".", ",")))
+                indicadores.append(("⭐ Reseñas", f"{df.iloc[9, 2]:.2%}".replace(".", ",")))
+                indicadores.append(("📢 Recomendación Docente", int(df.iloc[10, 2])))
+                indicadores.append(("📣 Reclamaciones", int(df.iloc[11, 2])))
 
                 for i in range(0, len(indicadores), 4):
                     cols = st.columns(4)
@@ -183,7 +167,7 @@ def principal_page():
 
                 st.markdown("### 🏅 Certificaciones")
                 total_cert = int(df.iloc[13, 2])
-                st.markdown(render_import_card("Total Certificaciones", f"{total_cert}", "#dcedc8"), unsafe_allow_html=True)
+                st.markdown(render_import_card("🎖️ Total Certificaciones", total_cert, "#dcedc8"), unsafe_allow_html=True)
 
             except Exception as e:
                 st.warning("⚠️ Error al procesar los indicadores académicos.")
