@@ -1,7 +1,6 @@
-import pandas as pd 
+import pandas as pd
 import streamlit as st
 import plotly.express as px
-from datetime import datetime
 
 def render(df):
     st.title("Informe de Cierre de Expedientes")
@@ -68,49 +67,28 @@ def render(df):
     total_empresa_pract = df_filtrado['EMPRESA PRÁCT.'][~df_filtrado['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])].shape[0]
 
     with st.container():
-        col1, col2, col3, col4, col5 = st.columns(5)
-        col1.markdown(f"""
-            <div style='padding: 6px; background-color: #e3f2fd; border-radius: 8px; font-size: 13px; text-align: center'>
-                {'Total CONSECUCIÓN GE' if "Total" in opcion else f'CONSECUCIÓN GE {anio_seleccionado}'}<br><strong style='font-size: 16px'>{total_consecucion}</strong>
-            </div>
-        """, unsafe_allow_html=True)
-        col2.markdown(f"""
-            <div style='padding: 6px; background-color: #fce4ec; border-radius: 8px; font-size: 13px; text-align: center'>
-                {'Total INAPLICACIÓN GE' if "Total" in opcion else f'INAPLICACIÓN GE {anio_seleccionado}'}<br><strong style='font-size: 16px'>{total_inaplicacion}</strong>
-            </div>
-        """, unsafe_allow_html=True)
-        col3.markdown(f"""
-            <div style='padding: 6px; background-color: #e8f5e9; border-radius: 8px; font-size: 13px; text-align: center'>
-                Prácticas GE actuales<br><strong style='font-size: 16px'>{total_practicas_actual}</strong>
-            </div>
-        """, unsafe_allow_html=True)
-        col4.markdown(f"""
-            <div style='padding: 6px; background-color: #ede7f6; border-radius: 8px; font-size: 13px; text-align: center'>
-                Alumnado total en PRÁCTICAS GE<br><strong style='font-size: 16px'>{total_empresa_ge}</strong>
-            </div>
-        """, unsafe_allow_html=True)
-        col5.markdown(f"""
-            <div style='padding: 6px; background-color: #f3e5f5; border-radius: 8px; font-size: 13px; text-align: center'>
-                Alumnado con EMPRESA PRÁCT.<br><strong style='font-size: 16px'>{total_empresa_pract}</strong>
-            </div>
-        """, unsafe_allow_html=True)
+        if "Total" in opcion:
+            col1, col2, col3, col4, col5 = st.columns(5)
+            col1.markdown(info_card("Total CONSECUCIÓN", total_consecucion, "#e3f2fd"))
+            col2.markdown(info_card("Total INAPLICACIÓN", total_inaplicacion, "#fce4ec"))
+            col3.markdown(info_card("Prácticas actuales", total_practicas_actual, "#e8f5e9"))
+            col4.markdown(info_card("Alumnado total en PRÁCTICAS", total_empresa_ge, "#ede7f6"))
+            col5.markdown(info_card("Alumnado PRÁCTICAS", total_empresa_pract, "#f3e5f5"))
+        else:
+            col1, col2, col3 = st.columns(3)
+            col1.markdown(info_card(f"CONSECUCIÓN {anio_seleccionado}", total_consecucion, "#e3f2fd"))
+            col2.markdown(info_card(f"INAPLICACIÓN {anio_seleccionado}", total_inaplicacion, "#fce4ec"))
+            col3.markdown(info_card("Alumnado PRÁCTICAS", total_empresa_pract, "#f3e5f5"))
 
     st.markdown("### Cierres gestionados por Consultor")
-
     df_cierre = pd.concat([
         df_filtrado[df_filtrado['CONSECUCIÓN_BOOL']][['CONSULTOR EIP']].assign(CIERRE='CONSECUCIÓN'),
         df_filtrado[df_filtrado['INAPLICACIÓN_BOOL']][['CONSULTOR EIP']].assign(CIERRE='INAPLICACIÓN')
     ])
 
     resumen_total_cierres = df_cierre.groupby('CONSULTOR EIP').size().reset_index(name='TOTAL_CIERRES')
-
-    fig_pie = px.pie(
-        resumen_total_cierres,
-        names='CONSULTOR EIP',
-        values='TOTAL_CIERRES',
-        title=f'Distribución de cierres por Consultor ({opcion})',
-        hole=0
-    )
+    fig_pie = px.pie(resumen_total_cierres, names='CONSULTOR EIP', values='TOTAL_CIERRES',
+                     title=f'Distribución de cierres por Consultor ({opcion})', hole=0)
     fig_pie.update_traces(textinfo='label+value')
     st.plotly_chart(fig_pie, use_container_width=True)
 
@@ -125,26 +103,24 @@ def render(df):
     df_valid_area_pract = df_valid_area.copy()
 
     resumen_area = pd.DataFrame()
-    resumen_area['TOTAL CONSECUCIÓN GE'] = df_valid_area[df_valid_area['CONSECUCIÓN_BOOL']].groupby('AREA').size()
-    resumen_area['TOTAL INAPLICACIÓN GE'] = df_valid_area[df_valid_area['INAPLICACIÓN_BOOL']].groupby('AREA').size()
-    resumen_area['TOTAL PRÁCTICAS GE'] = df_valid_area_pract[df_valid_area_pract['PRACTICAS_BOOL']].groupby('AREA').size()
-    resumen_area = resumen_area.fillna(0).astype(int).sort_values(by='TOTAL CONSECUCIÓN GE', ascending=False)
+    resumen_area['TOTAL CONSECUCIÓN'] = df_valid_area[df_valid_area['CONSECUCIÓN_BOOL']].groupby('AREA').size()
+    resumen_area['TOTAL INAPLICACIÓN'] = df_valid_area[df_valid_area['INAPLICACIÓN_BOOL']].groupby('AREA').size()
+    resumen_area['TOTAL PRÁCTICAS'] = df_valid_area_pract[df_valid_area_pract['PRACTICAS_BOOL']].groupby('AREA').size()
+    resumen_area = resumen_area.fillna(0).astype(int).sort_values(by='TOTAL CONSECUCIÓN', ascending=False)
 
-    # Añadir fila de totales
     total_row = pd.DataFrame(resumen_area.sum()).T
     total_row.index = ['Total']
     resumen_area = pd.concat([resumen_area, total_row])
     resumen_area.index = list(range(1, len(resumen_area))) + ['Total']
 
     styled_area = resumen_area.style \
-        .background_gradient(subset=['TOTAL CONSECUCIÓN GE'], cmap='Greens') \
-        .background_gradient(subset=['TOTAL INAPLICACIÓN GE'], cmap='Reds') \
-        .background_gradient(subset=['TOTAL PRÁCTICAS GE'], cmap='Blues')
+        .background_gradient(subset=['TOTAL CONSECUCIÓN'], cmap='Greens') \
+        .background_gradient(subset=['TOTAL INAPLICACIÓN'], cmap='Reds') \
+        .background_gradient(subset=['TOTAL PRÁCTICAS'], cmap='Blues')
 
     st.dataframe(styled_area, use_container_width=True)
 
     col_emp1, col_emp2 = st.columns(2)
-
     with col_emp1:
         st.markdown("#### Tabla: EMPRESA GE")
         empresa_ge = df_empresas['EMPRESA GE'][~df_empresas['EMPRESA GE'].isin(['', 'NO ENCONTRADO'])]
@@ -160,3 +136,13 @@ def render(df):
         empresa_pract.columns = ['EMPRESA PRÁCT.', 'EMPLEOS']
         styled_pract = empresa_pract.style.background_gradient(subset=['EMPLEOS'], cmap='PuBu', vmax=20)
         st.dataframe(styled_pract, use_container_width=True)
+
+def info_card(title, value, color):
+    return f"""
+        <div style='padding: 8px; background-color: {color}; border-radius: 8px;
+                    font-size: 13px; text-align: center; border: 1px solid #ccc;
+                    box-shadow: 1px 1px 5px rgba(0,0,0,0.1);'>
+            <strong>{title}</strong><br>
+            <span style='font-size: 16px;'><strong>{value}</strong></span>
+        </div>
+    """
