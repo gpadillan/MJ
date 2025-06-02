@@ -8,12 +8,10 @@ from pages.academica.gestion_corporativa import show_gestion_corporativa
 def academica_page():
     st.title("📚 Indicadores Académicos - EIP")
 
-    # Botón para actualizar datos
     if st.button("🔄 Actualizar datos"):
         st.session_state["academica_opcion"] = "Consolidado Académico"
         st.rerun()
 
-    # Cargar configuración
     config = st.secrets["academica"]
     token = get_access_token(config)
     if not token:
@@ -31,9 +29,19 @@ def academica_page():
         return
 
     try:
-        excel_data = pd.read_excel(file, sheet_name=None)
+        # Lectura robusta del Excel
+        excel_data_raw = pd.read_excel(file, sheet_name=None, header=None)
 
-        # Inicializar subcategoría si no existe en sesión
+        excel_data = {}
+        for sheet_name, df in excel_data_raw.items():
+            headers = df.iloc[0].tolist()
+            headers = [f"col_{i}" if h == "" else str(h) for i, h in enumerate(headers)]
+            headers = pd.io.parsers.ParserBase({'names': headers})._maybe_dedup_names(headers)
+
+            cleaned_df = df[1:]
+            cleaned_df.columns = headers
+            excel_data[sheet_name] = cleaned_df
+
         if "academica_opcion" not in st.session_state:
             st.session_state["academica_opcion"] = "Consolidado Académico"
 
@@ -43,7 +51,6 @@ def academica_page():
             key="academica_opcion"
         )
 
-        # Mostrar contenido según subcategoría elegida
         if opcion == "Consolidado Académico":
             show_consolidado(excel_data)
         elif opcion == "Área TECH":
