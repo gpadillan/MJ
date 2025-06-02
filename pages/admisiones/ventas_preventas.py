@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 import os
 from datetime import datetime
-from responsive import get_screen_size  # 👈 Añadido
+from responsive import get_screen_size  # 👈 Importamos la función
 
 UPLOAD_FOLDER = "uploaded_admisiones"
 VENTAS_FILE = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
@@ -11,7 +11,8 @@ PREVENTAS_FILE = os.path.join(UPLOAD_FOLDER, "preventas.xlsx")
 
 def app():
     año_actual = datetime.today().year
-    width, height = get_screen_size()  # 👈 Detectar tamaño de pantalla
+    width, height = get_screen_size()
+    is_mobile = width <= 400  # 👈 Detectamos si es móvil
 
     traducciones_meses = {
         "January": "Enero", "February": "Febrero", "March": "Marzo", "April": "Abril",
@@ -84,10 +85,11 @@ def app():
             orden_propietarios = totales_propietario.sort_values(by='Total Oportunidades', ascending=False)['propietario_display'].tolist()
             orden_masters = resumen.groupby('nombre')['Total Oportunidades'].sum().sort_values(ascending=False).index.tolist()
 
+            # 📱 Móvil: cambiamos orientación
             fig = px.scatter(
                 resumen,
-                x='nombre',
-                y='propietario_display',
+                x='nombre' if not is_mobile else 'propietario_display',
+                y='propietario_display' if not is_mobile else 'nombre',
                 size='Total Oportunidades',
                 color='propietario_display',
                 text='Total Oportunidades',
@@ -98,19 +100,25 @@ def app():
 
             fig.update_traces(
                 textposition='middle center',
-                textfont_size=16,
+                textfont_size=14,
                 textfont_color='white',
                 textfont_family='Arial Black',
                 marker=dict(line=dict(color='black', width=1.5))
             )
 
             fig.update_layout(
-                xaxis_title='Máster',
-                yaxis_title='Propietario',
-                legend_title='Propietario (Total)'
+                xaxis_title='Máster' if not is_mobile else 'Propietario',
+                yaxis_title='Propietario' if not is_mobile else 'Máster',
+                legend_title='Propietario (Total)',
+                margin=dict(l=20, r=20, t=50, b=20)
             )
-            fig.update_yaxes(categoryorder='array', categoryarray=orden_propietarios[::-1])
-            fig.update_xaxes(categoryorder='array', categoryarray=orden_masters)
+
+            if not is_mobile:
+                fig.update_yaxes(categoryorder='array', categoryarray=orden_propietarios[::-1])
+                fig.update_xaxes(categoryorder='array', categoryarray=orden_masters)
+            else:
+                fig.update_xaxes(categoryorder='array', categoryarray=orden_propietarios)
+                fig.update_yaxes(categoryorder='array', categoryarray=orden_masters[::-1])
 
             st.plotly_chart(fig)
 
