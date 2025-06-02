@@ -147,6 +147,40 @@ def render(df):
         styled_pract = empresa_pract.style.background_gradient(subset=['EMPLEOS'], cmap='PuBu', vmax=20)
         st.dataframe(styled_pract, use_container_width=True)
 
+    # 🔽 OBJETIVOS %
+    st.markdown("## 🎯 OBJETIVOS %")
+
+    df_validos = df[df['CONSULTOR EIP'].str.upper() != 'NO ENCONTRADO']
+    total_validos = df_validos.shape[0]
+
+    insercion_empleo = df_validos[df_validos['CONSECUCIÓN GE'].astype(str).str.upper() == 'TRUE']
+    porcentaje_empleo = round((insercion_empleo.shape[0] / total_validos) * 100, 2)
+
+    cond_cierre_dp = (
+        (df_validos['CONSECUCIÓN GE'].astype(str).str.upper() == 'TRUE') &
+        (df_validos['DEVOLUCIÓN GE'].astype(str).str.upper() == 'TRUE') &
+        (df_validos['INAPLICACIÓN GE'].astype(str).str.upper() == 'TRUE')
+    )
+    cierre_dp = df_validos[cond_cierre_dp]
+    porcentaje_cierre_dp = round((cierre_dp.shape[0] / total_validos) * 100, 2)
+
+    cond_practicas = ~df_validos['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])
+    practicas = df_validos[cond_practicas]
+    porcentaje_practicas = round((practicas.shape[0] / total_validos) * 100, 2)
+
+    cond_conversion = (
+        (df_validos['EMPRESA PRÁCT.'] == df_validos['EMPRESA GE']) &
+        (~df_validos['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO']))
+    )
+    conversion = df_validos[cond_conversion]
+    porcentaje_conversion = round((conversion.shape[0] / total_validos) * 100, 2)
+
+    col_obj1, col_obj2, col_obj3, col_obj4 = st.columns(4)
+    col_obj1.markdown(render_card("Inserción laboral Empleo", f"{porcentaje_empleo}%", "#c8e6c9"), unsafe_allow_html=True)
+    col_obj2.markdown(render_card("Cierre de expediente Desarrollo Profesional", f"{porcentaje_cierre_dp}%", "#b2dfdb"), unsafe_allow_html=True)
+    col_obj3.markdown(render_card("Inserción Laboral Prácticas", f"{porcentaje_practicas}%", "#ffe082"), unsafe_allow_html=True)
+    col_obj4.markdown(render_card("Conversión prácticas a empresa", f"{porcentaje_conversion}%", "#f8bbd0"), unsafe_allow_html=True)
+
 def render_card(title, value, color):
     return f"""
         <div style='padding: 8px; background-color: {color}; border-radius: 8px; font-size: 13px; text-align: center; border: 1px solid #ccc; box-shadow: 1px 1px 5px rgba(0,0,0,0.1);'>
