@@ -1,8 +1,19 @@
-import pandas as pd 
+import pandas as pd
 import streamlit as st
 import plotly.express as px
+
 from datetime import datetime
 
+# ✅ Función para renderizar tarjetas visuales
+def render_card(title, value, color):
+    return f"""
+        <div style="background-color:{color}; padding:16px; border-radius:12px; text-align:center; box-shadow: 0 4px 8px rgba(0,0,0,0.1)">
+            <h4 style="margin-bottom:0.5em">{title}</h4>
+            <h2 style="margin:0">{value}</h2>
+        </div>
+    """
+
+# ✅ Función principal
 def render(df):
     st.title("Informe de Cierre de Expedientes")
 
@@ -10,7 +21,7 @@ def render(df):
 
     columnas_requeridas = ['CONSECUCIÓN GE', 'DEVOLUCIÓN GE', 'INAPLICACIÓN GE',
                            'MODALIDAD PRÁCTICAS', 'CONSULTOR EIP', 'PRÁCTCAS/GE',
-                           'EMPRESA PRÁCT.', 'EMPRESA GE', 'AREA', 'AÑO']
+                           'EMPRESA PRÁCT.', 'EMPRESA GE', 'AREA', 'AÑO', 'NOMBRE']
     if not all(col in df.columns for col in columnas_requeridas):
         st.error("Faltan columnas requeridas en el DataFrame.")
         st.write("Columnas encontradas:", df.columns.tolist())
@@ -21,6 +32,7 @@ def render(df):
     df['EMPRESA GE'] = df['EMPRESA GE'].astype(str).str.strip().str.upper()
     df['AREA'] = df['AREA'].astype(str).str.strip().str.upper()
     df['AÑO'] = pd.to_numeric(df['AÑO'], errors='coerce')
+    df['NOMBRE'] = df['NOMBRE'].astype(str).str.strip()
 
     df['CONSULTOR EIP'] = df['CONSULTOR EIP'].astype(str).str.strip()
     df['CONSULTOR EIP'] = df['CONSULTOR EIP'].replace('', 'Otros').fillna('Otros')
@@ -40,9 +52,6 @@ def render(df):
     else:
         anio_seleccionado = int(opcion.split()[-1])
         df_base = df[df['AÑO'] == anio_seleccionado].copy()
-
-    df_base['CONSECUCIÓN_BOOL'] = df_base['CONSECUCIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
-    df_base['INAPLICACIÓN_BOOL'] = df_base['INAPLICACIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
 
     consultores_unicos = sorted(df_base['CONSULTOR EIP'].dropna().unique())
     seleccion_consultores = st.multiselect(
@@ -83,12 +92,10 @@ def render(df):
             col3.markdown(render_card("Alumnado PRÁCTICAS", total_empresa_pract, "#f3e5f5"), unsafe_allow_html=True)
 
     st.markdown("### Cierres gestionados por Consultor")
-
     df_cierre = pd.concat([
         df_filtrado[df_filtrado['CONSECUCIÓN_BOOL']][['CONSULTOR EIP']].assign(CIERRE='CONSECUCIÓN'),
         df_filtrado[df_filtrado['INAPLICACIÓN_BOOL']][['CONSULTOR EIP']].assign(CIERRE='INAPLICACIÓN')
     ])
-
     resumen_total_cierres = df_cierre.groupby('CONSULTOR EIP').size().reset_index(name='TOTAL_CIERRES')
 
     fig_pie = px.pie(
@@ -126,7 +133,6 @@ def render(df):
         .background_gradient(subset=['TOTAL CONSECUCIÓN'], cmap='Greens') \
         .background_gradient(subset=['TOTAL INAPLICACIÓN'], cmap='Reds') \
         .background_gradient(subset=['TOTAL PRÁCTICAS'], cmap='Blues')
-
     st.dataframe(styled_area, use_container_width=True)
 
     col_emp1, col_emp2 = st.columns(2)
@@ -136,55 +142,45 @@ def render(df):
         empresa_ge = df_empresas['EMPRESA GE'][~df_empresas['EMPRESA GE'].isin(['', 'NO ENCONTRADO'])]
         empresa_ge = empresa_ge.value_counts().reset_index()
         empresa_ge.columns = ['EMPRESA GE', 'EMPLEOS']
-        styled_ge = empresa_ge.style.background_gradient(subset=['EMPLEOS'], cmap='YlOrBr', vmax=20)
-        st.dataframe(styled_ge, use_container_width=True)
+        st.dataframe(empresa_ge.style.background_gradient(subset=['EMPLEOS'], cmap='YlOrBr'), use_container_width=True)
 
     with col_emp2:
         st.markdown("#### Tabla: EMPRESA PRÁCT.")
         empresa_pract = df_empresas['EMPRESA PRÁCT.'][~df_empresas['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])]
         empresa_pract = empresa_pract.value_counts().reset_index()
         empresa_pract.columns = ['EMPRESA PRÁCT.', 'EMPLEOS']
-        styled_pract = empresa_pract.style.background_gradient(subset=['EMPLEOS'], cmap='PuBu', vmax=20)
-        st.dataframe(styled_pract, use_container_width=True)
+        st.dataframe(empresa_pract.style.background_gradient(subset=['EMPLEOS'], cmap='PuBu'), use_container_width=True)
 
     # 🔽 OBJETIVOS %
     st.markdown("## 🎯 OBJETIVOS %")
 
-    df_validos = df[df['NOMBRE'].astype(str).str.upper() != 'NO ENCONTRADO']
+    df_validos = df[df['NOMBRE'].str.upper() != 'NO ENCONTRADO']
     total_validos = df_validos['NOMBRE'].nunique()
 
-    insercion_empleo = df_validos[df_validos['CONSECUCIÓN GE'].astype(str).str.upper() == 'TRUE']
-    porcentaje_empleo = round((insercion_empleo.shape[0] / total_validos) * 100, 2)
+    insercion_empleo = df_validos[df_validos['CONSECUCIÓN GE'] == 'TRUE']
+    porcentaje_empleo = round((insercion_empleo['NOMBRE'].nunique() / total_validos) * 100, 2)
 
     cond_cierre_dp = (
-        (df_validos['CONSECUCIÓN GE'].astype(str).str.upper() == 'TRUE') &
-        (df_validos['DEVOLUCIÓN GE'].astype(str).str.upper() == 'TRUE') &
-        (df_validos['INAPLICACIÓN GE'].astype(str).str.upper() == 'TRUE')
+        (df_validos['CONSECUCIÓN GE'] == 'TRUE') |
+        (df_validos['DEVOLUCIÓN GE'] == 'TRUE') |
+        (df_validos['INAPLICACIÓN GE'] == 'TRUE')
     )
     cierre_dp = df_validos[cond_cierre_dp]
-    porcentaje_cierre_dp = round((cierre_dp.shape[0] / total_validos) * 100, 2)
+    porcentaje_cierre_dp = round((cierre_dp['NOMBRE'].nunique() / total_validos) * 100, 2)
 
     cond_practicas = ~df_validos['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])
     practicas = df_validos[cond_practicas]
-    porcentaje_practicas = round((practicas.shape[0] / total_validos) * 100, 2)
+    porcentaje_practicas = round((practicas['NOMBRE'].nunique() / total_validos) * 100, 2)
 
     cond_conversion = (
         (df_validos['EMPRESA PRÁCT.'] == df_validos['EMPRESA GE']) &
         (~df_validos['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO']))
     )
     conversion = df_validos[cond_conversion]
-    porcentaje_conversion = round((conversion.shape[0] / total_validos) * 100, 2)
+    porcentaje_conversion = round((conversion['NOMBRE'].nunique() / total_validos) * 100, 2)
 
     col_obj1, col_obj2, col_obj3, col_obj4 = st.columns(4)
     col_obj1.markdown(render_card("Inserción laboral Empleo", f"{porcentaje_empleo}%", "#c8e6c9"), unsafe_allow_html=True)
     col_obj2.markdown(render_card("Cierre de expediente Desarrollo Profesional", f"{porcentaje_cierre_dp}%", "#b2dfdb"), unsafe_allow_html=True)
     col_obj3.markdown(render_card("Inserción Laboral Prácticas", f"{porcentaje_practicas}%", "#ffe082"), unsafe_allow_html=True)
     col_obj4.markdown(render_card("Conversión prácticas a empresa", f"{porcentaje_conversion}%", "#f8bbd0"), unsafe_allow_html=True)
-
-def render_card(title, value, color):
-    return f"""
-        <div style='padding: 8px; background-color: {color}; border-radius: 8px; font-size: 13px; text-align: center; border: 1px solid #ccc; box-shadow: 1px 1px 5px rgba(0,0,0,0.1);'>
-            <strong>{title}</strong><br>
-            <span style='font-size: 16px;'><strong>{value}</strong></span>
-        </div>
-    """
