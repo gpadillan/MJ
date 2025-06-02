@@ -150,8 +150,8 @@ def render(df):
     # 🔽 OBJETIVOS %
     st.markdown("## 🎯 OBJETIVOS %")
 
-    df_validos = df[df['CONSULTOR EIP'].str.upper() != 'NO ENCONTRADO']
-    total_validos = df_validos.shape[0]
+    df_validos = df[df['NOMBRE'].astype(str).str.upper() != 'NO ENCONTRADO']
+    total_validos = df_validos['NOMBRE'].nunique()
 
     insercion_empleo = df_validos[df_validos['CONSECUCIÓN GE'].astype(str).str.upper() == 'TRUE']
     porcentaje_empleo = round((insercion_empleo.shape[0] / total_validos) * 100, 2)
