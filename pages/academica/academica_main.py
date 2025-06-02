@@ -5,6 +5,17 @@ from pages.academica.consolidado import show_consolidado
 from pages.academica.area_tech import show_area_tech
 from pages.academica.gestion_corporativa import show_gestion_corporativa
 
+def deduplicate_headers(headers):
+    seen = {}
+    result = []
+    for h in headers:
+        key = h if h else "Unnamed"
+        count = seen.get(key, 0)
+        new_key = key if count == 0 else f"{key}.{count}"
+        result.append(new_key)
+        seen[key] = count + 1
+    return result
+
 def academica_page():
     st.title("📚 Indicadores Académicos - EIP")
 
@@ -29,19 +40,17 @@ def academica_page():
         return
 
     try:
-        # Lectura robusta del Excel
-        excel_data_raw = pd.read_excel(file, sheet_name=None, header=None)
-
+        # Leer todas las hojas como dataframes
         excel_data = {}
-        for sheet_name, df in excel_data_raw.items():
-            headers = df.iloc[0].tolist()
-            headers = [f"col_{i}" if h == "" else str(h) for i, h in enumerate(headers)]
-            headers = pd.io.parsers.ParserBase({'names': headers})._maybe_dedup_names(headers)
+        all_sheets = pd.read_excel(file, sheet_name=None, header=None)
 
-            cleaned_df = df[1:]
-            cleaned_df.columns = headers
-            excel_data[sheet_name] = cleaned_df
+        for sheet_name, df in all_sheets.items():
+            headers = deduplicate_headers(df.iloc[0].tolist())
+            df_cleaned = df[1:].copy()
+            df_cleaned.columns = headers
+            excel_data[sheet_name] = df_cleaned
 
+        # Inicializar subcategoría si no está
         if "academica_opcion" not in st.session_state:
             st.session_state["academica_opcion"] = "Consolidado Académico"
 

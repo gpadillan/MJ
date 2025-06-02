@@ -7,6 +7,18 @@ from datetime import datetime
 UPLOAD_FOLDER = "uploaded_admisiones"
 ARCHIVO_DESARROLLO = os.path.join(UPLOAD_FOLDER, "desarrollo_profesional.xlsx")
 
+
+def clean_headers(df):
+    df.columns = [
+        str(col).strip().upper() if str(col).strip() != '' else f'UNNAMED_{i}'
+        for i, col in enumerate(df.columns)
+    ]
+    if len(df.columns) != len(set(df.columns)):
+        st.warning("⚠️ Se encontraron columnas duplicadas. Se eliminarán automáticamente.")
+        df = df.loc[:, ~df.columns.duplicated()]
+    return df
+
+
 def render(df=None):
     st.title("📊 Principal - Área de Desarrollo Profesional")
 
@@ -15,7 +27,7 @@ def render(df=None):
             return
         df = pd.read_excel(ARCHIVO_DESARROLLO)
 
-    df.columns = df.columns.str.strip().str.upper()
+    df = clean_headers(df)
 
     columnas_necesarias = [
         'CONSECUCIÓN GE', 'DEVOLUCIÓN GE', 'INAPLICACIÓN GE',
@@ -27,6 +39,9 @@ def render(df=None):
     if columnas_faltantes:
         st.error(f"❌ Faltan columnas necesarias: {', '.join(columnas_faltantes)}")
         return
+
+    if st.checkbox("🔍 Ver columnas cargadas del Excel"):
+        st.write(df.columns.tolist())
 
     for col in ['CONSECUCIÓN GE', 'DEVOLUCIÓN GE', 'INAPLICACIÓN GE']:
         df[col] = df[col].map(lambda x: str(x).strip().lower() in ['true', 'verdadero', 'sí', 'si', '1'])
@@ -87,7 +102,6 @@ def render(df=None):
 
     total_alumnos = conteo_area['Cantidad'].sum()
 
-    # 🔄 Riesgo económico por 3 meses de diferencia
     df['FIN CONV'] = pd.to_datetime(df['FIN CONV'], errors='coerce')
     df['MES 3M'] = pd.to_datetime(df['MES 3M'], errors='coerce')
 
@@ -162,4 +176,3 @@ def render(df=None):
         fig_pie_consultor.update_layout(height=500)
         st.subheader("Alumnado por Consultor")
         st.plotly_chart(fig_pie_consultor, use_container_width=True)
-
