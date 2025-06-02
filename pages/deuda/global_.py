@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import io
+import plotly.io as pio
 
 def render():
     st.subheader("Estado")
@@ -19,7 +20,6 @@ def render():
 
     año_actual = st.session_state.get('año_actual', datetime.today().year)
 
-    # --- Inicialización de filtros ---
     estados_unicos = sorted(df['Estado'].dropna().unique())
     columnas_totales = [f'Total {a}' for a in range(2018, año_actual)]
     meses_actuales = [f'{mes} {año_actual}' for mes in [
@@ -28,7 +28,6 @@ def render():
     ]]
     columnas_disponibles = columnas_totales + meses_actuales
 
-    # --- Filtros persistentes sin conflicto ---
     estados_seleccionados = st.multiselect(
         "Filtrar por Estado",
         estados_unicos,
@@ -52,7 +51,6 @@ def render():
         st.info("Selecciona al menos una columna válida.")
         return
 
-    # --- Procesamiento de datos ---
     df_filtrado = df[df['Estado'].isin(estados_seleccionados)].copy()
     df_filtrado[columnas_existentes] = df_filtrado[columnas_existentes].apply(pd.to_numeric, errors='coerce').fillna(0)
 
@@ -60,73 +58,106 @@ def render():
     fila_total = pd.DataFrame(df_grouped[columnas_existentes].sum()).T
     fila_total.insert(0, "Estado", "Total general")
     df_final = pd.concat([df_grouped, fila_total], ignore_index=True)
-
-    # 🔢 Calcular total por fila
     df_final["Total fila"] = df_final[columnas_existentes].sum(axis=1)
 
-    # --- Mostrar tabla principal ---
     st.markdown("### Totales agrupados por Estado")
     st.dataframe(df_final, use_container_width=True)
 
-    # --- Gráfico agrupado por periodo ---
+    # GRÁFICO AGRUPADO POR PERIODO
     df_melted = df_grouped.melt(id_vars="Estado", var_name="Periodo", value_name="Total")
     st.markdown("### Totales por Estado y Periodo")
-    fig = px.bar(
+    fig1 = px.bar(
         df_melted,
         x="Estado",
         y="Total",
         color="Periodo",
         barmode="group",
         text_auto=".2s",
-        height=500
+        height=500,
+        template="plotly_white"
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig1, use_container_width=True)
 
-    # --- Gráfico total acumulado ---
+    # GRÁFICO TOTAL ACUMULADO
     st.markdown("### Total acumulado por Estado")
     df_grouped["Total acumulado"] = df_grouped[columnas_existentes].sum(axis=1)
-    fig_total = px.bar(
+    fig2 = px.bar(
         df_grouped,
         x="Total acumulado",
         y="Estado",
         color="Estado",
         orientation="h",
         text_auto=".2s",
-        height=450
+        height=450,
+        template="plotly_white"
     )
-    st.plotly_chart(fig_total, use_container_width=True)
+    st.plotly_chart(fig2, use_container_width=True)
 
-    # --- Donut de Forma de Pago ---
+    # DONUT FORMA DE PAGO
+    fig3 = None
     if "Forma Pago" in df_filtrado.columns:
         df_pago = df_filtrado.copy()
         df_pago["Total Periodo"] = df_pago[columnas_existentes].sum(axis=1)
         resumen_pago = df_pago.groupby("Forma Pago")["Total Periodo"].sum().reset_index()
 
         st.markdown("### Distribución Forma de Pago")
-        fig_donut = px.pie(
+        fig3 = px.pie(
             resumen_pago,
             names="Forma Pago",
             values="Total Periodo",
-            hole=0.5
+            hole=0.5,
+            template="plotly_white"
         )
-        fig_donut.update_traces(textposition="inside", textinfo="label+percent+value")
-        fig_donut.update_layout(height=700)
-        st.plotly_chart(fig_donut, use_container_width=True)
+        fig3.update_traces(textposition="inside", textinfo="label+percent+value")
+        fig3.update_layout(height=700)
+        st.plotly_chart(fig3, use_container_width=True)
 
-    # --- Exportación ---
+    # EXPORTAR EXCEL
     st.session_state["descarga_global"] = df_final
-
     st.markdown("---")
     st.subheader("📥 Exportar esta hoja")
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
         df_final.to_excel(writer, index=False, sheet_name="Global")
-    
-    buffer.seek(0)  # ← IMPORTANTE
-
+    buffer.seek(0)
     st.download_button(
         label="📥 Descargar hoja: Global",
         data=buffer.getvalue(),
         file_name="global_estado.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+    # EXPORTAR HTML
+    st.markdown("### 💾 Exportar informe visual")
+    html_buffer = io.StringIO()
+    html_buffer.write("<html><head><title>Informe de Estado</title></head><body>")
+    html_buffer.write("<h1>Totales por Estado</h1>")
+    html_buffer.write(df_final.to_html(index=False))
+
+    html_buffer.write("<h2>Gráfico Totales por Estado y Periodo</h2>")
+    html_buffer.write(pio.to_html(fig1, include_plotlyjs='cdn', full_html=False))
+
+    html_buffer.write("<h2>Gráfico Total Acumulado</h2>")
+    html_buffer.write(pio.to_html(fig2, include_plotlyjs='cdn', full_html=False))
+
+    if fig3:
+        html_buffer.write("<h2>Distribución Forma de Pago</h2>")
+        html_buffer.write(pio.to_html(fig3, include_plotlyjs='cdn', full_html=False))
+
+    html_buffer.write("</body></html>")
+
+    st.download_button(
+         label="📄 Descargar informe HTML",
+        data=html_buffer.getvalue(),
+        file_name="reporte_estado.html",
+        mime="text/html"
+    )
+
+    # Guardar el HTML en disco para consolidado
+    import os
+    os.makedirs("uploaded", exist_ok=True)
+    with open("uploaded/reporte_estado.html", "w", encoding="utf-8") as f:
+        f.write(html_buffer.getvalue())
+
+    # Guardar también en session_state para consolidado
+    st.session_state["html_global"] = html_buffer.getvalue()

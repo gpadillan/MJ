@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import plotly.graph_objects as go
+import plotly.io as pio
 import io
 
 def render():
@@ -98,7 +99,6 @@ def render():
             )
             st.plotly_chart(fig2, use_container_width=True)
 
-            # Añadir a tabla_global
             df_base = df_pendiente[['Cliente', 'Proyecto', 'Curso', 'Comercial', 'Fecha Inicio', 'Fecha Factura']].copy()
             df_base = df_base.dropna(subset=["Fecha Factura"])
             df_base['Fecha Inicio'] = pd.to_datetime(df_base['Fecha Inicio'], errors='coerce')
@@ -113,70 +113,6 @@ def render():
             tabla_22_25["Fecha Inicio"] = tabla_22_25["Fecha Inicio"].dt.strftime('%Y-%m-%d')
             tabla_global = pd.concat([tabla_global, tabla_22_25], ignore_index=True)
 
-    # PERIODO 2026–2029
-    if año_actual >= 2026:
-        cols_meses_actual = [f"{mes} {año_actual}" for mes in meses if f"{mes} {año_actual}" in df_pendiente.columns]
-        if cols_meses_actual:
-            st.markdown(f"##  Periodo {año_actual}–{año_actual + 3}")
-            seleccion_meses = st.multiselect(
-                f"Selecciona meses de {año_actual}",
-                options=cols_meses_actual,
-                default=cols_meses_actual
-            )
-            if seleccion_meses:
-                df_meses = df_pendiente[['Cliente'] + seleccion_meses].copy()
-                df_meses[seleccion_meses] = df_meses[seleccion_meses].apply(pd.to_numeric, errors='coerce').fillna(0)
-                df_meses = df_meses.groupby("Cliente", as_index=False)[seleccion_meses].sum()
-                df_meses = df_meses[df_meses[seleccion_meses].sum(axis=1) > 0]
-
-                if not df_meses.empty:
-                    df_meses["Total Cliente"] = df_meses[seleccion_meses].sum(axis=1)
-                    total_clientes_unicos.update(df_meses['Cliente'].unique())
-                    st.dataframe(df_meses, use_container_width=True)
-                    st.markdown(f"**👥 Total clientes con deuda en {año_actual}:** `{df_meses['Cliente'].nunique()}` – 💰 Total deuda: `{df_meses['Total Cliente'].sum():,.2f} €`")
-
-                    resumen_meses = df_meses[seleccion_meses].sum().reset_index()
-                    resumen_meses.columns = ['Periodo', 'Total Deuda']
-                    resumen_meses['Nº Clientes'] = df_meses[seleccion_meses].gt(0).sum().values
-
-                    fig_meses = go.Figure()
-                    fig_meses.add_trace(go.Bar(
-                        x=resumen_meses["Periodo"],
-                        y=resumen_meses["Total Deuda"],
-                        marker_color='lightgreen',
-                        text=[
-                            f"€ {deuda:,.2f}<br>👥 {clientes}"
-                            for deuda, clientes in zip(resumen_meses["Total Deuda"], resumen_meses["Nº Clientes"])
-                        ],
-                        textposition='outside',
-                        textfont=dict(color='black'),
-                        hovertemplate='%{text}<extra></extra>',
-                    ))
-                    fig_meses.update_traces(marker_line_color='black', marker_line_width=1.2)
-                    fig_meses.update_layout(
-                        title=f"Total Deuda y Nº Clientes por Mes ({año_actual})",
-                        yaxis_title="Total Deuda (€)",
-                        xaxis_title="Mes",
-                        plot_bgcolor='white'
-                    )
-                    st.plotly_chart(fig_meses, use_container_width=True)
-
-                    # Añadir a tabla_global
-                    df_base_2026 = df_pendiente[['Cliente', 'Proyecto', 'Curso', 'Comercial', 'Fecha Inicio', 'Fecha Factura']].copy()
-                    df_base_2026 = df_base_2026.dropna(subset=["Fecha Factura"])
-                    df_base_2026['Fecha Inicio'] = pd.to_datetime(df_base_2026['Fecha Inicio'], errors='coerce')
-                    tabla_2026 = pd.merge(df_meses[['Cliente', 'Total Cliente']], df_base_2026, on='Cliente', how='left')
-                    tabla_2026 = tabla_2026.groupby('Cliente', as_index=False).agg({
-                        'Proyecto': 'first',
-                        'Curso': 'first',
-                        'Comercial': 'first',
-                        'Fecha Inicio': 'min',
-                        'Total Cliente': 'sum'
-                    })
-                    tabla_2026["Fecha Inicio"] = tabla_2026["Fecha Inicio"].dt.strftime('%Y-%m-%d')
-                    tabla_global = pd.concat([tabla_global, tabla_2026], ignore_index=True)
-
-    # TOTAL GLOBAL FINAL
     if not tabla_global.empty:
         st.markdown("---")
         st.markdown(f"### **TOTAL de clientes pendiente Becas ISA:** `{tabla_global['Cliente'].nunique()}`")
@@ -196,3 +132,38 @@ def render():
         )
 
         st.session_state["descarga_pendiente_cobro_isa"] = tabla_global
+
+        # ✅ HTML actualizado
+        grafico_html = pio.to_html(fig2, include_plotlyjs='cdn', full_html=False) if 'fig2' in locals() else ""
+
+        html_content = f"""
+        <html>
+            <head><meta charset='utf-8'><title>Detalle Pendiente Becas ISA</title></head>
+            <body>
+                <h1>Pendientes de Cobro – Becas ISA</h1>
+                <p>Total clientes únicos: <strong>{tabla_global['Cliente'].nunique()}</strong></p>
+                <h2>Gráfico Total Deuda y Nº de Clientes por Periodo</h2>
+                {grafico_html}
+                <hr>
+                <h2>Tabla Detalle</h2>
+                {tabla_global.to_html(index=False)}
+            </body>
+        </html>
+        """
+        
+        st.download_button(
+            label="🌐 Descargar vista HTML",
+            data=html_content.encode("utf-8"),
+            file_name="becas_isa_pendientes.html",
+            mime="text/html"
+        )
+
+        # Guardar HTML para el consolidado general
+        st.session_state["html_pendiente_cobro_isa"] = html_content
+
+
+        # Guardar HTML en disco para consolidado
+        import os
+        os.makedirs("uploaded", exist_ok=True)
+        with open("uploaded/reporte_pendiente_cobro_isa.html", "w", encoding="utf-8") as f:
+            f.write(html_content)
