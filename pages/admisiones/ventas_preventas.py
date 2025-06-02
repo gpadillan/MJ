@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 import os
 from datetime import datetime
-from responsive import get_screen_size  # 👈 Nuevo: importar la función responsive
+from responsive import get_screen_size  # 👈 Importa función responsive
 
 UPLOAD_FOLDER = "uploaded_admisiones"
 VENTAS_FILE = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
@@ -11,8 +11,6 @@ PREVENTAS_FILE = os.path.join(UPLOAD_FOLDER, "preventas.xlsx")
 
 def app():
     año_actual = datetime.today().year
-
-    # Tamaño de pantalla y detección móvil
     width, height = get_screen_size()
     is_mobile = width <= 400
 
@@ -87,31 +85,44 @@ def app():
             orden_propietarios = totales_propietario.sort_values(by='Total Oportunidades', ascending=False)['propietario_display'].tolist()
             orden_masters = resumen.groupby('nombre')['Total Oportunidades'].sum().sort_values(ascending=False).index.tolist()
 
-            # 🎯 Gráfico responsive: cambia orientación en móvil
-            fig = px.scatter(
-                resumen,
-                x='nombre' if not is_mobile else 'propietario_display',
-                y='propietario_display' if not is_mobile else 'nombre',
-                size='Total Oportunidades',
-                color='propietario_display',
-                text='Total Oportunidades',
-                size_max=60,
-                width=width,
-                height=height
-            )
+            # 📱 Gráfico responsive móvil/escritorio
+            if is_mobile:
+                fig = px.scatter(
+                    resumen,
+                    x='propietario_display',
+                    y='nombre',
+                    size='Total Oportunidades',
+                    color='propietario_display',
+                    text='Total Oportunidades',
+                    size_max=40,
+                    width=width,
+                    height=900  # altura extendida para mejor legibilidad
+                )
+            else:
+                fig = px.scatter(
+                    resumen,
+                    x='nombre',
+                    y='propietario_display',
+                    size='Total Oportunidades',
+                    color='propietario_display',
+                    text='Total Oportunidades',
+                    size_max=60,
+                    width=width,
+                    height=height
+                )
 
             fig.update_traces(
                 textposition='middle center',
-                textfont_size=14,
+                textfont_size=12,
                 textfont_color='white',
-                marker=dict(line=dict(color='black', width=1.5))
+                marker=dict(line=dict(color='black', width=1.2))
             )
 
             fig.update_layout(
                 xaxis_title='Máster' if not is_mobile else 'Propietario',
                 yaxis_title='Propietario' if not is_mobile else 'Máster',
                 legend_title='Propietario (Total)',
-                margin=dict(l=10, r=10, t=40, b=20)
+                margin=dict(l=20, r=20, t=40, b=40),
             )
 
             if not is_mobile:
