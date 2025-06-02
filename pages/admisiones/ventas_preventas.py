@@ -96,7 +96,7 @@ def app():
                     text='Total Oportunidades',
                     size_max=40,
                     width=width,
-                    height=900  # altura extendida para mejor legibilidad
+                    height=900
                 )
             else:
                 fig = px.scatter(
@@ -122,7 +122,14 @@ def app():
                 xaxis_title='Máster' if not is_mobile else 'Propietario',
                 yaxis_title='Propietario' if not is_mobile else 'Máster',
                 legend_title='Propietario (Total)',
-                margin=dict(l=20, r=20, t=40, b=40),
+                legend=dict(
+                    orientation="h" if is_mobile else "v",
+                    yanchor="bottom" if is_mobile else "top",
+                    y=-0.3 if is_mobile else 1,
+                    xanchor="center" if is_mobile else "right",
+                    x=0.5 if is_mobile else 1
+                ),
+                margin=dict(l=20, r=20, t=40, b=80 if is_mobile else 40)
             )
 
             if not is_mobile:
