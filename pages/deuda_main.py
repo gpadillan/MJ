@@ -35,15 +35,12 @@ def cargar_marca_tiempo():
             return f.read().strip()
     return None
 
-# Importar subpáginas
+# Importar subpáginas actualizadas
 from pages.deuda import (
     gestion_datos,
     global_,
-    año_2025,
-    becas_isa,
-    becas_isa_mes,
-    becas_isa_26_27_28,
-    pendiente_clientes,
+    pendiente,
+    becas_unificado,
     pendiente_cobro_isa
 )
 
@@ -115,15 +112,12 @@ def deuda_page():
     if st.session_state['excel_data'] is not None:
         st.success(f"📎 Archivo cargado: {st.session_state['excel_filename']}")
 
-    # Subcategorías
+    # Subcategorías de navegación
     subcategorias = [
         "Gestión de Datos",
         "Global",
-        "Pendiente por años y meses año actual",
-        "Becas ISA - Total Años",
-        "Becas ISA - Año actual",
-        "Becas ISA Futuro",
-        "Pendiente Clientes",
+        "Pendiente Total",
+        "Becas ISA - Consolidado",
         "Pendiente Cobro ISA"
     ]
 
@@ -155,15 +149,9 @@ def deuda_page():
         gestion_datos.render()
     elif seccion == "Global":
         global_.render()
-    elif seccion == "Pendiente por años y meses año actual":
-        año_2025.render()
-    elif seccion == "Becas ISA - Total Años":
-        becas_isa.render()
-    elif seccion == "Becas ISA - Año actual":
-        becas_isa_mes.render()
-    elif seccion == "Becas ISA Futuro":
-        becas_isa_26_27_28.render()
-    elif seccion == "Pendiente Clientes":
-        pendiente_clientes.render()
+    elif seccion == "Pendiente Total":
+        pendiente.render()
+    elif seccion == "Becas ISA - Consolidado":
+        becas_unificado.render()
     elif seccion == "Pendiente Cobro ISA":
         pendiente_cobro_isa.render()
