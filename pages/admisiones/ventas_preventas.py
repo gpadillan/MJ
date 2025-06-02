@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import os
 from datetime import datetime
+from responsive import get_screen_size  # 👈 Añadido
 
 UPLOAD_FOLDER = "uploaded_admisiones"
 VENTAS_FILE = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
@@ -10,6 +11,7 @@ PREVENTAS_FILE = os.path.join(UPLOAD_FOLDER, "preventas.xlsx")
 
 def app():
     año_actual = datetime.today().year
+    width, height = get_screen_size()  # 👈 Detectar tamaño de pantalla
 
     traducciones_meses = {
         "January": "Enero", "February": "Febrero", "March": "Marzo", "April": "Abril",
@@ -62,11 +64,13 @@ def app():
                 color='propietario',
                 barmode='group',
                 text='Total Oportunidades',
-                title='Distribución Mensual de Oportunidades por Propietario'
+                title='Distribución Mensual de Oportunidades por Propietario',
+                width=width,
+                height=height
             )
-            fig.update_layout(xaxis_title="Mes", yaxis_title="Total Oportunidades", height=500)
+            fig.update_layout(xaxis_title="Mes", yaxis_title="Total Oportunidades")
             fig.update_traces(textposition='outside')
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig)
 
         else:
             st.markdown("#### Distribución de Oportunidades y Propietario")
@@ -88,7 +92,8 @@ def app():
                 color='propietario_display',
                 text='Total Oportunidades',
                 size_max=60,
-                height=600
+                width=width,
+                height=height
             )
 
             fig.update_traces(
@@ -107,7 +112,7 @@ def app():
             fig.update_yaxes(categoryorder='array', categoryarray=orden_propietarios[::-1])
             fig.update_xaxes(categoryorder='array', categoryarray=orden_masters)
 
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig)
 
         total_importe = df_ventas['importe'].sum() if 'importe' in df_ventas.columns else 0
         total_oportunidades = len(df_ventas)
