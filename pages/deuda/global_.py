@@ -4,6 +4,7 @@ import plotly.express as px
 from datetime import datetime
 import io
 import plotly.io as pio
+from responsive import get_screen_size  # 👈 Añadido para adaptar tamaño
 
 def render():
     st.subheader("Estado")
@@ -63,6 +64,9 @@ def render():
     st.markdown("### Totales agrupados por Estado")
     st.dataframe(df_final, use_container_width=True)
 
+    # Obtener tamaño de pantalla
+    width, height = get_screen_size()
+
     # GRÁFICO AGRUPADO POR PERIODO
     df_melted = df_grouped.melt(id_vars="Estado", var_name="Periodo", value_name="Total")
     st.markdown("### Totales por Estado y Periodo")
@@ -73,10 +77,11 @@ def render():
         color="Periodo",
         barmode="group",
         text_auto=".2s",
-        height=500,
+        height=height,
+        width=width,
         template="plotly_white"
     )
-    st.plotly_chart(fig1, use_container_width=True)
+    st.plotly_chart(fig1)
 
     # GRÁFICO TOTAL ACUMULADO
     st.markdown("### Total acumulado por Estado")
@@ -88,10 +93,11 @@ def render():
         color="Estado",
         orientation="h",
         text_auto=".2s",
-        height=450,
+        height=height,
+        width=width,
         template="plotly_white"
     )
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2)
 
     # DONUT FORMA DE PAGO
     fig3 = None
@@ -109,8 +115,8 @@ def render():
             template="plotly_white"
         )
         fig3.update_traces(textposition="inside", textinfo="label+percent+value")
-        fig3.update_layout(height=700)
-        st.plotly_chart(fig3, use_container_width=True)
+        fig3.update_layout(height=height, width=width)
+        st.plotly_chart(fig3)
 
     # EXPORTAR EXCEL
     st.session_state["descarga_global"] = df_final
@@ -147,7 +153,7 @@ def render():
     html_buffer.write("</body></html>")
 
     st.download_button(
-         label="📄 Descargar informe HTML",
+        label="📄 Descargar informe HTML",
         data=html_buffer.getvalue(),
         file_name="reporte_estado.html",
         mime="text/html"
