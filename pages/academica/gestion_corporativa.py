@@ -48,6 +48,14 @@ def formatear_tabla(df_raw):
 
     return pd.DataFrame(datos, columns=["Indicador", "Valor"])
 
+def encontrar_titulo(df, fila_inicio, col_inicio):
+    for fila in range(max(0, fila_inicio - 2), min(fila_inicio + 6, df.shape[0])):
+        for col in range(max(0, col_inicio - 2), min(df.shape[1], col_inicio + 3)):
+            celda = str(df.iat[fila, col])
+            if "máster" in celda.lower():
+                return celda.replace(":", "").strip()
+    return f"Bloque desde fila {fila_inicio}"
+
 def show_gestion_corporativa(data):
     hoja = "ÁREA GESTIÓN CORPORATIVA"
     if hoja not in data:
@@ -69,11 +77,11 @@ def show_gestion_corporativa(data):
     bloques_b.append(len(df))
     bloques_e.append(len(df))
 
-    titulos_b = [df.iloc[i, 1] for i in bloques_b[:-1]]
-    titulos_e = [df.iloc[i, 4] for i in bloques_e[:-1]]
+    titulos_b = [encontrar_titulo(df, i, 1) for i in bloques_b[:-1]]
+    titulos_e = [encontrar_titulo(df, i, 4) for i in bloques_e[:-1]]
 
     all_bloques = [(col_b, 1, 2, bloques_b, titulos_b), (col_e, 4, 5, bloques_e, titulos_e)]
-    opciones = ["Todos"] + titulos_b + titulos_e
+    opciones = ["Todos"] + list(dict.fromkeys(titulos_b + titulos_e))  # evita duplicados
 
     st.markdown("### 🔍 Selecciona un programa para visualizar:")
     seleccion = st.radio("", opciones, horizontal=True)
@@ -85,7 +93,7 @@ def show_gestion_corporativa(data):
             for i in range(len(indices) - 1):
                 inicio, fin = indices[i], indices[i + 1]
                 bloque = df.iloc[inicio:fin, [col_idx1, col_idx2]].reset_index(drop=True)
-                titulo = df.iloc[indices[i], col_idx1]
+                titulo = titulos[i]
                 bloques_finales.append((titulo, bloque))
 
         mitad = math.ceil(len(bloques_finales) / 2)
