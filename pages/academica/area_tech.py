@@ -86,7 +86,11 @@ def show_area_tech(data):
             fin += 1
 
         bloque = df.iloc[inicio:fin, [col_idx, col_idx + 1]].reset_index(drop=True)
-        titulo = col_main[inicio].strip(": ")
+
+        # Buscar título de forma robusta dentro de las primeras 5 filas del bloque
+        bloque_texto = df.iloc[inicio:inicio+5, col_idx].dropna().astype(str)
+        titulo_match = bloque_texto[bloque_texto.str.contains("Máster|Certificación", case=False)]
+        titulo = titulo_match.iloc[0].strip(": ") if not titulo_match.empty else f"Bloque desde fila {inicio}"
 
         if not titulo:
             continue
