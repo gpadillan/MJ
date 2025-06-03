@@ -3,6 +3,7 @@ import streamlit as st
 import plotly.express as px
 from datetime import datetime
 
+# ✅ Función para renderizar tarjetas visuales
 def render_card(title, value, color):
     return f"""
         <div style="background-color:{color}; padding:16px; border-radius:12px; text-align:center; box-shadow: 0 4px 8px rgba(0,0,0,0.1)">
@@ -11,8 +12,10 @@ def render_card(title, value, color):
         </div>
     """
 
+# ✅ Función principal
 def render(df):
     st.title("Informe de Cierre de Expedientes")
+
     df.columns = df.columns.str.strip().str.upper()
 
     columnas_requeridas = ['CONSECUCIÓN GE', 'DEVOLUCIÓN GE', 'INAPLICACIÓN GE',
@@ -132,4 +135,3 @@ def render(df):
         styled_area = styled_area.background_gradient(subset=['TOTAL PRÁCTICAS'], cmap='Blues')
 
     st.dataframe(styled_area, use_container_width=True)
-
