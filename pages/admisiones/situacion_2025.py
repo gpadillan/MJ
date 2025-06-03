@@ -3,7 +3,7 @@ import pandas as pd
 import os
 import plotly.express as px
 from datetime import datetime
-from streamlit_js_eval import streamlit_js_eval
+from streamlit_js_eval import streamlit_js_eval  # 👈 Importante para responsive
 
 UPLOAD_FOLDER = "uploaded_admisiones"
 EXCEL_FILE = os.path.join(UPLOAD_FOLDER, "matricula_programas_25.xlsx")
@@ -45,6 +45,10 @@ def app():
         st.subheader("Matrículas por programa")
         conteo_programa = df["Programa"].value_counts().reset_index()
         conteo_programa.columns = ["programa", "cantidad"]
+
+        screen_width = streamlit_js_eval(js_expressions="window.innerWidth", key="grafico_barras_width")
+        is_mobile = screen_width is not None and screen_width < 600
+
         fig1 = px.bar(
             conteo_programa,
             x="programa",
@@ -56,9 +60,24 @@ def app():
             xaxis_title=None,
             yaxis_title="Cantidad",
             showlegend=True,
-            xaxis=dict(showticklabels=False)
+            xaxis=dict(showticklabels=False),
+            legend=dict(
+                orientation="h" if is_mobile else "v",
+                yanchor="top" if is_mobile else "top",
+                y=-0.4 if is_mobile else 1,
+                xanchor="center" if is_mobile else "right",
+                x=0.5 if is_mobile else 1
+            ),
+            margin=dict(t=40, b=120 if is_mobile else 40),
+            height=600 if is_mobile else 500
+        )
+        fig1.update_traces(
+            textfont_size=14 if is_mobile else 12
         )
         st.plotly_chart(fig1, use_container_width=True)
+
+        if is_mobile:
+            st.markdown("<p style='text-align:center; font-size:16px; margin-top:-50px;'>Programa</p>", unsafe_allow_html=True)
 
     with col2:
         st.subheader("Propietarios")
@@ -105,11 +124,6 @@ def app():
                 textposition="inside"
             )
             st.plotly_chart(fig2, use_container_width=True)
-
-            # Mostrar "Propietario" debajo solo en móvil
-            screen_width = streamlit_js_eval(js_expressions="window.innerWidth", key="ancho_movil")
-            if screen_width is not None and screen_width < 600:
-                st.markdown("<p style='text-align:center;font-size:18px;'>Propietario</p>", unsafe_allow_html=True)
 
     if "PVP" in df_filtrado.columns and not df_filtrado.empty:
         df_filtrado["PVP"] = pd.to_numeric(df_filtrado["PVP"], errors="coerce").fillna(0)
