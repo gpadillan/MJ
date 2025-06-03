@@ -69,10 +69,10 @@ def show_area_tech(data):
     bloques_b.append(len(df))
     bloques_f.append(len(df))
 
-    titulos_b = [col_b.iloc[i] for i in bloques_b[:-1]]
-    titulos_f = [col_f.iloc[i] for i in bloques_f[:-1]]
+    # ✅ Corrección aplicada aquí: limpieza de títulos
+    titulos_b = [str(col_b.iloc[i]).strip(": ").strip() for i in bloques_b[:-1]]
+    titulos_f = [str(col_f.iloc[i]).strip(": ").strip() for i in bloques_f[:-1]]
 
-    # Combinar todos los bloques y títulos
     all_bloques = [(col_b, 1, 2, bloques_b, titulos_b), (col_f, 4, 5, bloques_f, titulos_f)]
     opciones = ["Todos"] + titulos_b + titulos_f
 
@@ -80,17 +80,14 @@ def show_area_tech(data):
     seleccion = st.radio("", opciones, horizontal=True)
 
     if seleccion == "Todos":
-        # Combinar todos los bloques [(titulo, DataFrame)]
         bloques_finales = []
-
         for columna, col_idx1, col_idx2, indices, titulos in all_bloques:
             for i in range(len(indices) - 1):
                 inicio, fin = indices[i], indices[i + 1]
                 bloque = df.iloc[inicio:fin, [col_idx1, col_idx2]].reset_index(drop=True)
-                titulo = columna.iloc[inicio]
+                titulo = str(columna.iloc[inicio]).strip(": ").strip()
                 bloques_finales.append((titulo, bloque))
 
-        # Repartir en dos columnas
         mitad = math.ceil(len(bloques_finales) / 2)
         col1, col2 = st.columns(2)
 
