@@ -49,7 +49,6 @@ def formatear_tabla(df_raw):
     df_cert = pd.DataFrame(certificaciones, columns=["Certificación", "Cantidad"])
     df_cert = df_cert[df_cert["Cantidad"] > 0]
 
-    # Si todo es certificaciones, adaptar
     if solo_certificaciones and df_ind.empty and not df_cert.empty:
         df_cert.columns = ["Indicador", "Valor"]
         return pd.DataFrame(), df_cert
@@ -57,8 +56,12 @@ def formatear_tabla(df_raw):
     return df_ind, df_cert
 
 def mostrar_bloque(titulo, bloque):
-    st.markdown(f"#### 🎓 {titulo}")
     df_ind, df_cert = formatear_tabla(bloque)
+
+    solo_certificaciones = df_ind.empty and not df_cert.empty and titulo.lower().strip() in ["certificaciones", "certification"]
+
+    if not solo_certificaciones:
+        st.markdown(f"#### 🎓 {titulo}")
 
     if not df_ind.empty:
         st.markdown("**📊 Indicadores:**")
@@ -85,7 +88,6 @@ def show_area_tech(data):
         col_main = df.iloc[:, col_idx].fillna("").astype(str)
         col_next = df.iloc[:, col_idx + 1].fillna("")
 
-        # Buscar todos los posibles inicios con variantes sin tilde
         bloque_indices = col_main[col_main.str.contains("máster|master|certificación|certificacion", case=False, na=False)].index.tolist()
 
         for inicio in bloque_indices:
@@ -97,7 +99,6 @@ def show_area_tech(data):
 
             bloque = df.iloc[inicio:fin, [col_idx, col_idx + 1]].reset_index(drop=True)
 
-            # Buscar título en filas -2 a +5 y columnas col_idx±2
             titulo = None
             for fila in range(max(0, inicio - 2), min(inicio + 6, df.shape[0])):
                 for col in range(max(0, col_idx - 2), min(df.shape[1], col_idx + 3)):
