@@ -11,6 +11,7 @@ def formatear_tabla(df_raw):
     indicadores = []
     certificaciones = []
     in_cert_block = False
+    solo_certificaciones = True
 
     for i in range(len(df_raw)):
         nombre = str(df_raw.iloc[i, 0]).strip()
@@ -25,15 +26,21 @@ def formatear_tabla(df_raw):
             in_cert_block = True
             continue
 
+        if any(p in nombre_lower for p in [
+            "cumplimiento", "exito", "satisfaccion", "riesgo",
+            "absentismo", "expediente", "resenas", "alumn", "reclamaciones"
+        ]):
+            solo_certificaciones = False
+
         if in_cert_block:
             if isinstance(valor, (int, float)) and not pd.isna(valor):
                 certificaciones.append([nombre, int(valor)])
             continue
 
-        if isinstance(valor, (int, float)) and any(p in nombre_lower for p in [
+        if isinstance(valor, (int, float)) and valor <= 1 and any(p in nombre_lower for p in [
             "cumplimiento", "exito academico", "satisfaccion",
             "riesgo", "absentismo", "cierre expediente", "resenas"
-        ]) and valor <= 1:
+        ]):
             valor = f"{valor:.2%}".replace(".", ",")
 
         indicadores.append([nombre, valor])
@@ -42,17 +49,23 @@ def formatear_tabla(df_raw):
     df_cert = pd.DataFrame(certificaciones, columns=["Certificación", "Cantidad"])
     df_cert = df_cert[df_cert["Cantidad"] > 0]
 
+    # Si todo es certificaciones, adaptar
+    if solo_certificaciones and df_ind.empty and not df_cert.empty:
+        df_cert.columns = ["Indicador", "Valor"]
+        return pd.DataFrame(), df_cert
+
     return df_ind, df_cert
 
 def mostrar_bloque(titulo, bloque):
     st.markdown(f"#### 🎓 {titulo}")
     df_ind, df_cert = formatear_tabla(bloque)
 
-    st.markdown("**📊 Indicadores:**")
-    st.dataframe(df_ind, use_container_width=True, hide_index=True)
+    if not df_ind.empty:
+        st.markdown("**📊 Indicadores:**")
+        st.dataframe(df_ind, use_container_width=True, hide_index=True)
 
     if not df_cert.empty:
-        total_cert = df_cert["Cantidad"].sum()
+        total_cert = df_cert["Valor"].sum() if "Valor" in df_cert.columns else df_cert["Cantidad"].sum()
         st.markdown(f"**📜 Certificaciones: {total_cert}**")
         st.dataframe(df_cert, use_container_width=True, hide_index=True)
 
