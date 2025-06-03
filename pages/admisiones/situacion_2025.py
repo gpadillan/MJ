@@ -1,16 +1,16 @@
-import streamlit as st 
+import streamlit as st
 import pandas as pd
 import os
 import plotly.express as px
 from datetime import datetime
-from responsive import get_screen_size
+from responsive import get_screen_size  # 👈 Asegúrate de tener este módulo en tu proyecto
 
 UPLOAD_FOLDER = "uploaded_admisiones"
 EXCEL_FILE = os.path.join(UPLOAD_FOLDER, "matricula_programas_25.xlsx")
 
 def app():
     width, height = get_screen_size()
-    is_mobile = width <= 500
+    is_mobile = width <= 400
 
     traducciones_meses = {
         "January": "Enero", "February": "Febrero", "March": "Marzo", "April": "Abril",
@@ -48,28 +48,33 @@ def app():
         st.subheader("Matrículas por programa")
         conteo_programa = df["Programa"].value_counts().reset_index()
         conteo_programa.columns = ["programa", "cantidad"]
+
+        # Colores personalizados
+        colores = px.colors.qualitative.Plotly
+        color_map = {row["programa"]: colores[i % len(colores)] for i, row in conteo_programa.iterrows()}
+
         fig1 = px.bar(
             conteo_programa,
             x="programa",
             y="cantidad",
             color="programa",
-            text="cantidad"
+            text="cantidad",
+            color_discrete_map=color_map
         )
         fig1.update_layout(
             xaxis_title=None,
             yaxis_title="Cantidad",
-            showlegend=False,
+            showlegend=not is_mobile,
             xaxis=dict(showticklabels=False)
         )
         st.plotly_chart(fig1, use_container_width=True)
 
-        # 🔽 Leyenda personalizada para móviles
         if is_mobile:
-            st.markdown("<hr style='margin-top: -40px;'>", unsafe_allow_html=True)
-            st.markdown("### 🧾 Detalle de programas")
+            st.markdown("---")
+            st.markdown("### 📘 Detalle de programas")
             legend_html = "<div style='font-size: 12px;'>"
             for i, row in conteo_programa.iterrows():
-                color = px.colors.qualitative.Plotly[i % len(px.colors.qualitative.Plotly)]
+                color = color_map[row["programa"]]
                 legend_html += f"""
                     <div style='display: flex; align-items: center; margin-bottom: 4px;'>
                         <div style='width: 12px; height: 12px; background-color: {color}; margin-right: 8px; border-radius: 2px;'></div>
@@ -81,6 +86,7 @@ def app():
 
     with col2:
         st.subheader("Propietarios")
+
         propietarios = ["Todos"] + sorted(df_filtrado["propietario"].unique())
         propietario_seleccionado = st.selectbox("Selecciona un propietario", propietarios)
 
@@ -138,21 +144,44 @@ def app():
 
     with col3:
         st.subheader("Forma de Pago")
+
         if "Forma de Pago" in df_filtrado.columns:
-            df_filtrado["Forma de Pago"] = df_filtrado["Forma de Pago"].astype(str).str.strip().replace(["nan", "None", ""], "(En Blanco)").fillna("(En Blanco)")
+            df_filtrado["Forma de Pago"] = (
+                df_filtrado["Forma de Pago"]
+                .astype(str)
+                .str.strip()
+                .replace(["nan", "None", ""], "(En Blanco)")
+                .fillna("(En Blanco)")
+            )
+
             conteo_pago = df_filtrado["Forma de Pago"].value_counts().reset_index()
             conteo_pago.columns = ["forma_pago", "cantidad"]
+
             formas_pago = conteo_pago["forma_pago"].tolist()
             color_palette = px.colors.qualitative.Bold
             color_map = {fp: color_palette[i % len(color_palette)] for i, fp in enumerate(formas_pago)}
-            fig3 = px.pie(conteo_pago, names="forma_pago", values="cantidad", hole=0.4, color="forma_pago", color_discrete_map=color_map)
-            fig3.update_layout(showlegend=True, legend_title="Forma de pago")
+
+            fig3 = px.pie(
+                conteo_pago,
+                names="forma_pago",
+                values="cantidad",
+                hole=0.4,
+                color="forma_pago",
+                color_discrete_map=color_map
+            )
+            fig3.update_layout(
+                showlegend=True,
+                legend_title="Forma de pago"
+            )
             st.plotly_chart(fig3, use_container_width=True)
 
             st.markdown("### 🧾 Detalle: Pagos 'En Blanco'")
             pagos_en_blanco = df_filtrado[df_filtrado["Forma de Pago"] == "(En Blanco)"]
             if not pagos_en_blanco.empty:
-                st.dataframe(pagos_en_blanco[["propietario", "Programa", "Forma de Pago"]].reset_index(drop=True), use_container_width=True)
+                st.dataframe(
+                    pagos_en_blanco[["propietario", "Programa", "Forma de Pago"]].reset_index(drop=True),
+                    use_container_width=True
+                )
             else:
                 st.info("No hay registros con forma de pago '(En Blanco)' para este filtro.")
         else:
@@ -160,24 +189,52 @@ def app():
 
     with col4:
         st.subheader("Suma de PVP por Forma de Pago")
+
         if "Forma de Pago" in df_filtrado.columns and "PVP" in df_filtrado.columns:
-            suma_pvp = df_filtrado.groupby("Forma de Pago")["PVP"].sum().reset_index().sort_values("PVP", ascending=True)
-            fig4 = px.funnel(suma_pvp, y="Forma de Pago", x="PVP", color="Forma de Pago", color_discrete_map=color_map)
-            fig4.update_layout(width=650, xaxis_title="Suma de PVP (€)", yaxis=dict(showticklabels=False), showlegend=False)
-            fig4.update_traces(texttemplate="%{x:,.0f} €", textfont_size=16, textposition="inside")
+            suma_pvp = df_filtrado.groupby("Forma de Pago")["PVP"].sum().reset_index()
+            suma_pvp = suma_pvp.sort_values("PVP", ascending=True)
+
+            fig4 = px.funnel(
+                suma_pvp,
+                y="Forma de Pago",
+                x="PVP",
+                color="Forma de Pago",
+                color_discrete_map=color_map
+            )
+            fig4.update_layout(
+                width=650,
+                xaxis_title="Suma de PVP (€)",
+                yaxis=dict(showticklabels=False),
+                showlegend=False
+            )
+            fig4.update_traces(
+                texttemplate="%{x:,.0f} €",
+                textfont_size=16,
+                textposition="inside"
+            )
             st.plotly_chart(fig4, use_container_width=True)
         else:
             st.info("No hay datos suficientes para mostrar el embudo de PVP por forma de pago.")
 
     with col5:
         st.subheader("Total por Origen")
+
         if "origen" in df_filtrado.columns:
-            df_filtrado["origen"] = df_filtrado["origen"].astype(str).str.strip().replace(["nan", "None", ""], "(En Blanco)").fillna("(En Blanco)")
+            df_filtrado["origen"] = (
+                df_filtrado["origen"]
+                .astype(str)
+                .str.strip()
+                .replace(["nan", "None", ""], "(En Blanco)")
+                .fillna("(En Blanco)")
+            )
+
             conteo_origen = df_filtrado["origen"].value_counts().reset_index()
             conteo_origen.columns = ["Origen", "Cantidad"]
+
             total = conteo_origen["Cantidad"].sum()
             total_row = pd.DataFrame([{"Origen": "TOTAL", "Cantidad": total}])
             tabla_origen = pd.concat([conteo_origen, total_row], ignore_index=True)
+
             st.dataframe(tabla_origen, use_container_width=True)
         else:
             st.info("La columna 'origen' no está disponible en el archivo.")
