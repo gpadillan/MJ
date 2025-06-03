@@ -60,8 +60,8 @@ def show_gestion_corporativa(data):
     col_b = df.iloc[:, 1].fillna("").astype(str)
     col_e = df.iloc[:, 4].fillna("").astype(str)
 
-    norm_b = col_b.map(normalizar)
-    norm_e = col_e.map(normalizar)
+    norm_b = col_b.map(normalizar).str.strip()
+    norm_e = col_e.map(normalizar).str.strip()
 
     bloques_b = norm_b[norm_b.str.contains("master profesional en")].index.tolist()
     bloques_e = norm_e[norm_e.str.contains("master profesional en")].index.tolist()
@@ -69,7 +69,6 @@ def show_gestion_corporativa(data):
     bloques_b.append(len(df))
     bloques_e.append(len(df))
 
-    # ✅ TITULOS CORREGIDOS AQUÍ
     titulos_b = [df.iloc[i, 1] for i in bloques_b[:-1]]
     titulos_e = [df.iloc[i, 4] for i in bloques_e[:-1]]
 
