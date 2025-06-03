@@ -87,13 +87,19 @@ def show_area_tech(data):
 
         bloque = df.iloc[inicio:fin, [col_idx, col_idx + 1]].reset_index(drop=True)
 
-        # Buscar título de forma robusta dentro de las primeras 5 filas del bloque
-        bloque_texto = df.iloc[inicio:inicio+5, col_idx].dropna().astype(str)
-        titulo_match = bloque_texto[bloque_texto.str.contains("Máster|Certificación", case=False)]
-        titulo = titulo_match.iloc[0].strip(": ") if not titulo_match.empty else f"Bloque desde fila {inicio}"
+        # 🧠 Buscar título en un rango de filas y columnas (por celdas combinadas)
+        titulo = None
+        for fila in range(inicio, min(inicio + 5, df.shape[0])):
+            for col in range(max(0, col_idx - 1), min(df.shape[1], col_idx + 2)):
+                celda = str(df.iat[fila, col])
+                if "máster" in celda.lower() or "certificación" in celda.lower():
+                    titulo = celda.strip(": ").strip()
+                    break
+            if titulo:
+                break
 
         if not titulo:
-            continue
+            titulo = f"Bloque desde fila {inicio}"
 
         bloques_finales.append((titulo, bloque))
 
