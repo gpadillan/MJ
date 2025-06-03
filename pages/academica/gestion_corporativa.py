@@ -3,51 +3,31 @@ import pandas as pd
 import unicodedata
 import math
 
-# Utilidades
 def normalizar(texto):
     return unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("utf-8").lower()
 
-def es_porcentaje(valor, nombre):
-    return isinstance(valor, (int, float)) and any(p in nombre for p in [
-        "cumplimiento", "éxito académico", "satisfacción",
-        "riesgo", "absentismo", "cierre expediente", "reseñas"
-    ]) and 0 <= valor <= 1
+def es_porcentaje(nombre, valor):
+    nombre = normalizar(nombre)
+    claves = ["cumplimiento", "exito academico", "satisfaccion", "riesgo", 
+              "absentismo", "cierre expediente", "resenas"]
+    return any(clave in nombre for clave in claves) and isinstance(valor, (int, float)) and valor <= 1
 
-# Procesamiento de tabla
 def formatear_tabla(df_raw):
-    datos, cert_valores, cert_index = [], [], None
+    datos = []
+    cert_valores = []
+    cert_index = None
     in_cert_block = False
 
-    for _, fila in df_raw.iterrows():
-        col1 = fila.iloc[0]
-        col2 = fila.iloc[1]
+    for i in range(len(df_raw)):
+        nombre, valor = str(df_raw.iloc[i, 0]).strip(), df_raw.iloc[i, 1]
 
-        if pd.isna(col1) and pd.isna(col2):
+        if not nombre or nombre.lower() == "nan":
             continue
 
-        if pd.notna(col1) and pd.notna(col2):
-            if "alumnado" in str(col2).lower():
-                nombre = str(col2).strip()
-                try:
-                    valor = float(col1)
-                except:
-                    valor = col1
-            else:
-                nombre = str(col1).strip()
-                try:
-                    valor = float(col2)
-                except:
-                    valor = col2
-        else:
-            continue
-
-        if not nombre or str(nombre).lower() == "nan":
-            continue
-
+        nombre_lower = normalizar(nombre)
         datos.append([nombre, valor])
-        nombre_norm = normalizar(nombre)
 
-        if "certificaciones:" in nombre_norm:
+        if "certificaciones:" in nombre_lower:
             cert_index = len(datos) - 1
             in_cert_block = True
             continue
@@ -55,7 +35,7 @@ def formatear_tabla(df_raw):
         if in_cert_block and isinstance(valor, (int, float)):
             cert_valores.append(valor)
 
-        if es_porcentaje(valor, nombre_norm):
+        if es_porcentaje(nombre, valor):
             datos[-1][1] = f"{valor:.2%}".replace(".", ",")
 
     cert_valores = [v for v in cert_valores if pd.notna(v)]
@@ -69,24 +49,50 @@ def formatear_tabla(df_raw):
 
     return pd.DataFrame(datos, columns=["Indicador", "Valor"])
 
-# Extraer bloques y títulos reales
-def extraer_bloques(df, col_idx1, col_idx2):
-    col_titulo = df.iloc[:, col_idx1].fillna("").astype(str)
-    norm = col_titulo.map(normalizar)
-    indices = norm[norm.str.contains("master profesional en")].index.tolist()
-    indices.append(len(df))
+def extraer_bloques(df, col_idx):
+    col = df.iloc[:, col_idx].fillna("").astype(str)
+    norm_col = col.map(normalizar)
+    bloques = norm_col[norm_col.str.contains("master profesional en")].index.tolist()
+    bloques.append(len(df))
 
-    bloques = []
-    for i in range(len(indices) - 1):
-        inicio = indices[i] + 1  # Inicia después del título
-        fin = indices[i + 1]
-        titulo = col_titulo[indices[i]].replace(":", "").strip()
-        bloque = df.iloc[inicio:fin, [col_idx1, col_idx2]].reset_index(drop=True)
-        bloques.append((titulo, bloque))
+    titulos = []
+    for idx in bloques[:-1]:
+        titulo = df.iloc[idx, col_idx].strip()
+        titulos.append(titulo)
 
-    return bloques
+    return (df.iloc[:, col_idx], col_idx, col_idx + 1, bloques, titulos)
 
-# Mostrar en Streamlit
+def mostrar_bloques(df, all_bloques, seleccion):
+    for columna, col1, col2, indices, titulos in all_bloques:
+        if seleccion in titulos:
+            i = titulos.index(seleccion)
+            bloque = df.iloc[indices[i]:indices[i+1], [col1, col2]].reset_index(drop=True)
+            st.markdown(f"#### 📘 {seleccion}")
+            st.dataframe(formatear_tabla(bloque), use_container_width=True, hide_index=True)
+            return
+
+def mostrar_todos(df, all_bloques):
+    bloques_finales = []
+
+    for columna, col1, col2, indices, titulos in all_bloques:
+        for i in range(len(indices) - 1):
+            bloque = df.iloc[indices[i]:indices[i+1], [col1, col2]].reset_index(drop=True)
+            titulo = titulos[i]
+            bloques_finales.append((titulo, bloque))
+
+    mitad = math.ceil(len(bloques_finales) / 2)
+    col1, col2 = st.columns(2)
+
+    for titulo, bloque in bloques_finales[:mitad]:
+        with col1:
+            st.markdown(f"#### 📘 {titulo}")
+            st.dataframe(formatear_tabla(bloque), use_container_width=True, hide_index=True)
+
+    for titulo, bloque in bloques_finales[mitad:]:
+        with col2:
+            st.markdown(f"#### 📘 {titulo}")
+            st.dataframe(formatear_tabla(bloque), use_container_width=True, hide_index=True)
+
 def show_gestion_corporativa(data):
     hoja = "ÁREA GESTIÓN CORPORATIVA"
     if hoja not in data:
@@ -96,33 +102,15 @@ def show_gestion_corporativa(data):
     df = data[hoja]
     st.title("🏢 Indicadores Área Gestión Corporativa")
 
-    # Extraer bloques de columnas B-C y E-F
-    bloques_b = extraer_bloques(df, 1, 2)
-    bloques_e = extraer_bloques(df, 4, 5)
+    bloque_b = extraer_bloques(df, 1)
+    bloque_e = extraer_bloques(df, 4)
+    all_bloques = [bloque_b, bloque_e]
 
-    opciones = ["Todos"] + [b[0] for b in bloques_b + bloques_e]
+    opciones = ["Todos"] + bloque_b[4] + bloque_e[4]
     st.markdown("### 🔍 Selecciona un programa para visualizar:")
     seleccion = st.radio("", opciones, horizontal=True)
 
-    def render_bloques(bloques):
-        mitad = math.ceil(len(bloques) / 2)
-        col1, col2 = st.columns(2)
-
-        for titulo, bloque in bloques[:mitad]:
-            with col1:
-                st.markdown(f"#### 📘 {titulo}")
-                st.dataframe(formatear_tabla(bloque), use_container_width=True, hide_index=True)
-
-        for titulo, bloque in bloques[mitad:]:
-            with col2:
-                st.markdown(f"#### 📘 {titulo}")
-                st.dataframe(formatear_tabla(bloque), use_container_width=True, hide_index=True)
-
     if seleccion == "Todos":
-        render_bloques(bloques_b + bloques_e)
+        mostrar_todos(df, all_bloques)
     else:
-        for titulo, bloque in bloques_b + bloques_e:
-            if seleccion == titulo:
-                st.markdown(f"#### 📘 {titulo}")
-                st.dataframe(formatear_tabla(bloque), use_container_width=True, hide_index=True)
-                break
+        mostrar_bloques(df, all_bloques, seleccion)
