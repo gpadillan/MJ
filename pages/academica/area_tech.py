@@ -72,25 +72,17 @@ def show_area_tech(data):
     # ✅ Títulos seguros para columna B
     titulos_b = []
     for i in bloques_b[:-1]:
-        bloque = df.iloc[i:i+5, 1]
-        bloque_filtrado = bloque.dropna()
-        if not bloque_filtrado.empty:
-            match = bloque_filtrado[bloque_filtrado.str.contains("Máster", case=False)]
-            titulo = match.iloc[0] if not match.empty else f"Bloque desde fila {i}"
-        else:
-            titulo = f"Bloque desde fila {i}"
+        bloque = df.iloc[i:i+5, 1].dropna().astype(str)
+        match = bloque[bloque.str.contains("Máster", case=False, na=False)]
+        titulo = match.iloc[0] if not match.empty else f"Bloque desde fila {i}"
         titulos_b.append(str(titulo).strip(": ").strip())
 
     # ✅ Títulos seguros para columna F
     titulos_f = []
     for i in bloques_f[:-1]:
-        bloque = df.iloc[i:i+5, 4]
-        bloque_filtrado = bloque.dropna()
-        if not bloque_filtrado.empty:
-            match = bloque_filtrado[bloque_filtrado.str.contains("Máster|Certificación", case=False)]
-            titulo = match.iloc[0] if not match.empty else f"Bloque desde fila {i}"
-        else:
-            titulo = f"Bloque desde fila {i}"
+        bloque = df.iloc[i:i+5, 4].dropna().astype(str)
+        match = bloque[bloque.str.contains("Máster|Certificación", case=False, na=False)]
+        titulo = match.iloc[0] if not match.empty else f"Bloque desde fila {i}"
         titulos_f.append(str(titulo).strip(": ").strip())
 
     all_bloques = [(col_b, 1, 2, bloques_b, titulos_b), (col_f, 4, 5, bloques_f, titulos_f)]
