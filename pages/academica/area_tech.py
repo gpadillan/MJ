@@ -69,9 +69,18 @@ def show_area_tech(data):
     bloques_b.append(len(df))
     bloques_f.append(len(df))
 
-    # ✅ Corrección aplicada aquí: limpieza de títulos
-    titulos_b = [str(col_b.iloc[i]).strip(": ").strip() for i in bloques_b[:-1]]
-    titulos_f = [str(col_f.iloc[i]).strip(": ").strip() for i in bloques_f[:-1]]
+    # ✅ Corrección: Buscar el título real dentro del bloque
+    titulos_b = []
+    for i in bloques_b[:-1]:
+        bloque = df.iloc[i:i+5, 1].dropna()
+        titulo = bloque[bloque.str.contains("Máster", case=False)].iloc[0] if not bloque[bloque.str.contains("Máster", case=False)].empty else f"Bloque desde fila {i}"
+        titulos_b.append(str(titulo).strip(": ").strip())
+
+    titulos_f = []
+    for i in bloques_f[:-1]:
+        bloque = df.iloc[i:i+5, 4].dropna()
+        titulo = bloque[bloque.str.contains("Máster|Certificación", case=False)].iloc[0] if not bloque[bloque.str.contains("Máster|Certificación", case=False)].empty else f"Bloque desde fila {i}"
+        titulos_f.append(str(titulo).strip(": ").strip())
 
     all_bloques = [(col_b, 1, 2, bloques_b, titulos_b), (col_f, 4, 5, bloques_f, titulos_f)]
     opciones = ["Todos"] + titulos_b + titulos_f
@@ -85,7 +94,7 @@ def show_area_tech(data):
             for i in range(len(indices) - 1):
                 inicio, fin = indices[i], indices[i + 1]
                 bloque = df.iloc[inicio:fin, [col_idx1, col_idx2]].reset_index(drop=True)
-                titulo = str(columna.iloc[inicio]).strip(": ").strip()
+                titulo = titulos[i]
                 bloques_finales.append((titulo, bloque))
 
         mitad = math.ceil(len(bloques_finales) / 2)
