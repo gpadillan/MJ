@@ -19,24 +19,28 @@ def formatear_tabla(df_raw):
     in_cert_block = False
 
     for _, fila in df_raw.iterrows():
-        celda_1 = str(fila.iloc[0]).strip()
-        celda_2 = str(fila.iloc[1]).strip()
+        celda_1 = fila.iloc[0]
+        celda_2 = fila.iloc[1]
 
-        # Invertir si viene como: número + texto
-        if celda_1.isdigit() and "alumnado" in celda_2.lower():
-            nombre, valor = celda_2, int(celda_1)
+        if pd.isna(celda_1) and pd.isna(celda_2):
+            continue
+
+        if pd.notna(celda_1) and pd.notna(celda_2):
+            if str(celda_1).isdigit() and "alumnado" in str(celda_2).lower():
+                nombre = str(celda_2).strip()
+                valor = int(celda_1)
+            else:
+                nombre = str(celda_1).strip()
+                valor = celda_2
         else:
-            nombre = celda_1
-            try:
-                valor = float(fila.iloc[1])
-            except:
-                valor = fila.iloc[1]
+            nombre = str(celda_1).strip()
+            valor = celda_2
 
         if not nombre or nombre.lower() == "nan":
             continue
 
         datos.append([nombre, valor])
-        nombre_norm = nombre.lower()
+        nombre_norm = normalizar(nombre)
 
         if "certificaciones:" in nombre_norm:
             cert_index = len(datos) - 1
@@ -63,9 +67,7 @@ def formatear_tabla(df_raw):
 # Extraer bloques y títulos reales
 def extraer_bloques(df, col_idx1, col_idx2):
     col_titulo = df.iloc[:, col_idx1].fillna("").astype(str)
-    col_valor = df.iloc[:, col_idx2]
     norm = col_titulo.map(normalizar)
-
     indices = norm[norm.str.contains("master profesional en")].index.tolist()
     indices.append(len(df))
 
