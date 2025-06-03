@@ -45,7 +45,7 @@ def app():
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("Matr\u00edculas por programa")
+        st.subheader("Matrículas por programa")
         conteo_programa = df["Programa"].value_counts().reset_index()
         conteo_programa.columns = ["programa", "cantidad"]
 
@@ -71,7 +71,6 @@ def app():
         if is_mobile:
             st.markdown("---")
             st.markdown("<h4 style='font-size: 1rem;'>Detalle de programas</h4>", unsafe_allow_html=True)
-            
             for i, row in conteo_programa.iterrows():
                 color = color_map[row["programa"]]
                 st.markdown(
@@ -132,7 +131,7 @@ def app():
         st.metric(label="Promedio de PVP", value="0 €")
 
     st.markdown("---")
-    st.subheader("\ud83d\udcca An\u00e1lisis")
+    st.subheader("📊 Análisis")
     col3, col4, col5 = st.columns([1, 1, 1])
 
     with col3:
@@ -165,7 +164,7 @@ def app():
             )
             st.plotly_chart(fig3, use_container_width=True)
 
-            st.markdown("### \ud83d\udcdf Detalle: Pagos 'En Blanco'")
+            st.markdown("### 🧾 Detalle: Pagos 'En Blanco'")
             pagos_en_blanco = df_filtrado[df_filtrado["Forma de Pago"] == "(En Blanco)"]
             if not pagos_en_blanco.empty:
                 st.dataframe(
@@ -175,7 +174,7 @@ def app():
             else:
                 st.info("No hay registros con forma de pago '(En Blanco)' para este filtro.")
         else:
-            st.info("La columna 'Forma de Pago' no est\u00e1 disponible en el archivo.")
+            st.info("La columna 'Forma de Pago' no está disponible en el archivo.")
 
     with col4:
         st.subheader("Suma de PVP por Forma de Pago")
@@ -224,4 +223,4 @@ def app():
 
             st.dataframe(tabla_origen, use_container_width=True)
         else:
-            st.info("La columna 'origen' no est\u00e1 disponible en el archivo.")
+            st.info("La columna 'origen' no está disponible en el archivo.")
