@@ -19,24 +19,29 @@ def formatear_tabla(df_raw):
     in_cert_block = False
 
     for _, fila in df_raw.iterrows():
-        celda_1 = fila.iloc[0]
-        celda_2 = fila.iloc[1]
+        col1 = fila.iloc[0]
+        col2 = fila.iloc[1]
 
-        if pd.isna(celda_1) and pd.isna(celda_2):
+        if pd.isna(col1) and pd.isna(col2):
             continue
 
-        if pd.notna(celda_1) and pd.notna(celda_2):
-            if str(celda_1).isdigit() and "alumnado" in str(celda_2).lower():
-                nombre = str(celda_2).strip()
-                valor = int(celda_1)
+        if pd.notna(col1) and pd.notna(col2):
+            if "alumnado" in str(col2).lower():
+                nombre = str(col2).strip()
+                try:
+                    valor = float(col1)
+                except:
+                    valor = col1
             else:
-                nombre = str(celda_1).strip()
-                valor = celda_2
+                nombre = str(col1).strip()
+                try:
+                    valor = float(col2)
+                except:
+                    valor = col2
         else:
-            nombre = str(celda_1).strip()
-            valor = celda_2
+            continue
 
-        if not nombre or nombre.lower() == "nan":
+        if not nombre or str(nombre).lower() == "nan":
             continue
 
         datos.append([nombre, valor])
