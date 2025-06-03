@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit as st 
 import pandas as pd
 import os
 import plotly.express as px
@@ -38,73 +38,72 @@ def app():
 
     df_filtrado = df if programa_seleccionado == "Todos" else df[df["Programa"] == programa_seleccionado]
 
-    col1, col2 = st.columns(2)
+    # --- GRÁFICO DE MATRÍCULAS ---
+    st.subheader("Matrículas por programa")
+    conteo_programa = df["Programa"].value_counts().reset_index()
+    conteo_programa.columns = ["programa", "cantidad"]
+    fig1 = px.bar(
+        conteo_programa,
+        x="programa",
+        y="cantidad",
+        color="programa",
+        text="cantidad"
+    )
+    fig1.update_layout(
+        xaxis_title=None,
+        yaxis_title="Cantidad",
+        showlegend=True,
+        xaxis=dict(showticklabels=False)
+    )
+    st.plotly_chart(fig1, use_container_width=True)
 
-    with col1:
-        st.subheader("Matrículas por programa")
-        conteo_programa = df["Programa"].value_counts().reset_index()
-        conteo_programa.columns = ["programa", "cantidad"]
-        fig1 = px.bar(
-            conteo_programa,
-            x="programa",
-            y="cantidad",
-            color="programa",
-            text="cantidad"
+    # --- BLOQUE DE PROPIETARIOS DEBAJO ---
+    st.markdown("### 👥 Propietarios")
+
+    propietarios = ["Todos"] + sorted(df_filtrado["propietario"].unique())
+    propietario_seleccionado = st.selectbox("Selecciona un propietario", propietarios)
+
+    if propietario_seleccionado != "Todos":
+        df_filtrado = df_filtrado[df_filtrado["propietario"] == propietario_seleccionado]
+
+    if propietario_seleccionado == "Todos":
+        st.metric(label="Total alumnos V2", value=df_filtrado.shape[0])
+    else:
+        tabla_programas = (
+            df_filtrado.groupby("Programa")
+            .size()
+            .reset_index(name="Cantidad")
+            .sort_values("Cantidad", ascending=False)
         )
-        fig1.update_layout(
-            xaxis_title=None,
-            yaxis_title="Cantidad",
-            showlegend=True,
-            xaxis=dict(showticklabels=False)
-        )
-        st.plotly_chart(fig1, use_container_width=True)
-
-    with col2:
-        st.subheader("Propietarios")
-
-        propietarios = ["Todos"] + sorted(df_filtrado["propietario"].unique())
-        propietario_seleccionado = st.selectbox("Selecciona un propietario", propietarios)
-
-        if propietario_seleccionado != "Todos":
-            df_filtrado = df_filtrado[df_filtrado["propietario"] == propietario_seleccionado]
-
-        if propietario_seleccionado == "Todos":
-            st.metric(label="Total alumnos V2", value=df_filtrado.shape[0])
+        if not tabla_programas.empty:
+            st.dataframe(tabla_programas, use_container_width=True)
         else:
-            tabla_programas = (
-                df_filtrado.groupby("Programa")
-                .size()
-                .reset_index(name="Cantidad")
-                .sort_values("Cantidad", ascending=False)
-            )
-            if not tabla_programas.empty:
-                st.dataframe(tabla_programas, use_container_width=True)
-            else:
-                st.info("Este propietario no tiene registros para el filtro actual.")
+            st.info("Este propietario no tiene registros para el filtro actual.")
 
-        if propietario_seleccionado == "Todos":
-            conteo_prop = df_filtrado["propietario"].value_counts().reset_index()
-            conteo_prop.columns = ["propietario", "cantidad"]
+    if propietario_seleccionado == "Todos":
+        conteo_prop = df_filtrado["propietario"].value_counts().reset_index()
+        conteo_prop.columns = ["propietario", "cantidad"]
 
-            fig2 = px.funnel(
-                conteo_prop,
-                y="propietario",
-                x="cantidad",
-                text="cantidad",
-                color_discrete_sequence=["#1f77b4"]
-            )
-            fig2.update_layout(
-                xaxis_title="Cantidad",
-                yaxis_title=None,
-                showlegend=False
-            )
-            fig2.update_traces(
-                texttemplate="%{x}",
-                textfont_size=16,
-                textposition="inside"
-            )
-            st.plotly_chart(fig2, use_container_width=True)
+        fig2 = px.funnel(
+            conteo_prop,
+            y="propietario",
+            x="cantidad",
+            text="cantidad",
+            color_discrete_sequence=["#1f77b4"]
+        )
+        fig2.update_layout(
+            xaxis_title="Cantidad",
+            yaxis_title=None,
+            showlegend=False
+        )
+        fig2.update_traces(
+            texttemplate="%{x}",
+            textfont_size=16,
+            textposition="inside"
+        )
+        st.plotly_chart(fig2, use_container_width=True)
 
+    # --- PROMEDIO PVP ---
     if "PVP" in df_filtrado.columns and not df_filtrado.empty:
         df_filtrado["PVP"] = pd.to_numeric(df_filtrado["PVP"], errors="coerce").fillna(0)
         promedio_pvp = df_filtrado["PVP"].sum() / df_filtrado.shape[0]
