@@ -1,52 +1,56 @@
 import streamlit as st
 import pandas as pd
 import unicodedata
-import math
 
 def normalizar(texto):
-    return unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("utf-8").lower()
+    if not isinstance(texto, str):
+        return ""
+    return unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("utf-8").lower().strip()
 
 def formatear_tabla(df_raw):
-    datos = []
-    cert_valores = []
-    cert_index = None
+    indicadores = []
+    certificaciones = []
     in_cert_block = False
 
     for i in range(len(df_raw)):
-        nombre = str(df_raw.iloc[i, 0])
+        nombre = str(df_raw.iloc[i, 0]).strip()
         valor = df_raw.iloc[i, 1]
 
-        if nombre.strip().lower() == "nan" or nombre.strip() == "":
+        if not nombre or nombre.lower() == "nan":
             continue
 
-        datos.append([nombre, valor])
-        nombre_lower = nombre.lower()
+        nombre_lower = normalizar(nombre)
 
-        if "certificaciones:" in nombre_lower:
-            cert_index = len(datos) - 1
+        if "certificaciones" in nombre_lower:
             in_cert_block = True
             continue
 
-        if in_cert_block and isinstance(valor, (int, float)):
-            cert_valores.append(valor)
+        if in_cert_block:
+            if isinstance(valor, (int, float)) and not pd.isna(valor):
+                certificaciones.append([nombre, int(valor)])
+            continue
 
         if isinstance(valor, (int, float)) and any(p in nombre_lower for p in [
-            "cumplimiento", "éxito académico", "satisfacción",
-            "riesgo", "absentismo", "cierre expediente", "reseñas"
+            "cumplimiento", "exito academico", "satisfaccion",
+            "riesgo", "absentismo", "cierre expediente", "resenas"
         ]) and valor <= 1:
-            datos[-1][1] = f"{valor:.2%}".replace(".", ",")
+            valor = f"{valor:.2%}".replace(".", ",")
 
-    cert_valores = [v for v in cert_valores if pd.notna(v)]
+        indicadores.append([nombre, valor])
 
-    if cert_index is not None:
-        if cert_valores:
-            cert_total = int(sum(cert_valores))
-            datos[cert_index][1] = cert_total
-    elif cert_valores:
-        cert_total = int(sum(cert_valores))
-        datos.append(["Certificaciones", cert_total])
+    df_ind = pd.DataFrame(indicadores, columns=["Indicador", "Valor"])
+    df_cert = pd.DataFrame(certificaciones, columns=["Certificación", "Cantidad"])
 
-    return pd.DataFrame(datos, columns=["Indicador", "Valor"])
+    return df_ind, df_cert
+
+def mostrar_bloque(titulo, bloque):
+    st.markdown(f"#### 🎓 {titulo}")
+    df_ind, df_cert = formatear_tabla(bloque)
+    st.markdown("**📊 Indicadores:**")
+    st.dataframe(df_ind, use_container_width=True, hide_index=True)
+    if not df_cert.empty:
+        st.markdown("**📜 Certificaciones:**")
+        st.dataframe(df_cert, use_container_width=True, hide_index=True)
 
 def show_area_tech(data):
     hoja = "ÁREA TECH"
@@ -57,68 +61,50 @@ def show_area_tech(data):
     df = data[hoja]
     st.title("🤖 Indicadores Área TECH")
 
-    col_b = df.iloc[:, 1].fillna("").astype(str)
-    col_f = df.iloc[:, 4].fillna("").astype(str)
+    columnas_masters = list(range(1, df.shape[1], 3))
+    bloques_finales = []
 
-    norm_b = col_b.map(normalizar)
-    norm_f = col_f.map(normalizar)
+    for col_idx in columnas_masters:
+        col_main = df.iloc[:, col_idx].fillna("").astype(str)
+        col_next = df.iloc[:, col_idx + 1].fillna("")
 
-    bloques_b = norm_b[norm_b.str.contains("master profesional en")].index.tolist()
-    bloques_f = norm_f[norm_f.str.contains("master profesional en|certificacion sap")].index.tolist()
+        # Buscar el índice donde comienza el bloque (contiene Máster o Certificación)
+        inicio_idx = col_main[col_main.str.contains("Máster|Certificación", case=False)].index
+        if len(inicio_idx) == 0:
+            continue
+        inicio = inicio_idx[0]
 
-    bloques_b.append(len(df))
-    bloques_f.append(len(df))
+        # Buscar fin: la siguiente celda vacía después del bloque
+        fin = inicio
+        while fin < len(col_main) and not (
+            all(x == "" for x in [col_main[fin], str(col_next[fin])])
+        ):
+            fin += 1
 
-    # ✅ Títulos seguros para columna B
-    titulos_b = []
-    for i in bloques_b[:-1]:
-        bloque = df.iloc[i:i+5, 1].dropna().astype(str)
-        match = bloque[bloque.str.contains("Máster", case=False, na=False)]
-        titulo = match.iloc[0] if not match.empty else f"Bloque desde fila {i}"
-        titulos_b.append(str(titulo).strip(": ").strip())
+        bloque = df.iloc[inicio:fin, [col_idx, col_idx + 1]].reset_index(drop=True)
+        titulo = col_main[inicio].strip(": ")
 
-    # ✅ Títulos seguros para columna F
-    titulos_f = []
-    for i in bloques_f[:-1]:
-        bloque = df.iloc[i:i+5, 4].dropna().astype(str)
-        match = bloque[bloque.str.contains("Máster|Certificación", case=False, na=False)]
-        titulo = match.iloc[0] if not match.empty else f"Bloque desde fila {i}"
-        titulos_f.append(str(titulo).strip(": ").strip())
+        if not titulo:
+            continue
 
-    all_bloques = [(col_b, 1, 2, bloques_b, titulos_b), (col_f, 4, 5, bloques_f, titulos_f)]
-    opciones = ["Todos"] + titulos_b + titulos_f
+        bloques_finales.append((titulo, bloque))
+
+    opciones = ["Todos"] + [titulo for titulo, _ in bloques_finales]
 
     st.markdown("### 🔍 Selecciona un programa para visualizar:")
     seleccion = st.radio("", opciones, horizontal=True)
 
     if seleccion == "Todos":
-        bloques_finales = []
-        for columna, col_idx1, col_idx2, indices, titulos in all_bloques:
-            for i in range(len(indices) - 1):
-                inicio, fin = indices[i], indices[i + 1]
-                bloque = df.iloc[inicio:fin, [col_idx1, col_idx2]].reset_index(drop=True)
-                titulo = titulos[i]
-                bloques_finales.append((titulo, bloque))
-
-        mitad = math.ceil(len(bloques_finales) / 2)
         col1, col2 = st.columns(2)
-
+        mitad = (len(bloques_finales) + 1) // 2
         for titulo, bloque in bloques_finales[:mitad]:
             with col1:
-                st.markdown(f"#### 🎓 {titulo}")
-                st.dataframe(formatear_tabla(bloque), use_container_width=True, hide_index=True)
-
+                mostrar_bloque(titulo, bloque)
         for titulo, bloque in bloques_finales[mitad:]:
             with col2:
-                st.markdown(f"#### 🎓 {titulo}")
-                st.dataframe(formatear_tabla(bloque), use_container_width=True, hide_index=True)
-
+                mostrar_bloque(titulo, bloque)
     else:
-        for columna, col_idx1, col_idx2, indices, titulos in all_bloques:
-            if seleccion in titulos:
-                idx = titulos.index(seleccion)
-                inicio, fin = indices[idx], indices[idx + 1]
-                bloque = df.iloc[inicio:fin, [col_idx1, col_idx2]].reset_index(drop=True)
-                st.markdown(f"#### 🎓 {seleccion}")
-                st.dataframe(formatear_tabla(bloque), use_container_width=True, hide_index=True)
+        for titulo, bloque in bloques_finales:
+            if titulo == seleccion:
+                mostrar_bloque(titulo, bloque)
                 break
