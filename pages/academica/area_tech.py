@@ -87,9 +87,9 @@ def show_area_tech(data):
 
         bloque = df.iloc[inicio:fin, [col_idx, col_idx + 1]].reset_index(drop=True)
 
-        # 🧠 Buscar título en un rango de filas y columnas (por celdas combinadas)
+        # Buscar título dentro de un rango de filas y columnas
         titulo = None
-        for fila in range(inicio, min(inicio + 5, df.shape[0])):
+        for fila in range(inicio, min(inicio + 6, df.shape[0])):
             for col in range(max(0, col_idx - 1), min(df.shape[1], col_idx + 2)):
                 celda = str(df.iat[fila, col])
                 if "máster" in celda.lower() or "certificación" in celda.lower():
@@ -99,7 +99,7 @@ def show_area_tech(data):
                 break
 
         if not titulo:
-            titulo = f"Bloque desde fila {inicio}"
+            titulo = f"Bloque sin título (fila {inicio}, col {col_idx})"
 
         bloques_finales.append((titulo, bloque))
 
