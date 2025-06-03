@@ -72,36 +72,33 @@ def show_area_tech(data):
         col_main = df.iloc[:, col_idx].fillna("").astype(str)
         col_next = df.iloc[:, col_idx + 1].fillna("")
 
-        # Detectar inicio del bloque (buscar palabra clave)
-        inicio_idx = col_main[col_main.str.contains("Máster|Certificación", case=False)].index
-        if len(inicio_idx) == 0:
-            continue
-        inicio = inicio_idx[0]
+        # Buscar todos los posibles inicios dentro de la columna actual
+        bloque_indices = col_main[col_main.str.contains("Máster|Certificación", case=False)].index.tolist()
 
-        # Determinar el final del bloque (primera fila vacía)
-        fin = inicio
-        while fin < len(col_main) and not (
-            all(x == "" for x in [col_main[fin], str(col_next[fin])])
-        ):
-            fin += 1
+        for inicio in bloque_indices:
+            fin = inicio
+            while fin < len(col_main) and not (
+                all(x == "" for x in [col_main[fin], str(col_next[fin])])
+            ):
+                fin += 1
 
-        bloque = df.iloc[inicio:fin, [col_idx, col_idx + 1]].reset_index(drop=True)
+            bloque = df.iloc[inicio:fin, [col_idx, col_idx + 1]].reset_index(drop=True)
 
-        # Buscar título explorando más celdas: filas -2 a +5 y columnas col_idx±2
-        titulo = None
-        for fila in range(max(0, inicio - 2), min(inicio + 6, df.shape[0])):
-            for col in range(max(0, col_idx - 2), min(df.shape[1], col_idx + 3)):
-                celda = str(df.iat[fila, col])
-                if "máster" in celda.lower() or "certificación" in celda.lower():
-                    titulo = celda.replace(":", "").strip()
+            # Buscar título en filas -2 a +5 y columnas col_idx±2
+            titulo = None
+            for fila in range(max(0, inicio - 2), min(inicio + 6, df.shape[0])):
+                for col in range(max(0, col_idx - 2), min(df.shape[1], col_idx + 3)):
+                    celda = str(df.iat[fila, col])
+                    if "máster" in celda.lower() or "certificación" in celda.lower():
+                        titulo = celda.replace(":", "").strip()
+                        break
+                if titulo:
                     break
-            if titulo:
-                break
 
-        if not titulo:
-            titulo = f"Bloque sin título (fila {inicio}, col {col_idx})"
+            if not titulo:
+                titulo = f"Bloque sin título (fila {inicio}, col {col_idx})"
 
-        bloques_finales.append((titulo, bloque))
+            bloques_finales.append((titulo, bloque))
 
     opciones = ["Todos"] + [titulo for titulo, _ in bloques_finales]
 
