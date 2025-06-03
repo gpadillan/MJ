@@ -19,8 +19,18 @@ def formatear_tabla(df_raw):
     in_cert_block = False
 
     for _, fila in df_raw.iterrows():
-        nombre = str(fila.iloc[0]).strip()
-        valor = fila.iloc[1]
+        celda_1 = str(fila.iloc[0]).strip()
+        celda_2 = str(fila.iloc[1]).strip()
+
+        # Invertir si viene como: número + texto
+        if celda_1.isdigit() and "alumnado" in celda_2.lower():
+            nombre, valor = celda_2, int(celda_1)
+        else:
+            nombre = celda_1
+            try:
+                valor = float(fila.iloc[1])
+            except:
+                valor = fila.iloc[1]
 
         if not nombre or nombre.lower() == "nan":
             continue
