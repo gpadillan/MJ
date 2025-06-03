@@ -72,8 +72,8 @@ def show_area_tech(data):
         col_main = df.iloc[:, col_idx].fillna("").astype(str)
         col_next = df.iloc[:, col_idx + 1].fillna("")
 
-        # Buscar todos los posibles inicios dentro de la columna actual
-        bloque_indices = col_main[col_main.str.contains("Máster|Certificación", case=False)].index.tolist()
+        # Buscar todos los posibles inicios con variantes sin tilde
+        bloque_indices = col_main[col_main.str.contains("máster|master|certificación|certificacion", case=False, na=False)].index.tolist()
 
         for inicio in bloque_indices:
             fin = inicio
@@ -89,7 +89,7 @@ def show_area_tech(data):
             for fila in range(max(0, inicio - 2), min(inicio + 6, df.shape[0])):
                 for col in range(max(0, col_idx - 2), min(df.shape[1], col_idx + 3)):
                     celda = str(df.iat[fila, col])
-                    if "máster" in celda.lower() or "certificación" in celda.lower():
+                    if any(palabra in celda.lower() for palabra in ["máster", "master", "certificación", "certificacion"]):
                         titulo = celda.replace(":", "").strip()
                         break
                 if titulo:
