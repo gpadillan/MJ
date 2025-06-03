@@ -20,7 +20,7 @@ def app():
     now = datetime.now()
     mes_actual = traducciones_meses[now.strftime("%B")] + " " + now.strftime("%Y")
 
-    st.markdown(f"<h1>\ud83d\udcca Matr\u00edculas por Programa y Propietario - {mes_actual}</h1>", unsafe_allow_html=True)
+    st.markdown(f"<h1>Matrículas por Programa y Propietario - {mes_actual}</h1>", unsafe_allow_html=True)
 
     try:
         df = pd.read_excel(EXCEL_FILE, sheet_name="Contactos")
