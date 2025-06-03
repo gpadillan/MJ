@@ -69,8 +69,9 @@ def show_gestion_corporativa(data):
     bloques_b.append(len(df))
     bloques_e.append(len(df))
 
-    titulos_b = [col_b.iloc[i] for i in bloques_b[:-1]]
-    titulos_e = [col_e.iloc[i] for i in bloques_e[:-1]]
+    # ✅ TITULOS CORREGIDOS AQUÍ
+    titulos_b = [df.iloc[i, 1] for i in bloques_b[:-1]]
+    titulos_e = [df.iloc[i, 4] for i in bloques_e[:-1]]
 
     all_bloques = [(col_b, 1, 2, bloques_b, titulos_b), (col_e, 4, 5, bloques_e, titulos_e)]
     opciones = ["Todos"] + titulos_b + titulos_e
@@ -85,7 +86,7 @@ def show_gestion_corporativa(data):
             for i in range(len(indices) - 1):
                 inicio, fin = indices[i], indices[i + 1]
                 bloque = df.iloc[inicio:fin, [col_idx1, col_idx2]].reset_index(drop=True)
-                titulo = columna.iloc[inicio]
+                titulo = df.iloc[indices[i], col_idx1]
                 bloques_finales.append((titulo, bloque))
 
         mitad = math.ceil(len(bloques_finales) / 2)
