@@ -70,7 +70,7 @@ def app():
 
         if is_mobile:
             st.markdown("---")
-            st.markdown("<h4 style='font-size: 1rem;'>\ud83d\udcc3 Detalle de programas</h4>", unsafe_allow_html=True)
+            st.markdown("<h4 style='font-size: 1rem;'>Detalle de programas</h4>", unsafe_allow_html=True)
             legend_html = "<div style='font-size: 11px; line-height: 1.4;'>"
             for i, row in conteo_programa.iterrows():
                 color = color_map[row["programa"]]
