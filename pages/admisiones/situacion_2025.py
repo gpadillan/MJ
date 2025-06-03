@@ -3,7 +3,7 @@ import pandas as pd
 import os
 import plotly.express as px
 from datetime import datetime
-from responsive import get_screen_size  # 👈 Asegúrate de tener este módulo en tu proyecto
+from responsive import get_screen_size  # Asegúrate de tener este módulo en tu proyecto
 
 UPLOAD_FOLDER = "uploaded_admisiones"
 EXCEL_FILE = os.path.join(UPLOAD_FOLDER, "matricula_programas_25.xlsx")
@@ -49,7 +49,6 @@ def app():
         conteo_programa = df["Programa"].value_counts().reset_index()
         conteo_programa.columns = ["programa", "cantidad"]
 
-        # Colores personalizados
         colores = px.colors.qualitative.Plotly
         color_map = {row["programa"]: colores[i % len(colores)] for i, row in conteo_programa.iterrows()}
 
@@ -72,13 +71,13 @@ def app():
         if is_mobile:
             st.markdown("---")
             st.markdown("### 📘 Detalle de programas")
-            legend_html = "<div style='font-size: 12px;'>"
+            legend_html = "<div style='font-size: 11px;'>"
             for i, row in conteo_programa.iterrows():
                 color = color_map[row["programa"]]
                 legend_html += f"""
                     <div style='display: flex; align-items: center; margin-bottom: 4px;'>
                         <div style='width: 12px; height: 12px; background-color: {color}; margin-right: 8px; border-radius: 2px;'></div>
-                        {row['programa']}
+                        <span style='font-size: 11px;'>{row['programa']}</span>
                     </div>
                 """
             legend_html += "</div>"
