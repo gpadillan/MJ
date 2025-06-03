@@ -71,17 +71,15 @@ def app():
         if is_mobile:
             st.markdown("---")
             st.markdown("<h4 style='font-size: 1rem;'>Detalle de programas</h4>", unsafe_allow_html=True)
-            legend_html = "<div style='font-size: 11px; line-height: 1.4;'>"
+            
             for i, row in conteo_programa.iterrows():
                 color = color_map[row["programa"]]
-                legend_html += f"""
-                    <div style='display: flex; align-items: center; margin-bottom: 4px;'>
-                        <div style='width: 10px; height: 10px; background-color: {color}; margin-right: 6px; border-radius: 2px;'></div>
-                        {row['programa']}
-                    </div>
-                """
-            legend_html += "</div>"
-            st.markdown(legend_html, unsafe_allow_html=True)
+                st.markdown(
+                    f"<div style='font-size: 12px; margin-bottom: 4px;'>"
+                    f"<span style='display: inline-block; width: 10px; height: 10px; background-color: {color}; margin-right: 6px; border-radius: 2px;'></span>"
+                    f"{row['programa']}</div>",
+                    unsafe_allow_html=True
+                )
 
     with col2:
         st.subheader("Propietarios")
