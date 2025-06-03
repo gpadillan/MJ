@@ -3,7 +3,7 @@ import pandas as pd
 import os
 import plotly.express as px
 from datetime import datetime
-from responsive import get_screen_size  # Asegúrate de tener este módulo
+from responsive import get_screen_size
 
 UPLOAD_FOLDER = "uploaded_admisiones"
 EXCEL_FILE = os.path.join(UPLOAD_FOLDER, "matricula_programas_25.xlsx")
@@ -20,7 +20,7 @@ def app():
     now = datetime.now()
     mes_actual = traducciones_meses[now.strftime("%B")] + " " + now.strftime("%Y")
 
-    st.markdown(f"<h1>📊 Matrículas por Programa y Propietario - {mes_actual}</h1>", unsafe_allow_html=True)
+    st.markdown(f"<h1>\ud83d\udcca Matr\u00edculas por Programa y Propietario - {mes_actual}</h1>", unsafe_allow_html=True)
 
     try:
         df = pd.read_excel(EXCEL_FILE, sheet_name="Contactos")
@@ -45,7 +45,7 @@ def app():
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("Matrículas por programa")
+        st.subheader("Matr\u00edculas por programa")
         conteo_programa = df["Programa"].value_counts().reset_index()
         conteo_programa.columns = ["programa", "cantidad"]
 
@@ -70,15 +70,14 @@ def app():
 
         if is_mobile:
             st.markdown("---")
-            st.markdown("### 📘 Másteres por color de barra")
-            legend_html = "<div style='font-size: 11px;'>"
+            st.markdown("<h4 style='font-size: 1rem;'>\ud83d\udcc3 Detalle de programas</h4>", unsafe_allow_html=True)
+            legend_html = "<div style='font-size: 11px; line-height: 1.4;'>"
             for i, row in conteo_programa.iterrows():
                 color = color_map[row["programa"]]
-                nombre_sin_programa = row['programa'].replace("programa", "").strip()
                 legend_html += f"""
                     <div style='display: flex; align-items: center; margin-bottom: 4px;'>
-                        <div style='width: 12px; height: 12px; background-color: {color}; margin-right: 6px; border-radius: 2px;'></div>
-                        <span style='font-size: 10px;'>{nombre_sin_programa}</span>
+                        <div style='width: 10px; height: 10px; background-color: {color}; margin-right: 6px; border-radius: 2px;'></div>
+                        {row['programa']}
                     </div>
                 """
             legend_html += "</div>"
@@ -86,7 +85,6 @@ def app():
 
     with col2:
         st.subheader("Propietarios")
-
         propietarios = ["Todos"] + sorted(df_filtrado["propietario"].unique())
         propietario_seleccionado = st.selectbox("Selecciona un propietario", propietarios)
 
@@ -97,9 +95,7 @@ def app():
             st.metric(label="Total alumnos V2", value=df_filtrado.shape[0])
         else:
             tabla_programas = (
-                df_filtrado.groupby("Programa")
-                .size()
-                .reset_index(name="Cantidad")
+                df_filtrado.groupby("Programa").size().reset_index(name="Cantidad")
                 .sort_values("Cantidad", ascending=False)
             )
             if not tabla_programas.empty:
@@ -138,8 +134,7 @@ def app():
         st.metric(label="Promedio de PVP", value="0 €")
 
     st.markdown("---")
-    st.subheader("📊 Análisis")
-
+    st.subheader("\ud83d\udcca An\u00e1lisis")
     col3, col4, col5 = st.columns([1, 1, 1])
 
     with col3:
@@ -147,11 +142,8 @@ def app():
 
         if "Forma de Pago" in df_filtrado.columns:
             df_filtrado["Forma de Pago"] = (
-                df_filtrado["Forma de Pago"]
-                .astype(str)
-                .str.strip()
-                .replace(["nan", "None", ""], "(En Blanco)")
-                .fillna("(En Blanco)")
+                df_filtrado["Forma de Pago"].astype(str).str.strip()
+                .replace(["nan", "None", ""], "(En Blanco)").fillna("(En Blanco)")
             )
 
             conteo_pago = df_filtrado["Forma de Pago"].value_counts().reset_index()
@@ -175,7 +167,7 @@ def app():
             )
             st.plotly_chart(fig3, use_container_width=True)
 
-            st.markdown("### 🧾 Detalle: Pagos 'En Blanco'")
+            st.markdown("### \ud83d\udcdf Detalle: Pagos 'En Blanco'")
             pagos_en_blanco = df_filtrado[df_filtrado["Forma de Pago"] == "(En Blanco)"]
             if not pagos_en_blanco.empty:
                 st.dataframe(
@@ -185,7 +177,7 @@ def app():
             else:
                 st.info("No hay registros con forma de pago '(En Blanco)' para este filtro.")
         else:
-            st.info("La columna 'Forma de Pago' no está disponible en el archivo.")
+            st.info("La columna 'Forma de Pago' no est\u00e1 disponible en el archivo.")
 
     with col4:
         st.subheader("Suma de PVP por Forma de Pago")
@@ -221,11 +213,8 @@ def app():
 
         if "origen" in df_filtrado.columns:
             df_filtrado["origen"] = (
-                df_filtrado["origen"]
-                .astype(str)
-                .str.strip()
-                .replace(["nan", "None", ""], "(En Blanco)")
-                .fillna("(En Blanco)")
+                df_filtrado["origen"].astype(str).str.strip()
+                .replace(["nan", "None", ""], "(En Blanco)").fillna("(En Blanco)")
             )
 
             conteo_origen = df_filtrado["origen"].value_counts().reset_index()
@@ -237,4 +226,4 @@ def app():
 
             st.dataframe(tabla_origen, use_container_width=True)
         else:
-            st.info("La columna 'origen' no está disponible en el archivo.")
+            st.info("La columna 'origen' no est\u00e1 disponible en el archivo.")
