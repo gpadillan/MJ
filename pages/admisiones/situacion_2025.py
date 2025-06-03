@@ -3,6 +3,7 @@ import pandas as pd
 import os
 import plotly.express as px
 from datetime import datetime
+from streamlit_js_eval import streamlit_js_eval
 
 UPLOAD_FOLDER = "uploaded_admisiones"
 EXCEL_FILE = os.path.join(UPLOAD_FOLDER, "matricula_programas_25.xlsx")
@@ -104,6 +105,11 @@ def app():
                 textposition="inside"
             )
             st.plotly_chart(fig2, use_container_width=True)
+
+            # Mostrar "Propietario" debajo solo en móvil
+            screen_width = streamlit_js_eval(js_expressions="window.innerWidth", key="ancho_movil")
+            if screen_width is not None and screen_width < 600:
+                st.markdown("<p style='text-align:center;font-size:18px;'>Propietario</p>", unsafe_allow_html=True)
 
     if "PVP" in df_filtrado.columns and not df_filtrado.empty:
         df_filtrado["PVP"] = pd.to_numeric(df_filtrado["PVP"], errors="coerce").fillna(0)
