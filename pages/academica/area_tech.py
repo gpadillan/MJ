@@ -58,7 +58,7 @@ def formatear_tabla(df_raw):
 def mostrar_bloque(titulo, bloque):
     df_ind, df_cert = formatear_tabla(bloque)
 
-    solo_certificaciones = df_ind.empty and not df_cert.empty and titulo.lower().strip() in ["certificaciones", "certification"]
+    solo_certificaciones = df_ind.empty and not df_cert.empty and normalizar(titulo) == "certificaciones"
 
     if not solo_certificaciones:
         st.markdown(f"#### 🎓 {titulo}")
@@ -113,6 +113,13 @@ def show_area_tech(data):
                 titulo = f"Bloque sin título (fila {inicio}, col {col_idx})"
 
             bloques_finales.append((titulo, bloque))
+
+    # 🔥 Eliminar bloques duplicados cuyo título sea literalmente "Certificaciones"
+    bloques_finales = [
+        (titulo, bloque)
+        for titulo, bloque in bloques_finales
+        if normalizar(titulo) != "certificaciones"
+    ]
 
     opciones = ["Todos"] + [titulo for titulo, _ in bloques_finales]
 
