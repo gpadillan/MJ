@@ -3,9 +3,6 @@ import pandas as pd
 import os
 import plotly.express as px
 from datetime import datetime
-from responsive import init_responsive
-
-init_responsive()
 
 UPLOAD_FOLDER = "uploaded_admisiones"
 EXCEL_FILE = os.path.join(UPLOAD_FOLDER, "matricula_programas_25.xlsx")
@@ -107,9 +104,6 @@ def app():
                 textposition="inside"
             )
             st.plotly_chart(fig2, use_container_width=True)
-
-            if st.session_state.get("is_mobile", False):
-                st.markdown("<div style='text-align: center; font-size: 18px; margin-top: -20px;'>Propietario</div>", unsafe_allow_html=True)
 
     if "PVP" in df_filtrado.columns and not df_filtrado.empty:
         df_filtrado["PVP"] = pd.to_numeric(df_filtrado["PVP"], errors="coerce").fillna(0)
@@ -219,4 +213,3 @@ def app():
             st.dataframe(tabla_origen, use_container_width=True)
         else:
             st.info("La columna 'origen' no está disponible en el archivo.")
-
