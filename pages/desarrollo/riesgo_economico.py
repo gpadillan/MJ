@@ -63,8 +63,8 @@ def render(df):
         (df_resultado['EJECUCIÓN GARANTÍA'] < hoy)
     ].shape[0]
 
-    # ✅ Nuevo: conteo de DEVOLUCIÓN GE == TRUE
-    devolucion_true_count = df_resultado['DEVOLUCIÓN GE'].astype(str).str.lower().str.strip() == 'true'
+    # ✅ Conteo de DEVOLUCIÓN GE == TRUE en todo el DataFrame original
+    devolucion_true_count = df['DEVOLUCIÓN GE'].astype(str).str.lower().str.strip() == 'true'
     num_devoluciones_true = devolucion_true_count.sum()
 
     col1, col2, col3, col4 = st.columns(4)
