@@ -40,16 +40,20 @@ def formatear_tabla(df_raw):
 
     df_ind = pd.DataFrame(indicadores, columns=["Indicador", "Valor"])
     df_cert = pd.DataFrame(certificaciones, columns=["Certificación", "Cantidad"])
+    df_cert = df_cert[df_cert["Cantidad"] > 0]
 
     return df_ind, df_cert
 
 def mostrar_bloque(titulo, bloque):
     st.markdown(f"#### 🎓 {titulo}")
     df_ind, df_cert = formatear_tabla(bloque)
+
     st.markdown("**📊 Indicadores:**")
     st.dataframe(df_ind, use_container_width=True, hide_index=True)
+
     if not df_cert.empty:
-        st.markdown("**📜 Certificaciones:**")
+        total_cert = df_cert["Cantidad"].sum()
+        st.markdown(f"**📜 Certificaciones: {total_cert}**")
         st.dataframe(df_cert, use_container_width=True, hide_index=True)
 
 def show_area_tech(data):
