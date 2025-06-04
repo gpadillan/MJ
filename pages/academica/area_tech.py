@@ -59,16 +59,6 @@ def mostrar_bloque_con_titulo(titulo, bloque):
     if df_ind.empty and df_cert.empty:
         return
 
-    bloques = [df_ind]
-
-    if not df_cert.empty:
-        suma_cert = df_cert["Valor"].sum()
-        resumen = pd.DataFrame([["Certificaciones", suma_cert]], columns=["Indicador", "Valor"])
-        bloques.append(resumen)
-        bloques.append(df_cert)
-
-    df_total = pd.concat(bloques, ignore_index=True)
-
     st.markdown(f"#### 🎓 {titulo}")
     st.markdown("**📊 Indicadores y Certificaciones:**")
 
@@ -110,20 +100,36 @@ def mostrar_bloque_con_titulo(titulo, bloque):
     """
 
     cert_mode = False
-    for i, row in df_total.iterrows():
-        indicador = str(row["Indicador"])
+    insert_cert_index = None
+    rows = df_ind.to_dict("records")
+
+    for i, row in enumerate(rows):
+        if normalizar(row["Indicador"]) == "reclamaciones":
+            insert_cert_index = i + 1
+
+    if insert_cert_index is None:
+        insert_cert_index = len(rows)
+
+    if not df_cert.empty:
+        cert_total = int(df_cert["Valor"].sum())
+        resumen = [{"Indicador": "Certificaciones", "Valor": cert_total}]
+        rows = rows[:insert_cert_index] + resumen + df_cert.to_dict("records") + rows[insert_cert_index:]
+
+    cert_mode = False
+    for row in rows:
+        indicador = row["Indicador"]
         valor = row["Valor"]
 
-        if indicador.lower() == "certificaciones":
-            clase_fila = "row-cert-total"
+        if normalizar(indicador) == "certificaciones":
+            clase = "row-cert-total"
             cert_mode = True
         elif cert_mode:
-            clase_fila = "row-cert-indiv"
+            clase = "row-cert-indiv"
         else:
-            clase_fila = ""
+            clase = ""
 
         html += f"""
-            <tr class="{clase_fila}">
+            <tr class="{clase}">
                 <td class="col-master">{titulo}</td>
                 <td>{indicador}</td>
                 <td>{valor}</td>
