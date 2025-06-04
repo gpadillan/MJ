@@ -55,42 +55,38 @@ def formatear_tabla(df_raw):
 
     return df_ind, df_cert
 
-def mostrar_bloque(titulo, bloque):
-    df_ind, df_cert = formatear_tabla(bloque)
-
-    solo_certificaciones = df_ind.empty and not df_cert.empty and normalizar(titulo) == "certificaciones"
-
-    if not solo_certificaciones:
-        st.markdown(f"#### 🎓 {titulo}")
-
-    if not df_ind.empty:
-        st.markdown("**📊 Indicadores:**")
-        st.dataframe(df_ind, use_container_width=True, hide_index=True)
-
-    if not df_cert.empty:
-        total_cert = df_cert["Valor"].sum() if "Valor" in df_cert.columns else df_cert["Cantidad"].sum()
-        st.markdown(f"**📜 Certificaciones: {total_cert}**")
-        st.dataframe(df_cert, use_container_width=True, hide_index=True)
-
-# 👇 NUEVA FUNCION: añade el título como columna para Fullscreen
 def mostrar_bloque_con_titulo(titulo, bloque):
     df_ind, df_cert = formatear_tabla(bloque)
 
-    solo_certificaciones = df_ind.empty and not df_cert.empty and normalizar(titulo) == "certificaciones"
+    if df_ind.empty and df_cert.empty:
+        return
 
-    if not solo_certificaciones:
-        st.markdown(f"#### 🎓 {titulo}")
-
-    if not df_ind.empty:
-        df_ind.insert(0, "Máster / Certificación", titulo)
-        st.markdown("**📊 Indicadores:**")
-        st.dataframe(df_ind, use_container_width=True, hide_index=True)
-
+    # Renombrar para unificar
     if not df_cert.empty:
-        total_cert = df_cert["Valor"].sum() if "Valor" in df_cert.columns else df_cert["Cantidad"].sum()
-        st.markdown(f"**📜 Certificaciones: {total_cert}**")
-        df_cert.insert(0, "Máster / Certificación", titulo)
-        st.dataframe(df_cert, use_container_width=True, hide_index=True)
+        df_cert = df_cert.rename(columns={"Certificación": "Indicador", "Cantidad": "Valor"})
+
+    # Unir ambas tablas
+    df_total = pd.concat([df_ind, df_cert], ignore_index=True)
+
+    # Insertar columna de contexto
+    df_total.insert(0, "Máster / Certificación", titulo)
+
+    st.markdown(f"#### 🎓 {titulo}")
+    st.markdown("**📊 Indicadores y Certificaciones:**")
+
+    # Estilo: ocultar visualmente columna 0 (Máster) pero mantenerla en Fullscreen
+    st.markdown(
+        """
+        <style>
+            .dataframe th:first-child, .dataframe td:first-child {
+                color: transparent;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.dataframe(df_total, use_container_width=True, hide_index=True)
 
 def show_area_tech(data):
     hoja = "ÁREA TECH"
@@ -157,5 +153,5 @@ def show_area_tech(data):
     else:
         for titulo, bloque in bloques_finales:
             if titulo == seleccion:
-                mostrar_bloque(titulo, bloque)
+                mostrar_bloque_con_titulo(titulo, bloque)
                 break
