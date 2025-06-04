@@ -67,6 +67,7 @@ def render(df):
     devolucion_true_count = df['DEVOLUCIÓN GE'].astype(str).str.lower().str.strip() == 'true'
     num_devoluciones_true = devolucion_true_count.sum()
 
+    # 🎯 Visualización métrica limpia
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric(label="📌 ALUMNO RIESGO TRIM", value=total_alumnos)
@@ -75,15 +76,7 @@ def render(df):
     with col3:
         st.metric(label="⏳ VENCIDA GE", value=total_ejecucion_pasada)
     with col4:
-        st.markdown(
-            f"""
-            <div style='background-color:#ff4c4c; padding:20px; border-radius:10px; text-align:center'>
-                <h5 style='color:white;'>🔴 DEVOLUCIÓN GE</h5>
-                <h2 style='color:white;'>{num_devoluciones_true}</h2>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        st.metric(label="🔴 DEVOLUCIÓN GE", value=num_devoluciones_true)
 
     st.markdown("---")
 

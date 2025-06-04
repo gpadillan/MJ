@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 import os
 from datetime import datetime
-from responsive import get_screen_size  # 👈 Importa función responsive
+from responsive import get_screen_size
 
 UPLOAD_FOLDER = "uploaded_admisiones"
 VENTAS_FILE = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
@@ -21,7 +21,7 @@ def app():
     }
 
     if not os.path.exists(VENTAS_FILE) or not os.path.exists(PREVENTAS_FILE):
-        st.warning("⚠️ No se han encontrado los archivos 'ventas.xlsx' y/o 'preventas.xlsx'. Sube los archivos desde 'Gestión de Datos'.")
+        st.warning("⚠️ No se han encontrado los archivos 'ventas.xlsx' y/o 'preventas.xlsx'.")
         return
 
     df_ventas = pd.read_excel(VENTAS_FILE)
@@ -85,7 +85,6 @@ def app():
             orden_propietarios = totales_propietario.sort_values(by='Total Oportunidades', ascending=False)['propietario_display'].tolist()
             orden_masters = resumen.groupby('nombre')['Total Oportunidades'].sum().sort_values(ascending=False).index.tolist()
 
-            # 📱 Gráfico responsive móvil/escritorio
             if is_mobile:
                 fig = px.scatter(
                     resumen,
@@ -125,9 +124,12 @@ def app():
                 legend=dict(
                     orientation="h" if is_mobile else "v",
                     yanchor="bottom" if is_mobile else "top",
-                    y=-0.3 if is_mobile else 1,
-                    xanchor="center" if is_mobile else "right",
-                    x=0.5 if is_mobile else 1
+                    y=-0.3 if is_mobile else 0.98,
+                    xanchor="center" if is_mobile else "left",
+                    x=0.5 if is_mobile else 1.02,
+                    bgcolor='rgba(255,255,255,0.95)',
+                    bordercolor='lightgray',
+                    borderwidth=1
                 ),
                 margin=dict(l=20, r=20, t=40, b=80 if is_mobile else 40)
             )
