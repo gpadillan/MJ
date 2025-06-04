@@ -44,7 +44,7 @@ def formatear_tabla(df_raw):
     if pos_reclamaciones != -1:
         indicadores.insert(pos_reclamaciones + 1, ("Certificaciones", total_cert))
 
-    # Añadir certificaciones individuales después de total
+    # Añadir certificaciones individuales después del total
     for cert in certificaciones:
         indicadores.append(cert)
 
@@ -135,7 +135,7 @@ def show_area_tech(data):
             for fila in range(max(0, inicio - 2), min(inicio + 6, df.shape[0])):
                 for col in range(max(0, col_idx - 2), min(df.shape[1], col_idx + 3)):
                     celda = str(df.iat[fila, col])
-                    if any(palabra in celda.lower() for palabra in ["máster", "master", "certificación", "certificacion"]):
+                    if any(p in celda.lower() for p in ["máster", "master", "certificación", "certificacion"]):
                         titulo = celda.replace(":", "").strip()
                         break
                 if titulo:
@@ -145,6 +145,13 @@ def show_area_tech(data):
                 titulo = f"Bloque sin título (fila {inicio}, col {col_idx})"
 
             bloques_finales.append((titulo, bloque))
+
+    # 🚫 Eliminar bloques con título "Certificaciones"
+    bloques_finales = [
+        (titulo, bloque)
+        for titulo, bloque in bloques_finales
+        if normalizar(titulo) != "certificaciones"
+    ]
 
     st.markdown("### 🔍 Selecciona un programa para visualizar:")
     opciones = ["Todos"] + [titulo for titulo, _ in bloques_finales]
