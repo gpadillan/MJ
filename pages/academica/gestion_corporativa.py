@@ -13,55 +13,55 @@ def formatear_tabla(df_raw):
     in_cert_block = False
 
     for i in range(len(df_raw)):
-        nombre = str(df_raw.iloc[i, 0])
+        nombre = str(df_raw.iloc[i, 0]).strip()
         valor = df_raw.iloc[i, 1]
 
-        if nombre.strip().lower() == "nan" or nombre.strip() == "":
+        if nombre.lower() == "nan" or nombre == "":
             continue
 
-        datos.append([nombre, valor])
-        nombre_lower = nombre.lower()
+        nombre_lower = normalizar(nombre)
 
-        if "certificaciones:" in nombre_lower or "certificaciones" == nombre_lower.strip(":"):
-            cert_index = len(datos) - 1
+        if "certificaciones" in nombre_lower:
+            cert_index = len(datos)
             in_cert_block = True
+            datos.append([nombre, 0, 'total_cert'])  # marcador de total
             continue
 
         if in_cert_block and isinstance(valor, (int, float)):
             cert_valores.append(valor)
+            datos.append([nombre, valor, 'cert_item'])
+            continue
 
         if isinstance(valor, (int, float)) and any(p in nombre_lower for p in [
             "cumplimiento", "éxito académico", "satisfacción",
             "riesgo", "absentismo", "cierre expediente", "reseñas"
         ]) and valor <= 1:
-            datos[-1][1] = f"{valor:.2%}".replace(".", ",")
+            valor = f"{valor:.2%}".replace(".", ",")
+
+        datos.append([nombre, valor, 'normal'])
 
     cert_valores = [v for v in cert_valores if pd.notna(v)]
 
-    if cert_index is not None:
-        if cert_valores:
-            cert_total = int(sum(cert_valores))
-            datos[cert_index][1] = cert_total
+    if cert_index is not None and cert_valores:
+        total = int(sum(cert_valores))
+        datos[cert_index][1] = total
     elif cert_valores:
-        cert_total = int(sum(cert_valores))
-        datos.append(["Certificaciones", cert_total])
+        datos.append(["Certificaciones", int(sum(cert_valores)), 'total_cert'])
 
-    return pd.DataFrame(datos, columns=["Indicador", "Valor"])
+    return pd.DataFrame(datos, columns=["Indicador", "Valor", "Tipo"])
 
 def mostrar_bloque(titulo, bloque):
     df_ind = formatear_tabla(bloque)
     st.markdown(f"### 📘 {titulo}")
 
     rows_html = ""
-    cert_mode = False
     primera_fila = True
 
-    for indicador, valor in df_ind.values:
+    for indicador, valor, tipo in df_ind.values:
         clase = ""
-        if normalizar(indicador) == "certificaciones":
+        if tipo == "total_cert":
             clase = 'row-cert-total'
-            cert_mode = True
-        elif cert_mode:
+        elif tipo == "cert_item":
             clase = 'row-cert-indiv'
 
         col_master = titulo if primera_fila else ""
