@@ -85,11 +85,15 @@ def mostrar_bloque(titulo, bloque):
         table {{
             width: 100%;
             border-collapse: collapse;
+            margin-bottom: 2em;
         }}
         th, td {{
             padding: 0.5em;
             border: 1px solid #ccc;
             text-align: left;
+        }}
+        th {{
+            background-color: #f0f0f0;
         }}
     </style>
     <table>
