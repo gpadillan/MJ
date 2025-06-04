@@ -38,13 +38,13 @@ def formatear_tabla(df_raw):
 
         indicadores.append((nombre, valor))
 
-    # Insertar total de certificaciones debajo de "Reclamaciones"
+    # Insertar total certificaciones justo debajo de "Reclamaciones"
     total_cert = sum([v for _, v in certificaciones if isinstance(v, int)])
     pos_reclamaciones = next((i for i, (n, _) in enumerate(indicadores) if normalizar(n) == "reclamaciones"), -1)
     if pos_reclamaciones != -1:
         indicadores.insert(pos_reclamaciones + 1, ("Certificaciones", total_cert))
 
-    # Agregar cada certificación como fila adicional
+    # Añadir certificaciones individuales después de total
     for cert in certificaciones:
         indicadores.append(cert)
 
@@ -54,15 +54,16 @@ def mostrar_bloque(titulo, bloque):
     df_ind = formatear_tabla(bloque)
     st.markdown(f"### 🎓 {titulo}")
 
-    # Formato HTML personalizado
     rows_html = ""
+    cert_mode = False
     for indicador, valor in df_ind.values:
         clase = ""
         if normalizar(indicador) == "certificaciones":
-            clase = 'class="row-cert-total"'
-        elif any(indicador == cert for cert in df_ind["Indicador"].tolist() if cert != "Certificaciones"):
-            clase = 'class="row-cert-indiv"' if indicador not in ["Certificaciones"] else ""
-        row = f'<tr {clase}><td class="col-master">{titulo}</td><td>{indicador}</td><td>{valor}</td></tr>'
+            clase = 'row-cert-total'
+            cert_mode = True
+        elif cert_mode:
+            clase = 'row-cert-indiv'
+        row = f'<tr class="{clase}"><td class="col-master">{titulo}</td><td>{indicador}</td><td>{valor}</td></tr>'
         rows_html += row
 
     tabla_html = f"""
