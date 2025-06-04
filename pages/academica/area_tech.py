@@ -72,6 +72,26 @@ def mostrar_bloque(titulo, bloque):
         st.markdown(f"**📜 Certificaciones: {total_cert}**")
         st.dataframe(df_cert, use_container_width=True, hide_index=True)
 
+# 👇 NUEVA FUNCION: añade el título como columna para Fullscreen
+def mostrar_bloque_con_titulo(titulo, bloque):
+    df_ind, df_cert = formatear_tabla(bloque)
+
+    solo_certificaciones = df_ind.empty and not df_cert.empty and normalizar(titulo) == "certificaciones"
+
+    if not solo_certificaciones:
+        st.markdown(f"#### 🎓 {titulo}")
+
+    if not df_ind.empty:
+        df_ind.insert(0, "Máster / Certificación", titulo)
+        st.markdown("**📊 Indicadores:**")
+        st.dataframe(df_ind, use_container_width=True, hide_index=True)
+
+    if not df_cert.empty:
+        total_cert = df_cert["Valor"].sum() if "Valor" in df_cert.columns else df_cert["Cantidad"].sum()
+        st.markdown(f"**📜 Certificaciones: {total_cert}**")
+        df_cert.insert(0, "Máster / Certificación", titulo)
+        st.dataframe(df_cert, use_container_width=True, hide_index=True)
+
 def show_area_tech(data):
     hoja = "ÁREA TECH"
     if hoja not in data:
@@ -114,7 +134,6 @@ def show_area_tech(data):
 
             bloques_finales.append((titulo, bloque))
 
-    # 🔥 Eliminar bloques duplicados cuyo título sea literalmente "Certificaciones"
     bloques_finales = [
         (titulo, bloque)
         for titulo, bloque in bloques_finales
@@ -131,10 +150,10 @@ def show_area_tech(data):
         mitad = (len(bloques_finales) + 1) // 2
         for titulo, bloque in bloques_finales[:mitad]:
             with col1:
-                mostrar_bloque(titulo, bloque)
+                mostrar_bloque_con_titulo(titulo, bloque)
         for titulo, bloque in bloques_finales[mitad:]:
             with col2:
-                mostrar_bloque(titulo, bloque)
+                mostrar_bloque_con_titulo(titulo, bloque)
     else:
         for titulo, bloque in bloques_finales:
             if titulo == seleccion:
