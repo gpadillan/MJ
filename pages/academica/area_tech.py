@@ -56,6 +56,8 @@ def mostrar_bloque(titulo, bloque):
 
     rows_html = ""
     cert_mode = False
+    primera_fila = True  # Flag para mostrar el título solo una vez
+
     for indicador, valor in df_ind.values:
         clase = ""
         if normalizar(indicador) == "certificaciones":
@@ -63,8 +65,11 @@ def mostrar_bloque(titulo, bloque):
             cert_mode = True
         elif cert_mode:
             clase = 'row-cert-indiv'
-        row = f'<tr class="{clase}"><td class="col-master">{titulo}</td><td>{indicador}</td><td>{valor}</td></tr>'
+
+        col_master = titulo if primera_fila else ""
+        row = f'<tr class="{clase}"><td class="col-master">{col_master}</td><td>{indicador}</td><td>{valor}</td></tr>'
         rows_html += row
+        primera_fila = False
 
     tabla_html = f"""
     <style>
