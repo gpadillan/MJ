@@ -72,7 +72,6 @@ def mostrar_bloque_con_titulo(titulo, bloque):
     st.markdown(f"#### 🎓 {titulo}")
     st.markdown("**📊 Indicadores y Certificaciones:**")
 
-    # Estilo personalizado
     html = """
     <style>
         .styled-table {
@@ -93,6 +92,7 @@ def mostrar_bloque_con_titulo(titulo, bloque):
         }
         .row-cert-total {
             background-color: #fff3cd;
+            font-weight: bold;
         }
         .row-cert-indiv {
             background-color: #e1f5fe;
@@ -109,15 +109,18 @@ def mostrar_bloque_con_titulo(titulo, bloque):
         <tbody>
     """
 
+    cert_mode = False
     for i, row in df_total.iterrows():
         indicador = str(row["Indicador"])
         valor = row["Valor"]
-        clase_fila = ""
 
         if indicador.lower() == "certificaciones":
             clase_fila = "row-cert-total"
-        elif i > 0 and df_total.loc[i - 1, "Indicador"].lower() == "certificaciones":
+            cert_mode = True
+        elif cert_mode:
             clase_fila = "row-cert-indiv"
+        else:
+            clase_fila = ""
 
         html += f"""
             <tr class="{clase_fila}">
