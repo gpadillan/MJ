@@ -48,10 +48,8 @@ def formatear_tabla(df_raw):
 
     return pd.DataFrame(indicadores, columns=["Indicador", "Valor"])
 
-def mostrar_bloque(titulo, bloque):
+def mostrar_bloque_html(titulo, bloque):
     df_ind = formatear_tabla(bloque)
-    st.markdown(f"### 🎓 {titulo}")
-
     rows_html = ""
     cert_mode = False
     primera_fila = True
@@ -70,7 +68,41 @@ def mostrar_bloque(titulo, bloque):
         primera_fila = False
 
     tabla_html = f"""
+    <table>
+        <thead>
+            <tr>
+                <th>Máster/Certificación</th>
+                <th>Indicador</th>
+                <th>Valor</th>
+            </tr>
+        </thead>
+        <tbody>
+            {rows_html}
+        </tbody>
+    </table>
+    """
+    return tabla_html
+
+def mostrar_dos_bloques_lado_a_lado(titulo1, bloque1, titulo2, bloque2):
+    col1_html = mostrar_bloque_html(titulo1, bloque1)
+    col2_html = mostrar_bloque_html(titulo2, bloque2)
+
+    html = f"""
     <style>
+        .bloque-contenedor {{
+            display: flex;
+            gap: 1em;
+            align-items: stretch;
+            margin-bottom: 2em;
+        }}
+        .bloque {{
+            flex: 1;
+            background-color: white;
+            padding: 1em;
+            border: 1px solid #ddd;
+            border-radius: 0.5em;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+        }}
         .col-master {{
             background-color: #f2f2f2;
             font-weight: bold;
@@ -92,20 +124,12 @@ def mostrar_bloque(titulo, bloque):
             text-align: left;
         }}
     </style>
-    <table>
-        <thead>
-            <tr>
-                <th>Máster/Certificación</th>
-                <th>Indicador</th>
-                <th>Valor</th>
-            </tr>
-        </thead>
-        <tbody>
-            {rows_html}
-        </tbody>
-    </table>
+    <div class="bloque-contenedor">
+        <div class="bloque">{col1_html}</div>
+        <div class="bloque">{col2_html}</div>
+    </div>
     """
-    st.markdown(tabla_html, unsafe_allow_html=True)
+    st.markdown(html, unsafe_allow_html=True)
 
 def show_area_tech(data):
     hoja = "ÁREA TECH"
@@ -149,6 +173,7 @@ def show_area_tech(data):
 
             bloques_finales.append((titulo, bloque))
 
+    # Eliminar bloques cuyo título es "Certificaciones"
     bloques_finales = [
         (titulo, bloque)
         for titulo, bloque in bloques_finales
@@ -161,18 +186,12 @@ def show_area_tech(data):
 
     if seleccion == "Todos":
         for i in range(0, len(bloques_finales), 2):
-            col1, col2 = st.columns(2)
-
-            titulo1, bloque1 = bloques_finales[i]
-            with col1:
-                mostrar_bloque(titulo1, bloque1)
-
-            if i + 1 < len(bloques_finales):
-                titulo2, bloque2 = bloques_finales[i + 1]
-                with col2:
-                    mostrar_bloque(titulo2, bloque2)
+            bloque1 = bloques_finales[i]
+            bloque2 = bloques_finales[i + 1] if i + 1 < len(bloques_finales) else ("", pd.DataFrame(columns=["", ""]))
+            mostrar_dos_bloques_lado_a_lado(bloque1[0], bloque1[1], bloque2[0], bloque2[1])
     else:
         for titulo, bloque in bloques_finales:
             if titulo == seleccion:
-                mostrar_bloque(titulo, bloque)
+                bloque_html = mostrar_bloque_html(titulo, bloque)
+                st.markdown(f"<h3>🎓 {titulo}</h3>{bloque_html}", unsafe_allow_html=True)
                 break
