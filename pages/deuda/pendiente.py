@@ -84,7 +84,7 @@ def vista_clientes_pendientes():
         fig2.update_traces(marker_line_color='black', marker_line_width=0.6)
         st.plotly_chart(fig2, use_container_width=True)
 
-    # ✅ Mostrar resumen total en una fila
+    # ✅ Mostrar resumen total en la misma línea
     num_clientes_total = len(total_clientes_unicos)
     deuda_total_acumulada = 0
     if 'df1' in locals():
@@ -92,14 +92,7 @@ def vista_clientes_pendientes():
     if 'df2' in locals():
         deuda_total_acumulada += total_deuda_22_25
 
-    st.markdown("### 🧾 Total general 2018–2025")
-    st.markdown(
-        f"<div style='display: flex; justify-content: space-between;'>"
-        f"<span><strong>👥 Total clientes con deuda (2018–2025):</strong> {num_clientes_total}</span>"
-        f"<span><strong>🏅 Total deuda acumulada:</strong> {deuda_total_acumulada:,.2f} €</span>"
-        f"</div>",
-        unsafe_allow_html=True
-    )
+    st.markdown(f"**👥 Total clientes con deuda en 2018–2025:** `{num_clientes_total}` – 🏅 Total deuda: `{deuda_total_acumulada:,.2f} €`")
 
     st.session_state["total_clientes_unicos"] = num_clientes_total
     st.session_state["total_deuda_acumulada"] = deuda_total_acumulada
@@ -215,12 +208,7 @@ def render():
         html_buffer.write(to_html(fig2, include_plotlyjs='cdn', full_html=False))
 
     html_buffer.write("<h2>Totales combinados</h2>")
-    html_buffer.write(
-        f"<div style='display: flex; justify-content: space-between;'>"
-        f"<span><strong>Total clientes con deuda (2018–2025):</strong> {st.session_state.get('total_clientes_unicos', 0)}</span>"
-        f"<span><strong>Total deuda acumulada:</strong> {st.session_state.get('total_deuda_acumulada', 0):,.2f} €</span>"
-        f"</div>"
-    )
+    html_buffer.write(f"<p><strong>👥 Total clientes con deuda en 2018–2025:</strong> {st.session_state.get('total_clientes_unicos', 0)} – 🏅 Total deuda: {st.session_state.get('total_deuda_acumulada', 0):,.2f} €</p>")
 
     if "ResumenClientes" in resultado_exportacion:
         html_buffer.write("<h1>Detalle de deuda por cliente</h1>")
