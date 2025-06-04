@@ -68,23 +68,67 @@ def mostrar_bloque_con_titulo(titulo, bloque):
         bloques.append(df_cert)
 
     df_total = pd.concat(bloques, ignore_index=True)
-    df_total.insert(0, "Máster / Certificación", titulo)
 
     st.markdown(f"#### 🎓 {titulo}")
     st.markdown("**📊 Indicadores y Certificaciones:**")
 
-    st.markdown(
-        """
-        <style>
-            .dataframe th:first-child, .dataframe td:first-child {
-                color: transparent;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+    # Estilo personalizado
+    html = """
+    <style>
+        .styled-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: sans-serif;
+        }
+        .styled-table th {
+            background-color: #f2f2f2;
+            text-align: left;
+            padding: 10px;
+        }
+        .styled-table td {
+            padding: 10px;
+        }
+        .col-master {
+            background-color: #f2f2f2;
+        }
+        .row-cert-total {
+            background-color: #fff3cd;
+        }
+        .row-cert-indiv {
+            background-color: #e1f5fe;
+        }
+    </style>
+    <table class="styled-table">
+        <thead>
+            <tr>
+                <th class="col-master">Máster / Certificación</th>
+                <th>Indicador</th>
+                <th>Valor</th>
+            </tr>
+        </thead>
+        <tbody>
+    """
 
-    st.dataframe(df_total, use_container_width=True, hide_index=True)
+    for i, row in df_total.iterrows():
+        indicador = str(row["Indicador"])
+        valor = row["Valor"]
+        clase_fila = ""
+
+        if indicador.lower() == "certificaciones":
+            clase_fila = "row-cert-total"
+        elif i > 0 and df_total.loc[i - 1, "Indicador"].lower() == "certificaciones":
+            clase_fila = "row-cert-indiv"
+
+        html += f"""
+            <tr class="{clase_fila}">
+                <td class="col-master">{titulo}</td>
+                <td>{indicador}</td>
+                <td>{valor}</td>
+            </tr>
+        """
+
+    html += "</tbody></table>"
+    st.markdown(html, unsafe_allow_html=True)
 
 def show_area_tech(data):
     hoja = "ÁREA TECH"
