@@ -38,13 +38,11 @@ def formatear_tabla(df_raw):
 
         indicadores.append((nombre, valor))
 
-    # Insertar total certificaciones justo debajo de "Reclamaciones"
     total_cert = sum([v for _, v in certificaciones if isinstance(v, int)])
     pos_reclamaciones = next((i for i, (n, _) in enumerate(indicadores) if normalizar(n) == "reclamaciones"), -1)
     if pos_reclamaciones != -1:
         indicadores.insert(pos_reclamaciones + 1, ("Certificaciones", total_cert))
 
-    # Añadir certificaciones individuales después del total
     for cert in certificaciones:
         indicadores.append(cert)
 
@@ -56,7 +54,7 @@ def mostrar_bloque(titulo, bloque):
 
     rows_html = ""
     cert_mode = False
-    primera_fila = True  # Flag para mostrar el título solo una vez
+    primera_fila = True
 
     for indicador, valor in df_ind.values:
         clase = ""
@@ -151,7 +149,6 @@ def show_area_tech(data):
 
             bloques_finales.append((titulo, bloque))
 
-    # 🚫 Eliminar bloques con título "Certificaciones"
     bloques_finales = [
         (titulo, bloque)
         for titulo, bloque in bloques_finales
@@ -163,14 +160,17 @@ def show_area_tech(data):
     seleccion = st.radio("", opciones, horizontal=True)
 
     if seleccion == "Todos":
-        col1, col2 = st.columns(2)
-        mitad = (len(bloques_finales) + 1) // 2
-        for titulo, bloque in bloques_finales[:mitad]:
+        for i in range(0, len(bloques_finales), 2):
+            col1, col2 = st.columns(2)
+
+            titulo1, bloque1 = bloques_finales[i]
             with col1:
-                mostrar_bloque(titulo, bloque)
-        for titulo, bloque in bloques_finales[mitad:]:
-            with col2:
-                mostrar_bloque(titulo, bloque)
+                mostrar_bloque(titulo1, bloque1)
+
+            if i + 1 < len(bloques_finales):
+                titulo2, bloque2 = bloques_finales[i + 1]
+                with col2:
+                    mostrar_bloque(titulo2, bloque2)
     else:
         for titulo, bloque in bloques_finales:
             if titulo == seleccion:
