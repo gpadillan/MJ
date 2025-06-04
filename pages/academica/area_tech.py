@@ -46,11 +46,9 @@ def formatear_tabla(df_raw):
         indicadores.append([nombre, valor])
 
     df_ind = pd.DataFrame(indicadores, columns=["Indicador", "Valor"])
-    df_cert = pd.DataFrame(certificaciones, columns=["Certificación", "Cantidad"])
-    df_cert = df_cert[df_cert["Cantidad"] > 0]
+    df_cert = pd.DataFrame(certificaciones, columns=["Indicador", "Valor"])
 
     if solo_certificaciones and df_ind.empty and not df_cert.empty:
-        df_cert.columns = ["Indicador", "Valor"]
         return pd.DataFrame(), df_cert
 
     return df_ind, df_cert
@@ -61,14 +59,16 @@ def mostrar_bloque_con_titulo(titulo, bloque):
     if df_ind.empty and df_cert.empty:
         return
 
-    # Añadir fila resumen de certificaciones
-    if not df_cert.empty and "Cantidad" in df_cert.columns:
-        suma_cert = df_cert["Cantidad"].sum()
-        fila_cert = pd.DataFrame([["Certificaciones", suma_cert]], columns=["Indicador", "Valor"])
-        df_ind = pd.concat([df_ind, fila_cert], ignore_index=True)
+    bloques = [df_ind]
 
-    # Insertar columna máster/certificación
-    df_ind.insert(0, "Máster / Certificación", titulo)
+    if not df_cert.empty:
+        suma_cert = df_cert["Valor"].sum()
+        resumen = pd.DataFrame([["Certificaciones", suma_cert]], columns=["Indicador", "Valor"])
+        bloques.append(resumen)
+        bloques.append(df_cert)
+
+    df_total = pd.concat(bloques, ignore_index=True)
+    df_total.insert(0, "Máster / Certificación", titulo)
 
     st.markdown(f"#### 🎓 {titulo}")
     st.markdown("**📊 Indicadores y Certificaciones:**")
@@ -84,7 +84,7 @@ def mostrar_bloque_con_titulo(titulo, bloque):
         unsafe_allow_html=True
     )
 
-    st.dataframe(df_ind, use_container_width=True, hide_index=True)
+    st.dataframe(df_total, use_container_width=True, hide_index=True)
 
 def show_area_tech(data):
     hoja = "ÁREA TECH"
