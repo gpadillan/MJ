@@ -61,20 +61,18 @@ def mostrar_bloque_con_titulo(titulo, bloque):
     if df_ind.empty and df_cert.empty:
         return
 
-    # Renombrar para unificar
-    if not df_cert.empty:
-        df_cert = df_cert.rename(columns={"Certificación": "Indicador", "Cantidad": "Valor"})
+    # Añadir fila resumen de certificaciones
+    if not df_cert.empty and "Cantidad" in df_cert.columns:
+        suma_cert = df_cert["Cantidad"].sum()
+        fila_cert = pd.DataFrame([["Certificaciones", suma_cert]], columns=["Indicador", "Valor"])
+        df_ind = pd.concat([df_ind, fila_cert], ignore_index=True)
 
-    # Unir ambas tablas
-    df_total = pd.concat([df_ind, df_cert], ignore_index=True)
-
-    # Insertar columna de contexto
-    df_total.insert(0, "Máster / Certificación", titulo)
+    # Insertar columna máster/certificación
+    df_ind.insert(0, "Máster / Certificación", titulo)
 
     st.markdown(f"#### 🎓 {titulo}")
     st.markdown("**📊 Indicadores y Certificaciones:**")
 
-    # Estilo: ocultar visualmente columna 0 (Máster) pero mantenerla en Fullscreen
     st.markdown(
         """
         <style>
@@ -86,7 +84,7 @@ def mostrar_bloque_con_titulo(titulo, bloque):
         unsafe_allow_html=True
     )
 
-    st.dataframe(df_total, use_container_width=True, hide_index=True)
+    st.dataframe(df_ind, use_container_width=True, hide_index=True)
 
 def show_area_tech(data):
     hoja = "ÁREA TECH"
