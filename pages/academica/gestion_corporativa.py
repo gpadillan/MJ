@@ -15,12 +15,16 @@ def formatear_tabla(df_raw):
     porcentaje_keys = [
         "cumplimiento fechas docente",
         "cumplimiento fechas alumnado",
-        "éxito academico",
+        "exito academico",
+        "éxito académico",
         "satisfaccion alumnado",
+        "satisfacción alumnado",
         "riesgo",
         "absentismo",
         "cierre expediente academico",
-        "resenas"
+        "cierre expediente académico",
+        "resenas",
+        "reseñas"
     ]
 
     for i in range(len(df_raw)):
@@ -43,8 +47,8 @@ def formatear_tabla(df_raw):
             datos.append([nombre, valor, 'cert_item'])
             continue
 
-        if isinstance(valor, (int, float)) and nombre_lower in porcentaje_keys and 0 <= valor <= 1:
-            valor = f"{valor * 100:.0f}%"
+        if isinstance(valor, (int, float)) and any(k in nombre_lower for k in porcentaje_keys) and 0 <= valor <= 1:
+            valor = f"{valor:.2%}".replace(".", ",")
 
         datos.append([nombre, valor, 'normal'])
 
@@ -58,7 +62,7 @@ def formatear_tabla(df_raw):
 
     return pd.DataFrame(datos, columns=["Indicador", "Valor", "Tipo"])
 
-def mostrar_bloque(titulo, bloque):
+def mostrar_bloque(titulo, bloque, mostrar_titulo=True):
     df_ind = formatear_tabla(bloque)
 
     rows_html = ""
