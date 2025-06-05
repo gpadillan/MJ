@@ -70,7 +70,6 @@ def principal_page():
     importes_por_mes = {}
     estados = {}
 
-    # === VENTAS ===
     if os.path.exists(VENTAS_FILE):
         df_ventas = pd.read_excel(VENTAS_FILE)
         if "fecha de cierre" in df_ventas.columns:
@@ -84,7 +83,6 @@ def principal_page():
                 matriculas_por_mes[m] = len(df_mes)
                 importes_por_mes[m] = df_mes.get('importe', pd.Series(0)).sum()
 
-    # === PREVENTAS ===
     if os.path.exists(PREVENTAS_FILE):
         df_preventas = pd.read_excel(PREVENTAS_FILE)
         total_preventas = len(df_preventas)
@@ -92,7 +90,6 @@ def principal_page():
         if columnas_importe:
             total_preventas_importe = df_preventas[columnas_importe].sum(numeric_only=True).sum()
 
-    # === GESTIÓN DE COBRO ===
     if os.path.exists(GESTION_FILE):
         df_gestion = pd.read_excel(GESTION_FILE)
         if "Estado" in df_gestion.columns:
@@ -110,7 +107,6 @@ def principal_page():
                 df_estado_totales["Total"] = df_estado_totales.sum(axis=1)
                 estados = df_estado_totales["Total"].to_dict()
 
-    # === ADMISIÓN ===
     st.markdown("## 📥 Admisiones")
     st.markdown(f"### 📅 Matrículas por Mes ({anio_actual})")
 
@@ -128,7 +124,6 @@ def principal_page():
     col1.markdown(render_info_card("Matrículas Totales", total_matriculas, f"{sum(importes_por_mes.values()):,.2f}".replace(",", "."), "#c8e6c9"), unsafe_allow_html=True)
     col2.markdown(render_info_card("Preventas", total_preventas, f"{total_preventas_importe:,.2f}".replace(",", "."), "#ffe0b2"), unsafe_allow_html=True)
 
-    # === COBRO ===
     if estados:
         st.markdown("---")
         st.markdown("## 💼 Gestión de Cobro")
@@ -139,7 +134,6 @@ def principal_page():
             for j, (estado, total) in enumerate(estado_items[i:i+4]):
                 cols[j].markdown(render_import_card(f"Estado: {estado}", f"{total:,.2f}".replace(",", ".")), unsafe_allow_html=True)
 
-    # === ACADÉMICA ===
     if "academica_excel_data" in st.session_state:
         data = st.session_state["academica_excel_data"]
         hoja = "CONSOLIDADO ACADÉMICO"
@@ -174,4 +168,47 @@ def principal_page():
 
             except Exception as e:
                 st.warning("⚠️ Error al procesar los indicadores académicos.")
+                st.exception(e)
+
+        # === NUEVO BLOQUE: Indicadores Cierre Expediente ===
+        hoja_ce = "CIERRE EXPEDIENTE"
+        if hoja_ce in data:
+            df_ce = data[hoja_ce]
+            st.markdown("---")
+            st.markdown("## 🧑‍💼 Indicadores Cierre de Expediente")
+
+            try:
+                df_ce.columns = df_ce.columns.str.upper()
+                df_ce['CONSECUCIÓN GE'] = df_ce['CONSECUCIÓN GE'].astype(str).str.upper() == "TRUE"
+                df_ce['INAPLICACIÓN GE'] = df_ce['INAPLICACIÓN GE'].astype(str).str.upper() == "TRUE"
+                df_ce['EMPRESA GE'] = df_ce['EMPRESA GE'].astype(str).str.strip().str.upper()
+                df_ce['EMPRESA PRÁCT.'] = df_ce['EMPRESA PRÁCT.'].astype(str).str.strip().str.upper()
+
+                total_consecucion = df_ce['CONSECUCIÓN GE'].sum()
+                total_inaplicacion = df_ce['INAPLICACIÓN GE'].sum()
+                total_empresa_ge = df_ce['EMPRESA GE'][~df_ce['EMPRESA GE'].isin(['', 'NO ENCONTRADO'])].shape[0]
+
+                df_ce['PRACTICAS_BOOL'] = (
+                    (df_ce['PRÁCTCAS/GE'].astype(str).str.upper() == 'GE') &
+                    (~df_ce['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])) &
+                    (df_ce['CONSECUCIÓN GE'].astype(str).str.upper() != 'TRUE') &
+                    (df_ce['INAPLICACIÓN GE'].astype(str).str.upper() != 'TRUE') &
+                    (df_ce['DEVOLUCIÓN GE'].astype(str).str.upper() != 'TRUE')
+                )
+                total_practicas_actual = df_ce['PRACTICAS_BOOL'].sum()
+
+                indicadores_ce = [
+                    ("✅ CONSECUCIÓN", total_consecucion),
+                    ("🚫 INAPLICACIÓN", total_inaplicacion),
+                    ("🏢 Alumnado total en PRÁCTICAS", total_empresa_ge),
+                    ("🔄 Prácticas actuales en selección", total_practicas_actual)
+                ]
+
+                for i in range(0, len(indicadores_ce), 4):
+                    cols = st.columns(4)
+                    for j, (titulo, valor) in enumerate(indicadores_ce[i:i+4]):
+                        cols[j].markdown(render_import_card(titulo, valor, "#e3f2fd"), unsafe_allow_html=True)
+
+            except Exception as e:
+                st.warning("⚠️ Error al procesar cierre de expediente.")
                 st.exception(e)
