@@ -24,7 +24,7 @@ def formatear_tabla(df_raw):
         if "certificaciones" in nombre_lower:
             cert_index = len(datos)
             in_cert_block = True
-            datos.append([nombre, 0, 'total_cert'])  # marcador de total
+            datos.append([nombre, 0, 'total_cert'])
             continue
 
         if in_cert_block and isinstance(valor, (int, float)):
@@ -32,19 +32,18 @@ def formatear_tabla(df_raw):
             datos.append([nombre, valor, 'cert_item'])
             continue
 
+        # ✅ Mostrar como porcentaje si corresponde
         if isinstance(valor, (int, float)) and any(p in nombre_lower for p in [
-            "cumplimiento", "éxito académico", "satisfacción",
-            "riesgo", "absentismo", "cierre expediente", "reseñas"
-        ]) and valor <= 1:
-            valor = f"{valor:.2%}".replace(".", ",")
+            "éxito académico", "reseñas"
+        ]):
+            valor = f"{valor * 100:.0f}%"
 
         datos.append([nombre, valor, 'normal'])
 
     cert_valores = [v for v in cert_valores if pd.notna(v)]
 
     if cert_index is not None and cert_valores:
-        total = int(sum(cert_valores))
-        datos[cert_index][1] = total
+        datos[cert_index][1] = int(sum(cert_valores))
     elif cert_valores:
         datos.append(["Certificaciones", int(sum(cert_valores)), 'total_cert'])
 
@@ -52,8 +51,6 @@ def formatear_tabla(df_raw):
 
 def mostrar_bloque(titulo, bloque):
     df_ind = formatear_tabla(bloque)
-    st.markdown(f"### 📘 {titulo}")
-
     rows_html = ""
     primera_fila = True
 
