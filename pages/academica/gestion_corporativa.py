@@ -24,7 +24,7 @@ def formatear_tabla(df_raw):
         if "certificaciones" in nombre_lower:
             cert_index = len(datos)
             in_cert_block = True
-            datos.append([nombre, 0, 'total_cert'])  # marcador de total
+            datos.append([nombre, 0, 'total_cert'])
             continue
 
         if in_cert_block and isinstance(valor, (int, float)):
@@ -52,8 +52,6 @@ def formatear_tabla(df_raw):
 
 def mostrar_bloque(titulo, bloque):
     df_ind = formatear_tabla(bloque)
-    st.markdown(f"### 📘 {titulo}")
-
     rows_html = ""
     primera_fila = True
 
