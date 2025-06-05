@@ -63,6 +63,7 @@ def render():
         hoja_estado("descarga_año_2025", "Pendiente Total"),
         hoja_estado("descarga_becas_isa", "Becas ISA – Consolidado"),
         hoja_estado("descarga_pendiente_cobro_isa", "Pendiente Cobro ISA"),
+        hoja_estado("html_pendiente", "Pendientes por Cliente")  # NUEVO
     ]
 
     for hoja in hojas_disponibles:
@@ -113,6 +114,7 @@ def render():
         "html_año_2025": "Pendiente Total",
         "html_becas_isa": "Becas ISA – Consolidado",
         "html_pendiente_cobro_isa": "Pendiente Cobro ISA",
+        "html_pendiente": "Pendientes por Cliente"  # NUEVO
     }
 
     htmls = {k: st.session_state[k] for k in html_claves if k in st.session_state}
