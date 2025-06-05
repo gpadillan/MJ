@@ -84,7 +84,6 @@ def vista_clientes_pendientes():
         fig2.update_traces(marker_line_color='black', marker_line_width=0.6)
         st.plotly_chart(fig2, use_container_width=True)
 
-    # ✅ Mostrar resumen total en la misma línea
     num_clientes_total = len(total_clientes_unicos)
     deuda_total_acumulada = 0
     if 'df1' in locals():
@@ -179,6 +178,9 @@ def render():
     total_global = st.session_state.get("total_deuda_barras", 0)
     texto_total_global = f"TOTAL desde gráfico anual: 🏅 {total_global:,.2f} €"
     st.markdown(f"### 🧮 {texto_total_global}")
+
+    # ✅ Guardar para consolidación en gestion_datos.py
+    st.session_state["descarga_año_2025"] = resultado_exportacion
 
     if resultado_exportacion:
         buffer_excel = io.BytesIO()
