@@ -1,9 +1,8 @@
-import streamlit as st
+ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
 from pages.academica.sharepoint_utils import get_access_token, get_site_id, download_excel
-from pages.desarrollo.cierre_expediente_total import cargar_kpis_totales
 
 def render_info_card(title: str, value1, value2, color: str = "#e3f2fd"):
     return f"""
@@ -96,7 +95,6 @@ def principal_page():
     # === GESTIÓN DE COBRO ===
     if os.path.exists(GESTION_FILE):
         df_gestion = pd.read_excel(GESTION_FILE)
-        st.session_state["excel_data"] = df_gestion  # ✅ para desarrollo profesional
         if "Estado" in df_gestion.columns:
             for anio in range(2018, anio_actual):
                 col = f"Total {anio}"
@@ -177,20 +175,3 @@ def principal_page():
             except Exception as e:
                 st.warning("⚠️ Error al procesar los indicadores académicos.")
                 st.exception(e)
-
-    # === DESARROLLO PROFESIONAL ===
-    try:
-        df_kpi = st.session_state.get("excel_data")
-        if df_kpi is not None:
-            kpis = cargar_kpis_totales(df_kpi)
-            st.markdown("---")
-            st.markdown("## 🧑‍💼 Desarrollo Profesional")
-
-            cols = st.columns(4)
-            cols[0].markdown(render_import_card("🎯 CONSECUCIÓN", kpis["consecucion"], "#e3f2fd"), unsafe_allow_html=True)
-            cols[1].markdown(render_import_card("🚫 INAPLICACIÓN", kpis["inaplicacion"], "#fce4ec"), unsafe_allow_html=True)
-            cols[2].markdown(render_import_card("🏢 Alumnado en PRÁCTICAS", kpis["alumnado_practicas"], "#ede7f6"), unsafe_allow_html=True)
-            cols[3].markdown(render_import_card("🕵️ Prácticas en curso", kpis["practicas_actuales"], "#e8f5e9"), unsafe_allow_html=True)
-    except Exception as e:
-        st.warning("⚠️ No se pudieron cargar los KPIs de desarrollo profesional.")
-        st.exception(e)
