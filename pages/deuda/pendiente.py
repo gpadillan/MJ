@@ -84,6 +84,7 @@ def vista_clientes_pendientes():
         fig2.update_traces(marker_line_color='black', marker_line_width=0.6)
         st.plotly_chart(fig2, use_container_width=True)
 
+    # ✅ Mostrar resumen total
     num_clientes_total = len(total_clientes_unicos)
     deuda_total_acumulada = 0
     if 'df1' in locals():
@@ -111,6 +112,7 @@ def vista_clientes_pendientes():
         }).sort_values(by='Total deuda', ascending=False)
 
         st.markdown("### 📋 Detalle de deuda por cliente")
+
         gb = GridOptionsBuilder.from_dataframe(df_detalle)
         gb.configure_default_column(filter=True, sortable=True, resizable=True)
         gb.configure_grid_options(domLayout='normal', suppressRowClickSelection=True)
@@ -178,6 +180,8 @@ def render():
     st.markdown(f"### 🧮 {texto_total_global}")
 
     if resultado_exportacion:
+        st.session_state["descarga_pendiente_total"] = resultado_exportacion
+
         buffer_excel = io.BytesIO()
         with pd.ExcelWriter(buffer_excel, engine="xlsxwriter") as writer:
             for sheet_name, df_export in resultado_exportacion.items():
@@ -191,36 +195,34 @@ def render():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-    html_buffer = io.StringIO()
-    html_buffer.write("<html><head><meta charset='utf-8'><title>Exportación</title></head><body>")
+        html_buffer = io.StringIO()
+        html_buffer.write("<html><head><meta charset='utf-8'><title>Exportación</title></head><body>")
 
-    if "2018_2021" in resultado_exportacion:
-        html_buffer.write("<h1>Resumen 2018–2021</h1>")
-        html_buffer.write(resultado_exportacion["2018_2021"].to_html(index=False))
-        html_buffer.write(to_html(fig1, include_plotlyjs='cdn', full_html=False))
+        if "2018_2021" in resultado_exportacion:
+            html_buffer.write("<h1>Resumen 2018–2021</h1>")
+            html_buffer.write(resultado_exportacion["2018_2021"].to_html(index=False))
+            html_buffer.write(to_html(fig1, include_plotlyjs='cdn', full_html=False))
 
-    if "2022_2025" in resultado_exportacion:
-        html_buffer.write("<h1>Resumen 2022–2025</h1>")
-        html_buffer.write(resultado_exportacion["2022_2025"].to_html(index=False))
-        html_buffer.write(to_html(fig2, include_plotlyjs='cdn', full_html=False))
+        if "2022_2025" in resultado_exportacion:
+            html_buffer.write("<h1>Resumen 2022–2025</h1>")
+            html_buffer.write(resultado_exportacion["2022_2025"].to_html(index=False))
+            html_buffer.write(to_html(fig2, include_plotlyjs='cdn', full_html=False))
 
-    html_buffer.write(f"<p><strong>👥 Total clientes con deuda en 2018–2025:</strong> {st.session_state.get('total_clientes_unicos', 0)} – 🏅 Total deuda: {st.session_state.get('total_deuda_acumulada', 0):,.2f} €</p>")
+        html_buffer.write("<h2>Totales combinados</h2>")
+        html_buffer.write(f"<p><strong>👥 Total clientes con deuda en 2018–2025:</strong> {st.session_state.get('total_clientes_unicos', 0)} – 🏅 Total deuda: {st.session_state.get('total_deuda_acumulada', 0):,.2f} €</p>")
 
-    if "ResumenClientes" in resultado_exportacion:
-        html_buffer.write("<h1>Detalle de deuda por cliente</h1>")
-        html_buffer.write(resultado_exportacion["ResumenClientes"].to_html(index=False))
+        if "ResumenClientes" in resultado_exportacion:
+            html_buffer.write("<h1>Detalle de deuda por cliente</h1>")
+            html_buffer.write(resultado_exportacion["ResumenClientes"].to_html(index=False))
 
-    if "Totales_Años_Meses" in resultado_exportacion:
-        html_buffer.write("<h2>Totales por año (deuda anual)</h2>")
-        html_buffer.write(resultado_exportacion["Totales_Años_Meses"].to_html(index=False))
-        html_buffer.write(to_html(fig_totales, include_plotlyjs='cdn', full_html=False))
+        if "Totales_Años_Meses" in resultado_exportacion:
+            html_buffer.write("<h2>Totales por año (deuda anual)</h2>")
+            html_buffer.write(resultado_exportacion["Totales_Años_Meses"].to_html(index=False))
+            html_buffer.write(to_html(fig_totales, include_plotlyjs='cdn', full_html=False))
 
-    html_buffer.write(f"<h2>🧮 {texto_total_global}</h2>")
-    html_buffer.write("</body></html>")
+        html_buffer.write(f"<h2>{texto_total_global}</h2>")
+        html_buffer.write("</body></html>")
 
-    st.download_button(
-        label="📄 Descargar HTML filtrado",
-        data=html_buffer.getvalue(),
-        file_name="detalle_filtrado.html",
-        mime="text/html"
-    )
+        st.session_state["html_pendiente_total"] = html_buffer.getvalue()
+
+        st.downl

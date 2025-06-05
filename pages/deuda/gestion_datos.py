@@ -1,4 +1,4 @@
-﻿import streamlit as st
+﻿import streamlit as st 
 import pandas as pd
 import io
 import os
@@ -60,10 +60,9 @@ def render():
 
     hojas_disponibles = [
         hoja_estado("descarga_global", "Global"),
-        hoja_estado("descarga_año_2025", "Pendiente Total"),
+        hoja_estado("descarga_pendiente_total", "Pendiente Total"),
         hoja_estado("descarga_becas_isa", "Becas ISA – Consolidado"),
         hoja_estado("descarga_pendiente_cobro_isa", "Pendiente Cobro ISA"),
-        hoja_estado("html_pendiente", "Pendientes por Cliente")  # NUEVO
     ]
 
     for hoja in hojas_disponibles:
@@ -77,8 +76,8 @@ def render():
         if "descarga_global" in st.session_state:
             st.session_state["descarga_global"].to_excel(writer, sheet_name="Global", index=False)
 
-        if "descarga_año_2025" in st.session_state:
-            pendiente_total = st.session_state["descarga_año_2025"]
+        if "descarga_pendiente_total" in st.session_state:
+            pendiente_total = st.session_state["descarga_pendiente_total"]
             if isinstance(pendiente_total, dict):
                 for nombre, hoja in pendiente_total.items():
                     hoja.to_excel(writer, sheet_name=f"pendiente_{nombre[:22]}", index=False)
@@ -111,10 +110,9 @@ def render():
 
     html_claves = {
         "html_global": "Global",
-        "html_año_2025": "Pendiente Total",
+        "html_pendiente_total": "Pendiente Total",
         "html_becas_isa": "Becas ISA – Consolidado",
         "html_pendiente_cobro_isa": "Pendiente Cobro ISA",
-        "html_pendiente": "Pendientes por Cliente"  # NUEVO
     }
 
     htmls = {k: st.session_state[k] for k in html_claves if k in st.session_state}
