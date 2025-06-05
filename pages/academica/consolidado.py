@@ -10,7 +10,7 @@ def show_consolidado(data):
     df = data[hoja]
     st.title("📊 Consolidado Académico EIP")
 
-    # ======== BLOQUE 1: Indicadores Académicos =========
+    # ======== BLOQUE 1: Indicadores Académicos + Certificaciones =========
     indicadores = []
 
     total_alumnos = df.iloc[1, 1]
@@ -19,7 +19,6 @@ def show_consolidado(data):
     for i in range(2, 10):
         nombre = str(df.iloc[i, 1]).strip()
         valor = df.iloc[i, 2]
-
         if pd.notna(nombre) and pd.notna(valor):
             if isinstance(valor, float) and valor <= 1:
                 valor = f"{valor:.2%}".replace(".", ",")
@@ -37,7 +36,6 @@ def show_consolidado(data):
     if pd.notna(nombre) and pd.notna(valor):
         indicadores.append([nombre, int(valor), "normal"])
 
-    # ======== BLOQUE 2: Certificaciones =========
     total_cert = int(df.iloc[13, 2])
     indicadores.append(["Certificaciones", total_cert, "total_cert"])
 
@@ -45,7 +43,7 @@ def show_consolidado(data):
     for _, row in certs.iterrows():
         indicadores.append([row[0], int(row[1]), "cert_item"])
 
-    # ======== BLOQUE 3: Recobros =========
+    # ======== BLOQUE 2: Recobros =========
     recobros = []
     for i in range(1, 5):
         concepto = str(df.iloc[i, 4]).strip()
@@ -64,42 +62,38 @@ def show_consolidado(data):
             recobros.append([concepto, valor, "normal"])
 
     # ======== GENERAR HTML =========
-    def render_tabla(titulo, filas):
-        html = f"""
+    def render_tabla(filas):
+        html = """
         <style>
-            .tabla-custom {{
+            .tabla-custom {
                 width: 100%;
                 border-collapse: collapse;
                 margin-bottom: 2em;
-            }}
-            .tabla-custom th, .tabla-custom td {{
+            }
+            .tabla-custom th, .tabla-custom td {
                 padding: 0.5em;
                 border: 1px solid #ccc;
                 text-align: left;
-            }}
-            .tabla-custom th {{
+            }
+            .tabla-custom th {
                 background-color: #f0f0f0;
-            }}
-            .col-master {{
+            }
+            .col-master {
                 background-color: #f2f2f2;
                 font-weight: bold;
-            }}
-            .row-cert-total {{
+            }
+            .row-cert-total {
                 background-color: #fff3cd;
                 font-weight: bold;
-            }}
-            .row-cert-indiv {{
+            }
+            .row-cert-indiv {
                 background-color: #e3f2fd;
-            }}
+            }
         </style>
-        <h3>{titulo}</h3>
         <table class="tabla-custom">
             <thead>
-                <tr>
-                    <th>Indicador</th><th>Valor</th>
-                </tr>
-            </thead>
-            <tbody>
+                <tr><th>Indicador</th><th>Valor</th></tr>
+            </thead><tbody>
         """
         for indicador, valor, tipo in filas:
             clase = ""
@@ -111,5 +105,11 @@ def show_consolidado(data):
         html += "</tbody></table>"
         return html
 
-    st.markdown(render_tabla("🎓 Indicadores Académicos y Certificaciones", indicadores), unsafe_allow_html=True)
-    st.markdown(render_tabla("💰 Recobros EIP", recobros), unsafe_allow_html=True)
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        st.markdown("### 🎓 Indicadores Académicos y Certificaciones")
+        st.markdown(render_tabla(indicadores), unsafe_allow_html=True)
+
+    with col2:
+        st.markdown("### 💰 Recobros EIP")
+        st.markdown(render_tabla(recobros), unsafe_allow_html=True)
