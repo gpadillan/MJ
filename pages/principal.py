@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
 import os
+import json
+import pygsheets
 from datetime import datetime
-
 from pages.academica.sharepoint_utils import get_access_token, get_site_id, download_excel
-from pages.desarrollo.utils import procesar_kpis_cierre  # NUEVO IMPORT
+from cierre_expediente_total import get_kpis_basicos  # <- asegúrate de que esta función esté definida
 
 def render_info_card(title: str, value1, value2, color: str = "#e3f2fd"):
     return f"""
@@ -26,6 +27,27 @@ def render_import_card(title: str, value, color: str = "#ede7f6"):
             <strong>{value}</strong>
         </div>
     """
+
+def render_card(title, value, color):
+    return f"""
+        <div style="background-color:{color}; padding:16px; border-radius:12px; text-align:center; box-shadow: 0 4px 8px rgba(0,0,0,0.1)">
+            <h4 style="margin-bottom:0.5em">{title}</h4>
+            <h2 style="margin:0">{value}</h2>
+        </div>
+    """
+
+@st.cache_resource
+def connect_gsheets():
+    with open("/tmp/gsheets_credentials.json", "w") as f:
+        json.dump(st.secrets["google_service_account"], f)
+    return pygsheets.authorize(service_account_file="/tmp/gsheets_credentials.json")
+
+@st.cache_data
+def get_google_sheet(sheet_title: str, worksheet_index: int = 0) -> pd.DataFrame:
+    client = connect_gsheets()
+    sh = client.open(sheet_title)
+    worksheet = sh[worksheet_index]
+    return worksheet.get_as_df()
 
 def load_academica_data():
     if "academica_excel_data" not in st.session_state:
@@ -178,20 +200,20 @@ def principal_page():
                 st.warning("⚠️ Error al procesar los indicadores académicos.")
                 st.exception(e)
 
-    # === CIERRE EXPEDIENTE (desde Google Sheets) ===
-    kpis_cierre = {}
-    try:
-        df_cierre = pd.read_csv(st.secrets["desarrollo"]["google_sheet_url"])
-        kpis_cierre = procesar_kpis_cierre(df_cierre)
-    except Exception as e:
-        st.warning("⚠️ No se pudieron cargar los indicadores de cierre de expediente.")
-        st.exception(e)
+    # === CIERRE EXPEDIENTE KPIs DESDE GOOGLE SHEETS ===
+    st.markdown("---")
+    st.markdown("## 📘 Indicadores de Cierre de Expedientes")
 
-    if kpis_cierre:
-        st.markdown("---")
-        st.markdown("## 📁 Cierre de Expedientes")
+    try:
+        df_expedientes = get_google_sheet("Cierre Expediente")  # Cambia si se llama diferente
+        k1, k2, k3, k4 = get_kpis_basicos(df_expedientes)
+
         col1, col2, col3, col4 = st.columns(4)
-        col1.markdown(render_import_card("CONSECUCIÓN", kpis_cierre["CONSECUCIÓN"], "#e3f2fd"), unsafe_allow_html=True)
-        col2.markdown(render_import_card("INAPLICACIÓN", kpis_cierre["INAPLICACIÓN"], "#fce4ec"), unsafe_allow_html=True)
-        col3.markdown(render_import_card("Alumnado en PRÁCTICAS", kpis_cierre["Alumnado total en PRÁCTICAS"], "#ede7f6"), unsafe_allow_html=True)
-        col4.markdown(render_import_card("Prácticas actuales", kpis_cierre["Prácticas actuales"], "#e8f5e9"), unsafe_allow_html=True)
+        col1.markdown(render_card("CONSECUCIÓN", k1, "#e3f2fd"), unsafe_allow_html=True)
+        col2.markdown(render_card("INAPLICACIÓN", k2, "#fce4ec"), unsafe_allow_html=True)
+        col3.markdown(render_card("Alumnado total en PRÁCTICAS", k3, "#ede7f6"), unsafe_allow_html=True)
+        col4.markdown(render_card("Prácticas actuales", k4, "#e8f5e9"), unsafe_allow_html=True)
+
+    except Exception as e:
+        st.warning("⚠️ No se pudieron cargar los indicadores de cierre de expedientes.")
+        st.exception(e)
