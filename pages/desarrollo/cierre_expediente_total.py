@@ -2,6 +2,8 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 from datetime import datetime
+import gspread
+from google.oauth2 import service_account
 
 def render_card(title, value, color):
     return f"""
@@ -10,6 +12,25 @@ def render_card(title, value, color):
             <h2 style="margin:0">{value}</h2>
         </div>
     """
+
+def guardar_kpis_en_gsheet(kpis: dict):
+    creds = st.secrets["google_service_account"]
+    credentials = service_account.Credentials.from_service_account_info(
+        creds,
+        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
+    client = gspread.authorize(credentials)
+    sheet = client.open_by_key("1CPhL56knpvaYZznGF-YgIuHWWCWPtWGpkSgbf88GJFQ")
+
+    try:
+        worksheet = sheet.worksheet("KPIS_CIERRE")
+    except gspread.WorksheetNotFound:
+        worksheet = sheet.add_worksheet(title="KPIS_CIERRE", rows="10", cols="5")
+        worksheet.append_row(["fecha", "consecucion", "inaplicacion", "total_practicas", "practicas_actuales"])
+
+    hoy = datetime.today().strftime("%Y-%m-%d")
+    fila = [hoy, kpis["consecucion"], kpis["inaplicacion"], kpis["total_practicas"], kpis["practicas_actuales"]]
+    worksheet.append_row(fila)
 
 def render(df):
     st.title("Informe de Cierre de Expedientes")
@@ -56,23 +77,34 @@ def render(df):
 
     total_consecucion = df_filtrado['CONSECUCIÓN_BOOL'].sum()
     total_inaplicacion = df_filtrado['INAPLICACIÓN_BOOL'].sum()
-    total_practicas_actual = df_filtrado['PRACTICAS_BOOL'].sum()
     total_empresa_ge = df_filtrado['EMPRESA GE'][~df_filtrado['EMPRESA GE'].isin(['', 'NO ENCONTRADO'])].shape[0]
-    total_empresa_pract = df_filtrado['EMPRESA PRÁCT.'][~df_filtrado['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])].shape[0]
+    total_practicas_actual = df_filtrado['PRACTICAS_BOOL'].sum()
 
-    with st.container():
-        if "Total" in opcion:
-            col1, col2, col3, col4 = st.columns(4)
-            col1.markdown(render_card("CONSECUCIÓN", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
-            col2.markdown(render_card("INAPLICACIÓN", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
-            col3.markdown(render_card("Alumnado total en PRÁCTICAS", total_empresa_ge, "#ede7f6"), unsafe_allow_html=True)
-            col4.markdown(render_card("Prácticas actuales", total_practicas_actual, "#e8f5e9"), unsafe_allow_html=True)
-        else:
-            col1, col2, col3 = st.columns(3)
-            anio = opcion.split()[-1]
-            col1.markdown(render_card(f"CONSECUCIÓN {anio}", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
-            col2.markdown(render_card(f"INAPLICACIÓN {anio}", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
-            col3.markdown(render_card("Alumnado PRÁCTICAS", total_empresa_pract, "#f3e5f5"), unsafe_allow_html=True)
+    st.session_state["cierre_consecucion"] = total_consecucion
+    st.session_state["cierre_inaplicacion"] = total_inaplicacion
+    st.session_state["cierre_total_practicas"] = total_empresa_ge
+    st.session_state["cierre_practicas_actuales"] = total_practicas_actual
+
+    guardar_kpis_en_gsheet({
+        "consecucion": total_consecucion,
+        "inaplicacion": total_inaplicacion,
+        "total_practicas": total_empresa_ge,
+        "practicas_actuales": total_practicas_actual
+    })
+
+    st.markdown("### KPIs Generales")
+    if "Total" in opcion:
+        col1, col2, col3, col4 = st.columns(4)
+        col1.markdown(render_card("CONSECUCIÓN", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
+        col2.markdown(render_card("INAPLICACIÓN", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
+        col3.markdown(render_card("Alumnado total en PRÁCTICAS", total_empresa_ge, "#ede7f6"), unsafe_allow_html=True)
+        col4.markdown(render_card("Prácticas actuales", total_practicas_actual, "#e8f5e9"), unsafe_allow_html=True)
+    else:
+        col1, col2, col3 = st.columns(3)
+        anio = opcion.split()[-1]
+        col1.markdown(render_card(f"CONSECUCIÓN {anio}", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
+        col2.markdown(render_card(f"INAPLICACIÓN {anio}", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
+        col3.markdown(render_card("Alumnado PRÁCTICAS", total_empresa_ge, "#f3e5f5"), unsafe_allow_html=True)
 
     st.markdown("### Cierres gestionados por Consultor")
     df_cierre = pd.concat([

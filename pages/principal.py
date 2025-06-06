@@ -3,6 +3,8 @@ import pandas as pd
 import os
 from datetime import datetime
 from pages.academica.sharepoint_utils import get_access_token, get_site_id, download_excel
+from google.oauth2 import service_account
+import gspread
 
 def render_info_card(title: str, value1, value2, color: str = "#e3f2fd"):
     return f"""
@@ -38,6 +40,26 @@ def load_academica_data():
             st.warning("⚠️ No se pudo cargar datos académicos automáticamente.")
             st.exception(e)
 
+def cargar_kpis_cierre():
+    try:
+        creds = st.secrets["google_service_account"]
+        credentials = service_account.Credentials.from_service_account_info(
+            creds,
+            scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
+        )
+        client = gspread.authorize(credentials)
+        sheet = client.open_by_key("1CPhL56knpvaYZznGF-YgIuHWWCWPtWGpkSgbf88GJFQ")
+        worksheet = sheet.worksheet("KPIS_CIERRE")
+        data = worksheet.get_all_records()
+        df_kpis = pd.DataFrame(data)
+        if df_kpis.empty:
+            return None
+        return df_kpis.sort_values(by="fecha", ascending=False).iloc[0]
+    except Exception as e:
+        st.warning("⚠️ No se pudieron cargar los KPIs de Cierre de Expediente.")
+        st.exception(e)
+        return None
+
 def principal_page():
     st.title("📊 Panel Principal")
 
@@ -70,7 +92,6 @@ def principal_page():
     importes_por_mes = {}
     estados = {}
 
-    # === VENTAS ===
     if os.path.exists(VENTAS_FILE):
         df_ventas = pd.read_excel(VENTAS_FILE)
         if "fecha de cierre" in df_ventas.columns:
@@ -84,7 +105,6 @@ def principal_page():
                 matriculas_por_mes[m] = len(df_mes)
                 importes_por_mes[m] = df_mes.get('importe', pd.Series(0)).sum()
 
-    # === PREVENTAS ===
     if os.path.exists(PREVENTAS_FILE):
         df_preventas = pd.read_excel(PREVENTAS_FILE)
         total_preventas = len(df_preventas)
@@ -92,7 +112,6 @@ def principal_page():
         if columnas_importe:
             total_preventas_importe = df_preventas[columnas_importe].sum(numeric_only=True).sum()
 
-    # === GESTIÓN DE COBRO ===
     if os.path.exists(GESTION_FILE):
         df_gestion = pd.read_excel(GESTION_FILE)
         if "Estado" in df_gestion.columns:
@@ -110,7 +129,6 @@ def principal_page():
                 df_estado_totales["Total"] = df_estado_totales.sum(axis=1)
                 estados = df_estado_totales["Total"].to_dict()
 
-    # === ADMISIÓN ===
     st.markdown("## 📥 Admisiones")
     st.markdown(f"### 📅 Matrículas por Mes ({anio_actual})")
 
@@ -128,7 +146,6 @@ def principal_page():
     col1.markdown(render_info_card("Matrículas Totales", total_matriculas, f"{sum(importes_por_mes.values()):,.2f}".replace(",", "."), "#c8e6c9"), unsafe_allow_html=True)
     col2.markdown(render_info_card("Preventas", total_preventas, f"{total_preventas_importe:,.2f}".replace(",", "."), "#ffe0b2"), unsafe_allow_html=True)
 
-    # === COBRO ===
     if estados:
         st.markdown("---")
         st.markdown("## 💼 Gestión de Cobro")
@@ -139,16 +156,13 @@ def principal_page():
             for j, (estado, total) in enumerate(estado_items[i:i+4]):
                 cols[j].markdown(render_import_card(f"Estado: {estado}", f"{total:,.2f}".replace(",", ".")), unsafe_allow_html=True)
 
-    # === ACADÉMICA ===
     if "academica_excel_data" in st.session_state:
         data = st.session_state["academica_excel_data"]
         hoja = "CONSOLIDADO ACADÉMICO"
-
         if hoja in data:
             df = data[hoja]
             st.markdown("---")
             st.markdown("## 🎓 Indicadores Académicos")
-
             indicadores = []
             try:
                 indicadores.append(("🧑‍🎓 Alumnos/as", int(df.iloc[1, 1])))
@@ -174,4 +188,16 @@ def principal_page():
 
             except Exception as e:
                 st.warning("⚠️ Error al procesar los indicadores académicos.")
-                st.exception(e) 
+                st.exception(e)
+
+    # === CIERRE DE EXPEDIENTES ===
+    st.markdown("---")
+    st.markdown("## 🧮 Cierre de Expedientes")
+
+    kpis = cargar_kpis_cierre()
+    if kpis is not None:
+        col1, col2, col3, col4 = st.columns(4)
+        col1.markdown(render_import_card("CONSECUCIÓN", kpis["consecucion"], "#e3f2fd"), unsafe_allow_html=True)
+        col2.markdown(render_import_card("INAPLICACIÓN", kpis["inaplicacion"], "#fce4ec"), unsafe_allow_html=True)
+        col3.markdown(render_import_card("Alumnado total en PRÁCTICAS", kpis["total_practicas"], "#ede7f6"), unsafe_allow_html=True)
+        col4.markdown(render_import_card("Prácticas actuales", kpis["practicas_actuales"], "#e8f5e9"), unsafe_allow_html=True)
