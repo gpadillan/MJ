@@ -2,7 +2,9 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime
+
 from pages.academica.sharepoint_utils import get_access_token, get_site_id, download_excel
+from pages.desarrollo.utils import procesar_kpis_cierre  # NUEVO IMPORT
 
 def render_info_card(title: str, value1, value2, color: str = "#e3f2fd"):
     return f"""
@@ -175,3 +177,21 @@ def principal_page():
             except Exception as e:
                 st.warning("⚠️ Error al procesar los indicadores académicos.")
                 st.exception(e)
+
+    # === CIERRE EXPEDIENTE (desde Google Sheets) ===
+    kpis_cierre = {}
+    try:
+        df_cierre = pd.read_csv(st.secrets["desarrollo"]["google_sheet_url"])
+        kpis_cierre = procesar_kpis_cierre(df_cierre)
+    except Exception as e:
+        st.warning("⚠️ No se pudieron cargar los indicadores de cierre de expediente.")
+        st.exception(e)
+
+    if kpis_cierre:
+        st.markdown("---")
+        st.markdown("## 📁 Cierre de Expedientes")
+        col1, col2, col3, col4 = st.columns(4)
+        col1.markdown(render_import_card("CONSECUCIÓN", kpis_cierre["CONSECUCIÓN"], "#e3f2fd"), unsafe_allow_html=True)
+        col2.markdown(render_import_card("INAPLICACIÓN", kpis_cierre["INAPLICACIÓN"], "#fce4ec"), unsafe_allow_html=True)
+        col3.markdown(render_import_card("Alumnado en PRÁCTICAS", kpis_cierre["Alumnado total en PRÁCTICAS"], "#ede7f6"), unsafe_allow_html=True)
+        col4.markdown(render_import_card("Prácticas actuales", kpis_cierre["Prácticas actuales"], "#e8f5e9"), unsafe_allow_html=True)
