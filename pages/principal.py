@@ -5,7 +5,6 @@ import json
 import pygsheets
 from datetime import datetime
 from pages.academica.sharepoint_utils import get_access_token, get_site_id, download_excel
-from cierre_expediente_total import get_kpis_basicos  # <- asegúrate de que esta función esté definida
 
 def render_info_card(title: str, value1, value2, color: str = "#e3f2fd"):
     return f"""
@@ -200,20 +199,41 @@ def principal_page():
                 st.warning("⚠️ Error al procesar los indicadores académicos.")
                 st.exception(e)
 
-    # === CIERRE EXPEDIENTE KPIs DESDE GOOGLE SHEETS ===
-    st.markdown("---")
-    st.markdown("## 📘 Indicadores de Cierre de Expedientes")
+    # === CIERRE EXPEDIENTE KPIs (directo, sin archivo externo) ===
+st.markdown("---")
+st.markdown("## 📘 Indicadores de Cierre de Expedientes")
 
-    try:
-        df_expedientes = get_google_sheet("Cierre Expediente")  # Cambia si se llama diferente
-        k1, k2, k3, k4 = get_kpis_basicos(df_expedientes)
+try:
+    df_expedientes = get_google_sheet("Cierre Expediente")  # Asegúrate de que este es el nombre correcto
+    df_expedientes.columns = df_expedientes.columns.str.strip().str.upper()
 
-        col1, col2, col3, col4 = st.columns(4)
-        col1.markdown(render_card("CONSECUCIÓN", k1, "#e3f2fd"), unsafe_allow_html=True)
-        col2.markdown(render_card("INAPLICACIÓN", k2, "#fce4ec"), unsafe_allow_html=True)
-        col3.markdown(render_card("Alumnado total en PRÁCTICAS", k3, "#ede7f6"), unsafe_allow_html=True)
-        col4.markdown(render_card("Prácticas actuales", k4, "#e8f5e9"), unsafe_allow_html=True)
+    df_expedientes['PRÁCTCAS/GE'] = df_expedientes['PRÁCTCAS/GE'].astype(str).str.strip().str.upper()
+    df_expedientes['EMPRESA PRÁCT.'] = df_expedientes['EMPRESA PRÁCT.'].astype(str).str.strip().str.upper()
+    df_expedientes['EMPRESA GE'] = df_expedientes['EMPRESA GE'].astype(str).str.strip().str.upper()
 
-    except Exception as e:
-        st.warning("⚠️ No se pudieron cargar los indicadores de cierre de expedientes.")
-        st.exception(e)
+    df_expedientes['CONSECUCIÓN_BOOL'] = df_expedientes['CONSECUCIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
+    df_expedientes['INAPLICACIÓN_BOOL'] = df_expedientes['INAPLICACIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
+
+    df_expedientes['PRACTICAS_BOOL'] = (
+        (df_expedientes['PRÁCTCAS/GE'] == 'GE') &
+        (~df_expedientes['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])) &
+        (df_expedientes['CONSECUCIÓN GE'].astype(str).str.strip().str.upper() == 'FALSE') &
+        (df_expedientes['DEVOLUCIÓN GE'].astype(str).str.strip().str.upper() == 'FALSE') &
+        (df_expedientes['INAPLICACIÓN GE'].astype(str).str.strip().str.upper() == 'FALSE')
+    )
+
+    total_consecucion = df_expedientes['CONSECUCIÓN_BOOL'].sum()
+    total_inaplicacion = df_expedientes['INAPLICACIÓN_BOOL'].sum()
+    total_empresa_ge = df_expedientes['EMPRESA GE'][~df_expedientes['EMPRESA GE'].isin(['', 'NO ENCONTRADO'])].shape[0]
+    total_practicas_actual = df_expedientes['PRACTICAS_BOOL'].sum()
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.markdown(render_card("CONSECUCIÓN", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
+    col2.markdown(render_card("INAPLICACIÓN", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
+    col3.markdown(render_card("Alumnado total en PRÁCTICAS", total_empresa_ge, "#ede7f6"), unsafe_allow_html=True)
+    col4.markdown(render_card("Prácticas actuales", total_practicas_actual, "#e8f5e9"), unsafe_allow_html=True)
+
+except Exception as e:
+    st.warning("⚠️ No se pudieron cargar los indicadores de cierre de expedientes.")
+    st.exception(e)
+
