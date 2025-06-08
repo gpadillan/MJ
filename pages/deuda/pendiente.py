@@ -84,7 +84,6 @@ def vista_clientes_pendientes():
         fig2.update_traces(marker_line_color='black', marker_line_width=0.6)
         st.plotly_chart(fig2, use_container_width=True)
 
-    # ✅ Mostrar resumen total
     num_clientes_total = len(total_clientes_unicos)
     deuda_total_acumulada = 0
     if 'df1' in locals():
@@ -225,4 +224,9 @@ def render():
 
         st.session_state["html_pendiente_total"] = html_buffer.getvalue()
 
-        st.downl
+        st.download_button(
+            label="🌐 Descargar reporte HTML completo",
+            data=st.session_state["html_pendiente_total"],
+            file_name="reporte_deuda.html",
+            mime="text/html"
+        )
