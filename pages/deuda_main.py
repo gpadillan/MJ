@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import pytz
 import os
 import io
 
@@ -15,11 +16,14 @@ def guardar_excel(df):
     ruta = os.path.join(UPLOAD_FOLDER, EXCEL_FILENAME)
     df.to_excel(ruta, index=False)
 
-# Guardar la fecha de carga
-def guardar_marca_tiempo(fecha_str):
+# Guardar la fecha de carga (hora local Madrid)
+def guardar_marca_tiempo():
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    zona = pytz.timezone("Europe/Madrid")
+    hora_local = datetime.now(zona).strftime("%d/%m/%Y %H:%M:%S")
     with open(TIEMPO_FILENAME, "w") as f:
-        f.write(fecha_str)
+        f.write(hora_local)
+    return hora_local
 
 # Cargar Excel si existe
 def cargar_excel_guardado():
@@ -33,9 +37,9 @@ def cargar_marca_tiempo():
     if os.path.exists(TIEMPO_FILENAME):
         with open(TIEMPO_FILENAME, "r") as f:
             return f.read().strip()
-    return None
+    return "Fecha no disponible"
 
-# Importar subpáginas actualizadas
+# Subpáginas
 from pages.deuda import (
     gestion_datos,
     global_,
@@ -75,35 +79,31 @@ def deuda_page():
         archivo = st.file_uploader("📤 Sube un archivo Excel", type=["xlsx", "xls"])
         if archivo:
             try:
-                xls = pd.ExcelFile(archivo)
+                xls = pd.ExcelFile(archivo, engine="openpyxl")  # más eficiente
                 df = pd.read_excel(xls, sheet_name=xls.sheet_names[0], dtype=str)
-                upload_time_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                hora_local = guardar_marca_tiempo()
 
                 # Guardar en sesión
                 st.session_state['excel_data'] = df
                 st.session_state['excel_filename'] = archivo.name
-                st.session_state['upload_time'] = upload_time_str
+                st.session_state['upload_time'] = hora_local
 
                 # Guardar en disco
                 guardar_excel(df)
-                guardar_marca_tiempo(upload_time_str)
 
                 st.success(f"✅ Archivo cargado y guardado: {archivo.name}")
                 st.rerun()
             except Exception as e:
                 st.error(f"❌ Error al procesar el archivo: {e}")
     else:
-        # Para no admin, intenta cargar desde disco si session_state no tiene nada
-        if (
-            "excel_data" not in st.session_state
-            or st.session_state['excel_data'] is None
-        ):
+        if st.session_state["excel_data"] is None:
             ruta_excel = os.path.join(UPLOAD_FOLDER, EXCEL_FILENAME)
             if os.path.exists(ruta_excel):
                 with open(ruta_excel, "rb") as f:
                     content = f.read()
                     st.session_state["uploaded_excel_bytes"] = content
                     st.session_state["excel_data"] = pd.read_excel(io.BytesIO(content), dtype=str)
+                    st.session_state["upload_time"] = cargar_marca_tiempo()
             else:
                 st.warning("⚠️ El administrador aún no ha subido el archivo.")
                 return

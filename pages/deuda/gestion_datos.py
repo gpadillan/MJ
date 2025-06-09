@@ -2,7 +2,6 @@
 import pandas as pd
 import io
 import os
-from datetime import datetime
 
 UPLOAD_FOLDER = "uploaded"
 TIEMPO_FILENAME = os.path.join(UPLOAD_FOLDER, "ultima_subida.txt")
@@ -17,40 +16,25 @@ def cargar_marca_tiempo():
 def render():
     st.header("📁 Gestión de Datos – Gestión de Cobro")
 
+    # Asegurar que los datos están en memoria
     if "excel_data" not in st.session_state or st.session_state["excel_data"] is None:
         if os.path.exists(EXCEL_FILENAME):
             with open(EXCEL_FILENAME, "rb") as f:
                 content = f.read()
                 st.session_state["uploaded_excel_bytes"] = content
                 st.session_state["excel_data"] = pd.read_excel(io.BytesIO(content), dtype=str)
+        else:
+            st.warning("⚠️ No hay archivo de datos cargado.")
+            return
 
-    archivo_excel = st.file_uploader("📤 Sube el archivo Excel para Gestión de Cobro", type=["xlsx"])
-    if archivo_excel is not None:
-        content = archivo_excel.read()
-        st.session_state["uploaded_excel_bytes"] = content
-        st.session_state["excel_filename"] = archivo_excel.name
-        st.session_state["upload_time"] = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        st.session_state["excel_data"] = pd.read_excel(io.BytesIO(content), dtype=str)
-
-        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-        with open(EXCEL_FILENAME, "wb") as f:
-            f.write(content)
-        with open(TIEMPO_FILENAME, "w") as f:
-            f.write(st.session_state["upload_time"])
-
-        st.success("✅ Archivo cargado y guardado correctamente.")
-        st.rerun()
-
+    # Mostrar hora de carga
     upload_time = st.session_state.get("upload_time", cargar_marca_tiempo())
     st.markdown(f"🕒 **Última actualización:** {upload_time}")
 
-    if "excel_data" not in st.session_state or st.session_state["excel_data"] is None:
-        st.warning("⚠️ No hay archivo cargado.")
-        return
-
+    # Mostrar preview
     df = st.session_state["excel_data"]
     st.markdown("### Vista previa del archivo cargado")
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(df.head(100), use_container_width=True)  # Mostrar solo primeras filas por rendimiento
 
     st.markdown("---")
     st.subheader("📋 Hojas disponibles:")
