@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import pandas as pd
 from datetime import datetime
+import pytz
 
 # Carpetas y archivos
 UPLOAD_FOLDER = "uploaded_admisiones"
@@ -19,8 +20,10 @@ def guardar_archivo(archivo, ruta):
     guardar_metadata()
 
 def guardar_metadata():
+    zona = pytz.timezone("Europe/Madrid")
+    hora_local = datetime.now(zona).strftime("%d/%m/%Y %H:%M:%S")
     with open(METADATA_FILE, "w") as f:
-        f.write(datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
+        f.write(hora_local)
 
 def cargar_metadata():
     if os.path.exists(METADATA_FILE):
