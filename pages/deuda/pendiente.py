@@ -42,14 +42,20 @@ def vista_clientes_pendientes():
         st.dataframe(df1, use_container_width=True)
 
         total_deuda_18_21 = df1[cols_18_21].sum().sum()
-        st.markdown(f"**👥 Total clientes con deuda en 2018–2021:** `{df1['Cliente'].nunique()}` – 🏅 Total deuda: `{total_deuda_18_21:,.2f} €`")
+        st.markdown(f"**👥 Total clientes con deuda en 2018–2021:** {df1['Cliente'].nunique()} – 🏅 Total deuda: {total_deuda_18_21:,.2f} €")
         resultado_exportacion["2018_2021"] = df1
 
-        resumen1 = df1[cols_18_21].sum().reset_index()
-        resumen1.columns = ['Periodo', 'Total Deuda']
+        resumen1 = pd.DataFrame({
+            'Periodo': cols_18_21,
+            'Total_Deuda': [df1[col].sum() for col in cols_18_21],
+            'Num_Clientes': [(df1.groupby("Cliente")[col].sum() > 0).sum() for col in cols_18_21]
+        })
+        resumen1['Texto'] = resumen1.apply(lambda row: f"{row['Total_Deuda']:,.2f} €<br>👥 {row['Num_Clientes']}", axis=1)
+
         global fig1
-        fig1 = px.bar(resumen1, x='Periodo', y='Total Deuda', text_auto='.2s', color='Total Deuda', color_continuous_scale='Blues')
-        fig1.update_traces(marker_line_color='black', marker_line_width=0.6)
+        fig1 = px.bar(resumen1, x='Periodo', y='Total_Deuda', text='Texto', color='Total_Deuda', color_continuous_scale='Blues')
+        fig1.update_traces(marker_line_color='black', marker_line_width=0.6, textposition='inside', hovertemplate=None)
+        fig1.update_layout(uniformtext_minsize=8, uniformtext_mode='hide')
         st.plotly_chart(fig1, use_container_width=True)
 
     st.markdown("## 📅 Periodo 2022–2025")
@@ -74,14 +80,20 @@ def vista_clientes_pendientes():
         st.dataframe(df2, use_container_width=True)
 
         total_deuda_22_25 = df2[cols_22_25].sum().sum()
-        st.markdown(f"**👥 Total clientes con deuda en 2022–2025:** `{df2['Cliente'].nunique()}` – 🏅 Total deuda: `{total_deuda_22_25:,.2f} €`")
+        st.markdown(f"**👥 Total clientes con deuda en 2022–2025:** {df2['Cliente'].nunique()} – 🏅 Total deuda: {total_deuda_22_25:,.2f} €")
         resultado_exportacion["2022_2025"] = df2
 
-        resumen2 = df2[cols_22_25].sum().reset_index()
-        resumen2.columns = ['Periodo', 'Total Deuda']
+        resumen2 = pd.DataFrame({
+            'Periodo': cols_22_25,
+            'Total_Deuda': [df2[col].sum() for col in cols_22_25],
+            'Num_Clientes': [(df2.groupby("Cliente")[col].sum() > 0).sum() for col in cols_22_25]
+        })
+        resumen2['Texto'] = resumen2.apply(lambda row: f"{row['Total_Deuda']:,.2f} €<br>👥 {row['Num_Clientes']}", axis=1)
+
         global fig2
-        fig2 = px.bar(resumen2, x='Periodo', y='Total Deuda', text_auto='.2s', color='Total Deuda', color_continuous_scale='Greens')
-        fig2.update_traces(marker_line_color='black', marker_line_width=0.6)
+        fig2 = px.bar(resumen2, x='Periodo', y='Total_Deuda', text='Texto', color='Total_Deuda', color_continuous_scale='Greens')
+        fig2.update_traces(marker_line_color='black', marker_line_width=0.6, textposition='inside', hovertemplate=None)
+        fig2.update_layout(uniformtext_minsize=8, uniformtext_mode='hide')
         st.plotly_chart(fig2, use_container_width=True)
 
     num_clientes_total = len(total_clientes_unicos)
@@ -91,7 +103,7 @@ def vista_clientes_pendientes():
     if 'df2' in locals():
         deuda_total_acumulada += total_deuda_22_25
 
-    st.markdown(f"**👥 Total clientes con deuda en 2018–2025:** `{num_clientes_total}` – 🏅 Total deuda: `{deuda_total_acumulada:,.2f} €`")
+    st.markdown(f"**👥 Total clientes con deuda en 2018–2025:** {num_clientes_total} – 🏅 Total deuda: {deuda_total_acumulada:,.2f} €")
     st.session_state["total_clientes_unicos"] = num_clientes_total
     st.session_state["total_deuda_acumulada"] = deuda_total_acumulada
 
@@ -147,26 +159,32 @@ def vista_año_2025():
         if col.startswith("Total ") and col.split()[-1].isdigit() and int(col.split()[-1]) <= año_actual
     ]
 
-    df_numerico = df_pendiente[columnas_totales].apply(pd.to_numeric, errors='coerce').fillna(0)
-    datos = df_numerico.sum().reset_index()
-    datos.columns = ['Periodo', 'Suma Total']
+    df_pendiente[columnas_totales] = df_pendiente[columnas_totales].apply(pd.to_numeric, errors='coerce').fillna(0)
+    resumen_total = pd.DataFrame({
+        'Periodo': columnas_totales,
+        'Suma_Total': [df_pendiente[col].sum() for col in columnas_totales],
+        'Num_Clientes': [(df_pendiente.groupby("Cliente")[col].sum() > 0).sum() for col in columnas_totales]
+    })
+    resumen_total['Texto'] = resumen_total.apply(lambda row: f"{row['Suma_Total']:,.2f} €<br>👥 {row['Num_Clientes']}", axis=1)
 
-    total_deuda_barras = datos['Suma Total'].sum()
+    total_deuda_barras = resumen_total['Suma_Total'].sum()
     st.session_state["total_deuda_barras"] = total_deuda_barras
 
     global fig_totales
     fig_totales = px.bar(
-        datos,
+        resumen_total,
         x='Periodo',
-        y='Suma Total',
-        text_auto='.2s',
-        color='Suma Total',
+        y='Suma_Total',
+        text='Texto',
+        color='Suma_Total',
         color_continuous_scale='Blues'
     )
+    fig_totales.update_traces(textposition='inside', hovertemplate=None)
+    fig_totales.update_layout(uniformtext_minsize=8, uniformtext_mode='hide')
     st.plotly_chart(fig_totales, use_container_width=True)
 
-    df_total = datos.copy()
-    df_total.loc[len(df_total)] = ['TOTAL GENERAL', total_deuda_barras]
+    df_total = resumen_total.drop(columns='Texto').copy()
+    df_total.loc[len(df_total)] = ['TOTAL GENERAL', total_deuda_barras, '']
     st.dataframe(df_total, use_container_width=True)
     resultado_exportacion["Totales_Años_Meses"] = df_total
 

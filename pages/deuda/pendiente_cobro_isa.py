@@ -4,6 +4,7 @@ from datetime import datetime
 import plotly.graph_objects as go
 import plotly.io as pio
 import io
+import os
 
 def render():
     st.header(" Pendientes de Cobro – Becas ISA")
@@ -32,7 +33,6 @@ def render():
     total_clientes_unicos = set()
     tabla_global = pd.DataFrame()
 
-    # PERIODO 2022–2025
     cols_22_24 = [f"Total {a}" for a in range(2022, 2025) if f"Total {a}" in df_pendiente.columns]
     cols_2025_meses = [f"{mes} 2025" for mes in meses if f"{mes} 2025" in df_pendiente.columns]
     cols_2025_total = ["Total 2025"] if "Total 2025" in df_pendiente.columns else []
@@ -77,15 +77,14 @@ def render():
             clientes_por_periodo.columns = ['Periodo', 'Nº Clientes']
             resumen2 = resumen2.merge(clientes_por_periodo, on='Periodo')
 
+            y_max = resumen2["Total Deuda"].max()
+
             fig2 = go.Figure()
             fig2.add_trace(go.Bar(
                 x=resumen2["Periodo"],
                 y=resumen2["Total Deuda"],
                 marker_color='rgb(34,163,192)',
-                text=[
-                    f"€ {deuda:,.2f}<br>👥 {clientes}"
-                    for deuda, clientes in zip(resumen2["Total Deuda"], resumen2["Nº Clientes"])
-                ],
+                text=[f"€ {deuda:,.2f}<br>👥 {clientes}" for deuda, clientes in zip(resumen2["Total Deuda"], resumen2["Nº Clientes"])],
                 textposition='outside',
                 textfont=dict(color='black'),
                 hovertemplate='%{text}<extra></extra>',
@@ -95,7 +94,12 @@ def render():
                 title="Total Deuda y Número de Clientes por Periodo",
                 yaxis_title="Total Deuda (€)",
                 xaxis_title="Periodo",
-                plot_bgcolor='white'
+                yaxis=dict(range=[0, y_max * 1.15]),
+                plot_bgcolor='white',
+                margin=dict(t=100, b=50),
+                height=600,
+                uniformtext_minsize=8,
+                uniformtext_mode='show'
             )
             st.plotly_chart(fig2, use_container_width=True)
 
@@ -133,7 +137,6 @@ def render():
 
         st.session_state["descarga_pendiente_cobro_isa"] = tabla_global
 
-        # ✅ HTML actualizado
         grafico_html = pio.to_html(fig2, include_plotlyjs='cdn', full_html=False) if 'fig2' in locals() else ""
 
         html_content = f"""
@@ -158,12 +161,8 @@ def render():
             mime="text/html"
         )
 
-        # Guardar HTML para el consolidado general
         st.session_state["html_pendiente_cobro_isa"] = html_content
 
-
-        # Guardar HTML en disco para consolidado
-        import os
         os.makedirs("uploaded", exist_ok=True)
         with open("uploaded/reporte_pendiente_cobro_isa.html", "w", encoding="utf-8") as f:
             f.write(html_content)
