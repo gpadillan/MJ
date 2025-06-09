@@ -48,6 +48,46 @@ def formatear_tabla(df_raw):
 
     return pd.DataFrame(indicadores, columns=["Indicador", "Valor"])
 
+def generar_css():
+    return """
+    <style>
+        .bloque-contenedor {
+            display: flex;
+            gap: 1em;
+            align-items: stretch;
+            margin-bottom: 2em;
+        }
+        .bloque {
+            flex: 1;
+            background-color: white;
+            padding: 1em;
+            border: 1px solid #ddd;
+            border-radius: 0.5em;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+        }
+        .col-master {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        .row-cert-total {
+            background-color: #fff3cd;
+            font-weight: bold;
+        }
+        .row-cert-indiv {
+            background-color: #e3f2fd;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 0.5em;
+            border: 1px solid #ccc;
+            text-align: left;
+        }
+    </style>
+    """
+
 def mostrar_bloque_html(titulo, bloque):
     df_ind = formatear_tabla(bloque)
     rows_html = ""
@@ -88,42 +128,7 @@ def mostrar_dos_bloques_lado_a_lado(titulo1, bloque1, titulo2, bloque2):
     col2_html = mostrar_bloque_html(titulo2, bloque2)
 
     html = f"""
-    <style>
-        .bloque-contenedor {{
-            display: flex;
-            gap: 1em;
-            align-items: stretch;
-            margin-bottom: 2em;
-        }}
-        .bloque {{
-            flex: 1;
-            background-color: white;
-            padding: 1em;
-            border: 1px solid #ddd;
-            border-radius: 0.5em;
-            box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
-        }}
-        .col-master {{
-            background-color: #f2f2f2;
-            font-weight: bold;
-        }}
-        .row-cert-total {{
-            background-color: #fff3cd;
-            font-weight: bold;
-        }}
-        .row-cert-indiv {{
-            background-color: #e3f2fd;
-        }}
-        table {{
-            width: 100%;
-            border-collapse: collapse;
-        }}
-        th, td {{
-            padding: 0.5em;
-            border: 1px solid #ccc;
-            text-align: left;
-        }}
-    </style>
+    {generar_css()}
     <div class="bloque-contenedor">
         <div class="bloque">{col1_html}</div>
         <div class="bloque">{col2_html}</div>
@@ -184,6 +189,8 @@ def show_area_tech(data):
     opciones = ["Todos"] + [titulo for titulo, _ in bloques_finales]
     seleccion = st.radio("", opciones, horizontal=True)
 
+    st.markdown(generar_css(), unsafe_allow_html=True)
+
     if seleccion == "Todos":
         for i in range(0, len(bloques_finales), 2):
             bloque1 = bloques_finales[i]
@@ -193,5 +200,9 @@ def show_area_tech(data):
         for titulo, bloque in bloques_finales:
             if titulo == seleccion:
                 bloque_html = mostrar_bloque_html(titulo, bloque)
-                st.markdown(f"<h3>🎓 {titulo}</h3>{bloque_html}", unsafe_allow_html=True)
+                st.markdown(f"""
+                <div class="bloque-contenedor">
+                    <div class="bloque">{bloque_html}</div>
+                </div>
+                """, unsafe_allow_html=True)
                 break
