@@ -57,7 +57,6 @@ def app():
 
             df_agg = df_ventas.groupby(['mes_anio', 'propietario']).size().reset_index(name='Total Oportunidades')
 
-            # Añadir propietario_display con total acumulado
             totales_propietario = df_agg.groupby('propietario')['Total Oportunidades'].sum().reset_index()
             totales_propietario['propietario_display'] = totales_propietario.apply(
                 lambda row: f"{row['propietario']} ({row['Total Oportunidades']})", axis=1
@@ -82,18 +81,20 @@ def app():
                 fig.update_layout(
                     xaxis_title="Mes",
                     yaxis_title="Total Oportunidades",
-                    height=height + 400,
-                    margin=dict(l=20, r=20, t=40, b=120),
+                    height=height + 550,
+                    margin=dict(l=10, r=10, t=30, b=160),
                     xaxis_tickangle=-45,
+                    legend_title_text='',
                     legend=dict(
                         orientation="h",
                         yanchor="bottom",
-                        y=-0.35,
+                        y=-0.45,
                         xanchor="center",
                         x=0.5,
                         bgcolor="rgba(255,255,255,0.95)",
                         bordercolor="lightgray",
-                        borderwidth=1
+                        borderwidth=1,
+                        font=dict(size=12)
                     )
                 )
             else:
