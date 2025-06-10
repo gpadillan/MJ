@@ -1,4 +1,4 @@
-import streamlit as st
+ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os
@@ -56,19 +56,13 @@ def app():
             st.markdown("#### 📊 Oportunidades por Mes y Propietario")
 
             df_agg = df_ventas.groupby(['mes_anio', 'propietario']).size().reset_index(name='Total Oportunidades')
-
-            totales_propietario = df_agg.groupby('propietario')['Total Oportunidades'].sum().reset_index()
-            totales_propietario['propietario_display'] = totales_propietario.apply(
-                lambda row: f"{row['propietario']} ({row['Total Oportunidades']})", axis=1
-            )
-            df_agg = df_agg.merge(totales_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
             df_agg = df_agg.sort_values(by='mes_anio')
 
             fig = px.bar(
                 df_agg,
                 x='mes_anio',
                 y='Total Oportunidades',
-                color='propietario_display',
+                color='propietario',
                 barmode='group',
                 text='Total Oportunidades',
                 title='Distribución Mensual de Oportunidades por Propietario',
@@ -81,20 +75,17 @@ def app():
                 fig.update_layout(
                     xaxis_title="Mes",
                     yaxis_title="Total Oportunidades",
-                    height=height + 550,
-                    margin=dict(l=10, r=10, t=30, b=160),
-                    xaxis_tickangle=-45,
-                    legend_title_text='',
+                    margin=dict(l=20, r=100, t=40, b=40),
+                    height=height + 300,
                     legend=dict(
-                        orientation="h",
-                        yanchor="bottom",
-                        y=-0.45,
-                        xanchor="center",
-                        x=0.5,
+                        orientation="v",
+                        yanchor="top",
+                        y=1,
+                        xanchor="right",
+                        x=1.1,
                         bgcolor="rgba(255,255,255,0.95)",
                         bordercolor="lightgray",
-                        borderwidth=1,
-                        font=dict(size=12)
+                        borderwidth=1
                     )
                 )
             else:
