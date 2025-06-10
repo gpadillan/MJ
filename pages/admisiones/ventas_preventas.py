@@ -10,7 +10,7 @@ VENTAS_FILE = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
 PREVENTAS_FILE = os.path.join(UPLOAD_FOLDER, "preventas.xlsx")
 
 def app():
-    año_actual = datetime.today().year
+    ano_actual = datetime.today().year
     width, height = get_screen_size()
     is_mobile = width <= 400
 
@@ -49,11 +49,11 @@ def app():
         st.warning("❌ El archivo de ventas no contiene la columna 'fecha de cierre'.")
         return
 
-    st.markdown(f"### Ventas y Preventas - {mes_seleccionado}")
+    st.markdown(f"### 📊 Ventas y Preventas - {mes_seleccionado}")
 
     if 'nombre' in df_ventas.columns and 'propietario' in df_ventas.columns:
         if mes_seleccionado == "Todos":
-            st.markdown("#### Oportunidades por Mes y Propietario")
+            st.markdown("#### 📊 Oportunidades por Mes y Propietario")
 
             df_agg = df_ventas.groupby(['mes_anio', 'propietario']).size().reset_index(name='Total Oportunidades')
             df_agg = df_agg.sort_values(by='mes_anio')
@@ -74,14 +74,13 @@ def app():
             fig.update_layout(
                 xaxis_title="Mes",
                 yaxis_title="Total Oportunidades",
-                margin=dict(l=20, r=20, t=40, b=120),
+                margin=dict(l=20, r=20, t=40, b=140 if not is_mobile else 40),
                 legend=dict(
-                    orientation="h",
-                    yanchor="bottom",
-                    y=-0.35,
-                    xanchor="center",
-                    x=0.5,
-                    font=dict(size=10),
+                    orientation="h" if not is_mobile else "v",
+                    yanchor="bottom" if not is_mobile else "top",
+                    y=-0.5 if not is_mobile else 1,
+                    xanchor="center" if not is_mobile else "right",
+                    x=0.5 if not is_mobile else 1.1,
                     bgcolor="rgba(255,255,255,0.95)",
                     bordercolor="lightgray",
                     borderwidth=1
@@ -102,17 +101,31 @@ def app():
             orden_propietarios = totales_propietario.sort_values(by='Total Oportunidades', ascending=False)['propietario_display'].tolist()
             orden_masters = resumen.groupby('nombre')['Total Oportunidades'].sum().sort_values(ascending=False).index.tolist()
 
-            fig = px.scatter(
-                resumen,
-                x='nombre',
-                y='propietario_display',
-                size='Total Oportunidades',
-                color='propietario_display',
-                text='Total Oportunidades',
-                size_max=60,
-                width=width,
-                height=height
-            )
+            if is_mobile:
+                fig = px.scatter(
+                    resumen,
+                    x='propietario_display',
+                    y='nombre',
+                    size='Total Oportunidades',
+                    color='propietario_display',
+                    text='Total Oportunidades',
+                    size_max=40,
+                    width=width,
+                    height=900
+                )
+                fig.update_yaxes(scaleanchor="x")
+            else:
+                fig = px.scatter(
+                    resumen,
+                    x='nombre',
+                    y='propietario_display',
+                    size='Total Oportunidades',
+                    color='propietario_display',
+                    text='Total Oportunidades',
+                    size_max=60,
+                    width=width,
+                    height=height
+                )
 
             fig.update_traces(
                 textposition='middle center',
@@ -122,25 +135,28 @@ def app():
             )
 
             fig.update_layout(
-                xaxis_title='Máster',
-                yaxis_title='Propietario',
+                xaxis_title='Máster' if not is_mobile else 'Propietario',
+                yaxis_title='Propietario' if not is_mobile else 'Máster',
                 legend_title='Propietario (Total)',
-                margin=dict(l=20, r=20, t=40, b=140),
+                margin=dict(l=20, r=20, t=40, b=100 if is_mobile else 40),
                 legend=dict(
-                    orientation="h",
-                    yanchor="bottom",
-                    y=-0.4,
-                    xanchor="center",
-                    x=0.5,
-                    font=dict(size=10),
+                    orientation="h" if is_mobile else "v",
+                    yanchor="bottom" if is_mobile else "top",
+                    y=-0.35 if is_mobile else 0.98,
+                    xanchor="center" if is_mobile else "left",
+                    x=0.5 if is_mobile else 1.02,
                     bgcolor='rgba(255,255,255,0.95)',
                     bordercolor='lightgray',
                     borderwidth=1
                 )
             )
 
-            fig.update_yaxes(categoryorder='array', categoryarray=orden_propietarios[::-1])
-            fig.update_xaxes(categoryorder='array', categoryarray=orden_masters)
+            if not is_mobile:
+                fig.update_yaxes(categoryorder='array', categoryarray=orden_propietarios[::-1])
+                fig.update_xaxes(categoryorder='array', categoryarray=orden_masters)
+            else:
+                fig.update_xaxes(categoryorder='array', categoryarray=orden_propietarios)
+                fig.update_yaxes(categoryorder='array', categoryarray=orden_masters[::-1])
 
             st.plotly_chart(fig)
 
@@ -162,7 +178,7 @@ def app():
             st.markdown(f"""
                 <div style='padding: 1rem; background-color: #f1f3f6; border-left: 5px solid #1f77b4;
                             border-radius: 8px;'>
-                    <h4 style='margin: 0;'>Matrículas ({año_actual})</h4>
+                    <h4 style='margin: 0;'>Matrículas ({ano_actual})</h4>
                     <p style='font-size: 1.5rem; font-weight: bold; margin: 0;'>{total_oportunidades}</p>
                 </div>
             """, unsafe_allow_html=True)
