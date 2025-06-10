@@ -132,8 +132,16 @@ def render(df):
         st.dataframe(empresa_pract.style.background_gradient(subset=['EMPLEOS'], cmap='PuBu'), use_container_width=True)
 
     st.markdown("## 🎯 OBJETIVOS %")
+
     df_validos = df[df['NOMBRE'].str.upper() != 'NO ENCONTRADO']
     total_validos = df_validos['NOMBRE'].nunique()
+
+    st.markdown(f"""
+        <div style='display: flex; justify-content: space-between; align-items: center;'>
+            <h2 style='margin: 0;'>🎯 OBJETIVOS %</h2>
+            <span style='font-size: 1.2rem; color: #555;'>Total Alumnado: <strong>{total_validos}</strong></span>
+        </div>
+    """, unsafe_allow_html=True)
 
     insercion_empleo = df_validos[df_validos['CONSECUCIÓN GE'] == 'TRUE']
     porcentaje_empleo = round((insercion_empleo['NOMBRE'].nunique() / total_validos) * 100, 2)
@@ -158,4 +166,4 @@ def render(df):
     col_obj1.markdown(render_card("Inserción laboral Empleo", f"{porcentaje_empleo}%", "#c8e6c9"), unsafe_allow_html=True)
     col_obj2.markdown(render_card("Cierre de expediente Desarrollo Profesional", f"{porcentaje_cierre_dp}%", "#b2dfdb"), unsafe_allow_html=True)
     col_obj3.markdown(render_card("Inserción Laboral Prácticas", f"{porcentaje_practicas}%", "#ffe082"), unsafe_allow_html=True)
-    col_obj4.markdown(render_card("Conversión prácticas a empresa", f"{porcentaje_conversion}%", "#f8bbd0"), unsafe_allow_html=True) 
+    col_obj4.markdown(render_card("Conversión prácticas a empresa", f"{porcentaje_conversion}%", "#f8bbd0"), unsafe_allow_html=True)
