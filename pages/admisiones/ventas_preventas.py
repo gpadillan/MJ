@@ -53,52 +53,54 @@ def app():
 
     if 'nombre' in df_ventas.columns and 'propietario' in df_ventas.columns:
         if mes_seleccionado == "Todos":
-            st.markdown("#### 📊 Oportunidades por Mes y Propietario")
+            st.markdown("#### 📊 Oportunidades Totales por Propietario")
 
-            df_agg = df_ventas.groupby(['mes_anio', 'propietario']).size().reset_index(name='Total Oportunidades')
-            totales_propietario = df_agg.groupby('propietario')['Total Oportunidades'].sum().reset_index()
-            totales_propietario['propietario_display'] = totales_propietario.apply(
+            df_agg = df_ventas.groupby('propietario').size().reset_index(name='Total Oportunidades')
+            df_agg = df_agg.sort_values(by='Total Oportunidades', ascending=False)
+            df_agg['propietario_display'] = df_agg.apply(
                 lambda row: f"{row['propietario']} ({row['Total Oportunidades']})", axis=1
             )
-            df_agg = df_agg.merge(totales_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
-            df_agg = df_agg.sort_values(by='mes_anio')
 
             if is_mobile:
-                st.markdown("##### 🥧 Distribución por Mes (Gráfico de Quesito)")
-                meses_unicos = df_agg['mes_anio'].unique()
-
-                for mes in sorted(meses_unicos):
-                    df_mes = df_agg[df_agg['mes_anio'] == mes]
-                    fig = px.pie(
-                        df_mes,
-                        names='propietario_display',
-                        values='Total Oportunidades',
-                        title=f"{mes}",
-                    )
-                    fig.update_traces(
-                        textinfo='percent+label',
-                        textposition='inside',
-                        pull=[0.02] * len(df_mes)
-                    )
-                    fig.update_layout(
-                        height=400,
-                        margin=dict(t=40, b=60),
-                        legend=dict(
-                            orientation="h",
-                            yanchor="bottom",
-                            y=-0.35,
-                            xanchor="center",
-                            x=0.5,
-                            bgcolor="rgba(255,255,255,0.95)",
-                            bordercolor="lightgray",
-                            borderwidth=1,
-                            font=dict(size=12)
-                        )
-                    )
-                    st.plotly_chart(fig)
-            else:
-                fig = px.bar(
+                fig = px.pie(
                     df_agg,
+                    names='propietario_display',
+                    values='Total Oportunidades',
+                    title="Distribución Total de Oportunidades",
+                )
+                fig.update_traces(
+                    textinfo='label',  # Solo nombre, sin %
+                    textposition='inside',
+                    pull=[0.02] * len(df_agg)
+                )
+                fig.update_layout(
+                    height=500,
+                    margin=dict(t=40, b=80),
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=-0.4,
+                        xanchor="center",
+                        x=0.5,
+                        bgcolor="rgba(255,255,255,0.95)",
+                        bordercolor="lightgray",
+                        borderwidth=1,
+                        font=dict(size=12)
+                    )
+                )
+                st.plotly_chart(fig)
+
+            else:
+                df_bar = df_ventas.groupby(['mes_anio', 'propietario']).size().reset_index(name='Total Oportunidades')
+                totales_prop = df_bar.groupby('propietario')['Total Oportunidades'].sum().reset_index()
+                totales_prop['propietario_display'] = totales_prop.apply(
+                    lambda row: f"{row['propietario']} ({row['Total Oportunidades']})", axis=1
+                )
+                df_bar = df_bar.merge(totales_prop[['propietario', 'propietario_display']], on='propietario', how='left')
+                df_bar = df_bar.sort_values(by='mes_anio')
+
+                fig = px.bar(
+                    df_bar,
                     x='mes_anio',
                     y='Total Oportunidades',
                     color='propietario_display',
