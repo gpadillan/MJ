@@ -97,15 +97,13 @@ def app():
             # Leyenda personalizada
             legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 1rem; background-color: #f9f9f9; border-radius: 8px;'>"
             for propietario in propietarios_ordenados:
-                color = color_discrete_map[propietario]
-                legend_html += f"""
-                    <div style='display: flex; align-items: center; margin-right: 12px;'>
-                        <div style='width: 15px; height: 15px; background-color: {color}; margin-right: 6px; border: 1px solid #ccc;'></div>
-                        <span style='font-size: 0.9rem;'>{propietario}</span>
-                    </div>
-                """
+                 color = color_discrete_map[propietario]
+                 legend_html += f"<div style='display: flex; align-items: center; margin-right: 12px;'>" \
+                   f"<div style='width: 15px; height: 15px; background-color: {color}; margin-right: 6px; border: 1px solid #ccc;'></div>" \
+                   f"<span style='font-size: 0.9rem;'>{propietario}</span></div>"
             legend_html += "</div>"
             st.markdown(legend_html, unsafe_allow_html=True)
+
 
         else:
             st.warning("⚠️ El modo de 'mes específico' aún no tiene leyenda personalizada aplicada.")
