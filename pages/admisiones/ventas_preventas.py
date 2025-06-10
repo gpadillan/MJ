@@ -177,8 +177,11 @@ def app():
 
             st.plotly_chart(fig)
 
-        # Métricas adaptadas a móvil
-        col1, col2, col3 = st.columns(1 if is_mobile else 3)
+        # ✅ MÉTRICAS ADAPTADAS
+        if is_mobile:
+            col1 = col2 = col3 = st.container()
+        else:
+            col1, col2, col3 = st.columns(3)
 
         def mostrar_metricas(col, titulo, valor):
             col.markdown(f"""
