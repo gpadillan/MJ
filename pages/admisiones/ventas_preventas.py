@@ -74,7 +74,7 @@ def app():
                     pull=[0.02] * len(df_agg)
                 )
                 fig.update_layout(
-                    height=500,
+                    height=600,
                     margin=dict(t=40, b=180),
                     legend=dict(
                         orientation="h",
