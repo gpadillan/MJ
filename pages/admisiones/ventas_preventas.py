@@ -56,13 +56,20 @@ def app():
             st.markdown("#### 📊 Oportunidades por Mes y Propietario")
 
             df_agg = df_ventas.groupby(['mes_anio', 'propietario']).size().reset_index(name='Total Oportunidades')
-            df_agg = df_agg.sort_values(by='mes_anio')
 
+            # Totales por propietario
+            totales_por_propietario = df_agg.groupby('propietario')['Total Oportunidades'].sum().reset_index()
+            totales_por_propietario['propietario_display'] = totales_por_propietario.apply(
+                lambda row: f"{row['propietario']} ({row['Total Oportunidades']})", axis=1
+            )
+            df_agg = df_agg.merge(totales_por_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
+
+            # Crear gráfico sin leyenda
             fig = px.bar(
                 df_agg,
                 x='mes_anio',
                 y='Total Oportunidades',
-                color='propietario',
+                color='propietario_display',
                 barmode='group',
                 text='Total Oportunidades',
                 title='Distribución Mensual de Oportunidades por Propietario',
@@ -70,42 +77,24 @@ def app():
                 height=height
             )
             fig.update_traces(textposition='outside')
-
-            if is_mobile:
-                fig.update_layout(
-                    xaxis_title="Mes",
-                    yaxis_title="Total Oportunidades",
-                    margin=dict(l=20, r=100, t=40, b=40),
-                    height=height + 300,
-                    legend=dict(
-                        orientation="v",
-                        yanchor="top",
-                        y=1,
-                        xanchor="right",
-                        x=1.1,
-                        bgcolor="rgba(255,255,255,0.95)",
-                        bordercolor="lightgray",
-                        borderwidth=1
-                    )
-                )
-            else:
-                fig.update_layout(
-                    xaxis_title="Mes",
-                    yaxis_title="Total Oportunidades",
-                    margin=dict(l=20, r=20, t=40, b=140),
-                    legend=dict(
-                        orientation="h",
-                        yanchor="bottom",
-                        y=-0.5,
-                        xanchor="center",
-                        x=0.5,
-                        bgcolor="rgba(255,255,255,0.95)",
-                        bordercolor="lightgray",
-                        borderwidth=1
-                    )
-                )
+            fig.update_layout(showlegend=False)
 
             st.plotly_chart(fig)
+
+            # Crear leyenda personalizada debajo del gráfico
+            color_map = {trace.name: trace.marker.color for trace in fig.data}
+            legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 1rem; background-color: #f9f9f9; border-radius: 8px;'>"
+
+            for propietario, color in color_map.items():
+                legend_html += f"""
+                <div style='display: flex; align-items: center; margin-right: 12px;'>
+                    <div style='width: 15px; height: 15px; background-color: {color}; margin-right: 6px; border: 1px solid #ccc;'></div>
+                    <span style='font-size: 0.9rem;'>{propietario}</span>
+                </div>
+                """
+
+            legend_html += "</div>"
+            st.markdown(legend_html, unsafe_allow_html=True)
 
         else:
             st.markdown("#### Distribución de Oportunidades y Propietario")
@@ -182,32 +171,18 @@ def app():
 
         col1, col2, col3 = st.columns(3)
 
-        with col1:
-            st.markdown(f"""
+        def mostrar_metricas(col, titulo, valor):
+            col.markdown(f"""
                 <div style='padding: 1rem; background-color: #f1f3f6; border-left: 5px solid #1f77b4;
                             border-radius: 8px;'>
-                    <h4 style='margin: 0;'> Importe Total ({mes_seleccionado})</h4>
-                    <p style='font-size: 1.5rem; font-weight: bold; margin: 0;'>{total_importe:,.2f} €</p>
+                    <h4 style='margin: 0;'>{titulo}</h4>
+                    <p style='font-size: 1.5rem; font-weight: bold; margin: 0;'>{valor}</p>
                 </div>
             """, unsafe_allow_html=True)
 
-        with col2:
-            st.markdown(f"""
-                <div style='padding: 1rem; background-color: #f1f3f6; border-left: 5px solid #1f77b4;
-                            border-radius: 8px;'>
-                    <h4 style='margin: 0;'>Matrículas ({año_actual})</h4>
-                    <p style='font-size: 1.5rem; font-weight: bold; margin: 0;'>{total_oportunidades}</p>
-                </div>
-            """, unsafe_allow_html=True)
-
-        with col3:
-            st.markdown(f"""
-                <div style='padding: 1rem; background-color: #f1f3f6; border-left: 5px solid #1f77b4;
-                            border-radius: 8px;'>
-                    <h4 style='margin: 0;'>Preventas</h4>
-                    <p style='font-size: 1.5rem; font-weight: bold; margin: 0;'>{total_preventas_importe:,.2f} € ({total_preventas_count})</p>
-                </div>
-            """, unsafe_allow_html=True)
+        mostrar_metricas(col1, f"Importe Total ({mes_seleccionado})", f"{total_importe:,.2f} €")
+        mostrar_metricas(col2, f"Matrículas ({año_actual})", total_oportunidades)
+        mostrar_metricas(col3, "Preventas", f"{total_preventas_importe:,.2f} € ({total_preventas_count})")
 
     else:
         st.warning("❌ El archivo de ventas debe tener columnas 'nombre' y 'propietario'.")
