@@ -10,7 +10,7 @@ VENTAS_FILE = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
 PREVENTAS_FILE = os.path.join(UPLOAD_FOLDER, "preventas.xlsx")
 
 def app():
-    ano_actual = datetime.today().year
+    año_actual = datetime.today().year
     width, height = get_screen_size()
     is_mobile = width <= 400
 
@@ -56,13 +56,18 @@ def app():
             st.markdown("#### 📊 Oportunidades por Mes y Propietario")
 
             df_agg = df_ventas.groupby(['mes_anio', 'propietario']).size().reset_index(name='Total Oportunidades')
+            totales_propietario = df_agg.groupby('propietario')['Total Oportunidades'].sum().reset_index()
+            totales_propietario['propietario_display'] = totales_propietario.apply(
+                lambda row: f"{row['propietario']} ({row['Total Oportunidades']})", axis=1
+            )
+            df_agg = df_agg.merge(totales_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
             df_agg = df_agg.sort_values(by='mes_anio')
 
             fig = px.bar(
                 df_agg,
                 x='mes_anio',
                 y='Total Oportunidades',
-                color='propietario',
+                color='propietario_display',
                 barmode='group',
                 text='Total Oportunidades',
                 title='Distribución Mensual de Oportunidades por Propietario',
@@ -71,21 +76,42 @@ def app():
             )
             fig.update_traces(textposition='outside')
 
-            fig.update_layout(
-                xaxis_title="Mes",
-                yaxis_title="Total Oportunidades",
-                margin=dict(l=20, r=20, t=40, b=140 if not is_mobile else 40),
-                legend=dict(
-                    orientation="h" if not is_mobile else "v",
-                    yanchor="bottom" if not is_mobile else "top",
-                    y=-0.5 if not is_mobile else 1,
-                    xanchor="center" if not is_mobile else "right",
-                    x=0.5 if not is_mobile else 1.1,
-                    bgcolor="rgba(255,255,255,0.95)",
-                    bordercolor="lightgray",
-                    borderwidth=1
+            if is_mobile:
+                fig.update_layout(
+                    xaxis_title="Mes",
+                    yaxis_title="Total Oportunidades",
+                    height=height + 550,
+                    margin=dict(l=10, r=10, t=30, b=160),
+                    xaxis_tickangle=-45,
+                    legend_title_text='',
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=-0.45,
+                        xanchor="center",
+                        x=0.5,
+                        bgcolor="rgba(255,255,255,0.95)",
+                        bordercolor="lightgray",
+                        borderwidth=1,
+                        font=dict(size=12)
+                    )
                 )
-            )
+            else:
+                fig.update_layout(
+                    xaxis_title="Mes",
+                    yaxis_title="Total Oportunidades",
+                    margin=dict(l=20, r=20, t=40, b=140),
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=-0.5,
+                        xanchor="center",
+                        x=0.5,
+                        bgcolor="rgba(255,255,255,0.95)",
+                        bordercolor="lightgray",
+                        borderwidth=1
+                    )
+                )
 
             st.plotly_chart(fig)
 
@@ -104,16 +130,15 @@ def app():
             if is_mobile:
                 fig = px.scatter(
                     resumen,
-                    x='propietario_display',
-                    y='nombre',
+                    x='nombre',
+                    y='propietario_display',
                     size='Total Oportunidades',
                     color='propietario_display',
                     text='Total Oportunidades',
-                    size_max=40,
+                    size_max=25,
                     width=width,
-                    height=900
+                    height=1100
                 )
-                fig.update_yaxes(scaleanchor="x")
             else:
                 fig = px.scatter(
                     resumen,
@@ -135,8 +160,8 @@ def app():
             )
 
             fig.update_layout(
-                xaxis_title='Máster' if not is_mobile else 'Propietario',
-                yaxis_title='Propietario' if not is_mobile else 'Máster',
+                xaxis_title='Máster' if not is_mobile else 'Máster',
+                yaxis_title='Propietario' if not is_mobile else 'Propietario',
                 legend_title='Propietario (Total)',
                 margin=dict(l=20, r=20, t=40, b=100 if is_mobile else 40),
                 legend=dict(
@@ -155,8 +180,8 @@ def app():
                 fig.update_yaxes(categoryorder='array', categoryarray=orden_propietarios[::-1])
                 fig.update_xaxes(categoryorder='array', categoryarray=orden_masters)
             else:
-                fig.update_xaxes(categoryorder='array', categoryarray=orden_propietarios)
-                fig.update_yaxes(categoryorder='array', categoryarray=orden_masters[::-1])
+                fig.update_xaxes(categoryorder='array', categoryarray=orden_masters)
+                fig.update_yaxes(categoryorder='array', categoryarray=orden_propietarios[::-1])
 
             st.plotly_chart(fig)
 
@@ -178,7 +203,7 @@ def app():
             st.markdown(f"""
                 <div style='padding: 1rem; background-color: #f1f3f6; border-left: 5px solid #1f77b4;
                             border-radius: 8px;'>
-                    <h4 style='margin: 0;'>Matrículas ({ano_actual})</h4>
+                    <h4 style='margin: 0;'>Matrículas ({año_actual})</h4>
                     <p style='font-size: 1.5rem; font-weight: bold; margin: 0;'>{total_oportunidades}</p>
                 </div>
             """, unsafe_allow_html=True)
