@@ -56,28 +56,13 @@ def app():
             st.markdown("#### 📊 Oportunidades por Mes y Propietario")
 
             df_agg = df_ventas.groupby(['mes_anio', 'propietario']).size().reset_index(name='Total Oportunidades')
-
-            if df_agg.empty:
-                st.warning("⚠️ No hay datos disponibles para mostrar el gráfico.")
-                return
-
-            totales_propietario = df_agg.groupby('propietario')['Total Oportunidades'].sum().reset_index()
-            totales_propietario['propietario_display'] = totales_propietario.apply(
-                lambda row: f"{row['propietario']} ({row['Total Oportunidades']})", axis=1
-            ).astype(str)
-
-            df_agg = df_agg.merge(totales_propietario, on='propietario', how='left')
-
-            if df_agg[['mes_anio', 'Total Oportunidades', 'propietario_display']].isnull().any().any():
-                st.error("❌ Hay valores nulos en los datos del gráfico.")
-                st.dataframe(df_agg)
-                return
+            df_agg = df_agg.sort_values(by='mes_anio')
 
             fig = px.bar(
                 df_agg,
                 x='mes_anio',
                 y='Total Oportunidades',
-                color='propietario_display',
+                color='propietario',
                 barmode='group',
                 text='Total Oportunidades',
                 title='Distribución Mensual de Oportunidades por Propietario',
@@ -129,7 +114,7 @@ def app():
             totales_propietario = resumen.groupby('propietario')['Total Oportunidades'].sum().reset_index()
             totales_propietario['propietario_display'] = totales_propietario.apply(
                 lambda row: f"{row['propietario']} ({row['Total Oportunidades']})", axis=1
-            ).astype(str)
+            )
             resumen = resumen.merge(totales_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
             orden_propietarios = totales_propietario.sort_values(by='Total Oportunidades', ascending=False)['propietario_display'].tolist()
             orden_masters = resumen.groupby('nombre')['Total Oportunidades'].sum().sort_values(ascending=False).index.tolist()
