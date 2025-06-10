@@ -177,37 +177,21 @@ def app():
 
             st.plotly_chart(fig)
 
-        total_importe = df_ventas['importe'].sum() if 'importe' in df_ventas.columns else 0
-        total_oportunidades = len(df_ventas)
+        # Métricas adaptadas a móvil
+        col1, col2, col3 = st.columns(1 if is_mobile else 3)
 
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.markdown(f"""
+        def mostrar_metricas(col, titulo, valor):
+            col.markdown(f"""
                 <div style='padding: 1rem; background-color: #f1f3f6; border-left: 5px solid #1f77b4;
-                            border-radius: 8px;'>
-                    <h4 style='margin: 0;'> Importe Total ({mes_seleccionado})</h4>
-                    <p style='font-size: 1.5rem; font-weight: bold; margin: 0;'>{total_importe:,.2f} €</p>
+                            border-radius: 8px; margin-bottom: 1rem;'>
+                    <h4 style='margin: 0; font-size: {'1.1rem' if is_mobile else '1.2rem'}'>{titulo}</h4>
+                    <p style='font-size: {'1.3rem' if is_mobile else '1.5rem'}; font-weight: bold; margin: 0;'>{valor}</p>
                 </div>
             """, unsafe_allow_html=True)
 
-        with col2:
-            st.markdown(f"""
-                <div style='padding: 1rem; background-color: #f1f3f6; border-left: 5px solid #1f77b4;
-                            border-radius: 8px;'>
-                    <h4 style='margin: 0;'>Matrículas ({año_actual})</h4>
-                    <p style='font-size: 1.5rem; font-weight: bold; margin: 0;'>{total_oportunidades}</p>
-                </div>
-            """, unsafe_allow_html=True)
-
-        with col3:
-            st.markdown(f"""
-                <div style='padding: 1rem; background-color: #f1f3f6; border-left: 5px solid #1f77b4;
-                            border-radius: 8px;'>
-                    <h4 style='margin: 0;'>Preventas</h4>
-                    <p style='font-size: 1.5rem; font-weight: bold; margin: 0;'>{total_preventas_importe:,.2f} € ({total_preventas_count})</p>
-                </div>
-            """, unsafe_allow_html=True)
+        mostrar_metricas(col1, f"Importe Total ({mes_seleccionado})", f"{df_ventas['importe'].sum():,.2f} €" if 'importe' in df_ventas.columns else "0 €")
+        mostrar_metricas(col2 if not is_mobile else col1, f"Matrículas ({año_actual})", len(df_ventas))
+        mostrar_metricas(col3 if not is_mobile else col1, "Preventas", f"{total_preventas_importe:,.2f} € ({total_preventas_count})")
 
     else:
         st.warning("❌ El archivo de ventas debe tener columnas 'nombre' y 'propietario'.")
