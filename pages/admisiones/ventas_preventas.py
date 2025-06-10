@@ -75,7 +75,7 @@ def app():
             # Gráfico
             fig = px.bar(
                 df_agg,
-                x='meses',
+                x='mes_anio',
                 y='Total Oportunidades',
                 color='propietario_display',
                 color_discrete_map=color_discrete_map,
