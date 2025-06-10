@@ -50,7 +50,13 @@ def app():
         mes_seleccionado = st.selectbox("Selecciona un Mes:", opciones_meses)
 
         if mes_seleccionado != "Todos":
-            df_ventas = df_ventas[df_ventas['mes_anio'] == mes_seleccionado]
+            mes_num_seleccionado = meses_disponibles[meses_disponibles['mes_anio'] == mes_seleccionado]['mes_num'].values[0]
+            anio_seleccionado = meses_disponibles[meses_disponibles['mes_anio'] == mes_seleccionado]['anio'].values[0]
+
+            df_ventas = df_ventas[
+                (df_ventas['anio'] == anio_seleccionado) &
+                (df_ventas['mes_num'] <= mes_num_seleccionado)
+            ]
     else:
         st.warning("❌ El archivo de ventas no contiene la columna 'fecha de cierre'.")
         return
@@ -58,57 +64,55 @@ def app():
     st.markdown(f"### 📊 Ventas y Preventas - {mes_seleccionado}")
 
     if 'nombre' in df_ventas.columns and 'propietario' in df_ventas.columns:
-        if mes_seleccionado == "Todos":
-            st.markdown("#### 📊 Oportunidades por Mes y Propietario")
+        if len(df_ventas) == 0:
+            st.warning("⚠️ No hay datos disponibles para los filtros seleccionados.")
+            return
 
-            df_agg = df_ventas.groupby(['mes', 'propietario']).size().reset_index(name='Total Oportunidades')
-            df_agg['mes'] = pd.Categorical(df_agg['mes'], categories=orden_meses, ordered=True)
-            df_agg = df_agg.sort_values('mes')
+        st.markdown("#### 📊 Oportunidades por Mes y Propietario")
 
-            totales_propietario = df_agg.groupby('propietario')['Total Oportunidades'].sum().reset_index()
-            totales_propietario = totales_propietario.sort_values(by='Total Oportunidades', ascending=False)
-            totales_propietario['propietario_display'] = totales_propietario.apply(
-                lambda row: f"{row['propietario']} ({row['Total Oportunidades']})", axis=1
-            )
+        df_agg = df_ventas.groupby(['mes', 'propietario']).size().reset_index(name='Total Oportunidades')
+        df_agg = df_agg[df_agg['Total Oportunidades'] > 0]
+        df_agg['mes'] = pd.Categorical(df_agg['mes'], categories=orden_meses, ordered=True)
+        df_agg = df_agg.sort_values('mes')
 
-            df_agg = df_agg.merge(totales_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
+        totales_propietario = df_agg.groupby('propietario')['Total Oportunidades'].sum().reset_index()
+        totales_propietario = totales_propietario.sort_values(by='Total Oportunidades', ascending=False)
+        totales_propietario['propietario_display'] = totales_propietario.apply(
+            lambda row: f"{row['propietario']} ({row['Total Oportunidades']})", axis=1
+        )
 
-            palette = px.colors.qualitative.Set3
-            propietarios_ordenados = totales_propietario['propietario_display'].tolist()
-            color_discrete_map = {p: palette[i % len(palette)] for i, p in enumerate(propietarios_ordenados)}
+        df_agg = df_agg.merge(totales_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
 
-            fig = px.bar(
-                df_agg,
-                x='mes',
-                y='Total Oportunidades',
-                color='propietario_display',
-                color_discrete_map=color_discrete_map,
-                barmode='group',
-                text='Total Oportunidades',
-                title='Distribución Mensual de Oportunidades por Propietario',
-                width=width,
-                height=height
-            )
-            fig.update_traces(textposition='outside')
-            fig.update_layout(showlegend=False)
-            st.plotly_chart(fig)
+        palette = px.colors.qualitative.Set3
+        propietarios_ordenados = totales_propietario['propietario_display'].tolist()
+        color_discrete_map = {p: palette[i % len(palette)] for i, p in enumerate(propietarios_ordenados)}
 
-            faltantes = set(df_agg['propietario_display'].unique()) - set(color_discrete_map.keys())
-            if faltantes:
-                st.warning(f"⚠️ Faltan en la leyenda: {', '.join(faltantes)}")
+        fig = px.bar(
+            df_agg,
+            x='mes',
+            y='Total Oportunidades',
+            color='propietario_display',
+            color_discrete_map=color_discrete_map,
+            barmode='group',
+            text='Total Oportunidades',
+            title='Distribución Mensual de Oportunidades por Propietario',
+            width=width,
+            height=height
+        )
+        fig.update_traces(textposition='outside')
+        fig.update_layout(showlegend=False)
+        st.plotly_chart(fig)
 
-            legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 1rem; background-color: #f9f9f9; border-radius: 8px;'>"
-            for propietario in propietarios_ordenados:
-                color = color_discrete_map[propietario]
-                legend_html += f"<div style='display: flex; align-items: center; margin-right: 12px;'>" \
-                               f"<div style='width: 15px; height: 15px; background-color: {color}; margin-right: 6px; border: 1px solid #ccc;'></div>" \
-                               f"<span style='font-size: 0.9rem;'>{propietario}</span></div>"
-            legend_html += "</div>"
-            st.markdown(legend_html, unsafe_allow_html=True)
+        legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 1rem; background-color: #f9f9f9; border-radius: 8px;'>"
+        for propietario in propietarios_ordenados:
+            color = color_discrete_map[propietario]
+            legend_html += f"<div style='display: flex; align-items: center; margin-right: 12px;'>" \
+                           f"<div style='width: 15px; height: 15px; background-color: {color}; margin-right: 6px; border: 1px solid #ccc;'></div>" \
+                           f"<span style='font-size: 0.9rem;'>{propietario}</span></div>"
+        legend_html += "</div>"
+        st.markdown(legend_html, unsafe_allow_html=True)
 
-        else:
-            st.warning("⚠️ El modo de 'mes específico' aún no tiene leyenda personalizada aplicada.")
-
+        # Métricas
         total_importe = df_ventas['importe'].sum() if 'importe' in df_ventas.columns else 0
         total_oportunidades = len(df_ventas)
 
