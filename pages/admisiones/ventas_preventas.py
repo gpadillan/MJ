@@ -69,17 +69,17 @@ def app():
                     title="Distribución Total de Oportunidades",
                 )
                 fig.update_traces(
-                    textinfo='label',  # Solo nombre, sin %
+                    textinfo='label',
                     textposition='inside',
                     pull=[0.02] * len(df_agg)
                 )
                 fig.update_layout(
                     height=500,
-                    margin=dict(t=40, b=80),
+                    margin=dict(t=40, b=180),
                     legend=dict(
                         orientation="h",
-                        yanchor="bottom",
-                        y=-0.4,
+                        yanchor="top",
+                        y=-0.6,
                         xanchor="center",
                         x=0.5,
                         bgcolor="rgba(255,255,255,0.95)",
