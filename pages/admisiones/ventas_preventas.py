@@ -56,13 +56,20 @@ def app():
             st.markdown("#### 📊 Oportunidades por Mes y Propietario")
 
             df_agg = df_ventas.groupby(['mes_anio', 'propietario']).size().reset_index(name='Total Oportunidades')
+
+            totales_propietario = df_agg.groupby('propietario')['Total Oportunidades'].sum().reset_index()
+            totales_propietario['propietario_display'] = totales_propietario.apply(
+                lambda row: f"{row['propietario']} ({row['Total Oportunidades']})", axis=1
+            )
+
+            df_agg = df_agg.merge(totales_propietario, on='propietario', how='left')
             df_agg = df_agg.sort_values(by='mes_anio')
 
             fig = px.bar(
                 df_agg,
                 x='mes_anio',
                 y='Total Oportunidades',
-                color='propietario',
+                color='propietario_display',
                 barmode='group',
                 text='Total Oportunidades',
                 title='Distribución Mensual de Oportunidades por Propietario',
