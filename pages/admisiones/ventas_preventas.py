@@ -69,25 +69,22 @@ def app():
                 width=width,
                 height=height
             )
-
-            fig.update_traces(textposition='outside')
             fig.update_layout(
                 xaxis_title="Mes",
                 yaxis_title="Total Oportunidades",
-                legend_title="Propietario",
+                margin=dict(l=20, r=20, t=40, b=140),
                 legend=dict(
                     orientation="h",
                     yanchor="bottom",
-                    y=-0.35,
+                    y=-0.5,
                     xanchor="center",
                     x=0.5,
-                    bgcolor='rgba(255,255,255,0.95)',
-                    bordercolor='lightgray',
+                    bgcolor="rgba(255,255,255,0.95)",
+                    bordercolor="lightgray",
                     borderwidth=1
-                ),
-                margin=dict(l=20, r=20, t=40, b=100)
+                )
             )
-
+            fig.update_traces(textposition='outside')
             st.plotly_chart(fig)
 
         else:
@@ -138,17 +135,17 @@ def app():
                 xaxis_title='Máster' if not is_mobile else 'Propietario',
                 yaxis_title='Propietario' if not is_mobile else 'Máster',
                 legend_title='Propietario (Total)',
+                margin=dict(l=20, r=20, t=40, b=100 if is_mobile else 40),
                 legend=dict(
                     orientation="h" if is_mobile else "v",
                     yanchor="bottom" if is_mobile else "top",
-                    y=-0.3 if is_mobile else 0.98,
+                    y=-0.35 if is_mobile else 0.98,
                     xanchor="center" if is_mobile else "left",
                     x=0.5 if is_mobile else 1.02,
                     bgcolor='rgba(255,255,255,0.95)',
                     bordercolor='lightgray',
                     borderwidth=1
-                ),
-                margin=dict(l=20, r=20, t=40, b=80 if is_mobile else 40)
+                )
             )
 
             if not is_mobile:
