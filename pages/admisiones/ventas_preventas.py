@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.colors
 import os
 from datetime import datetime
 from responsive import get_screen_size
@@ -57,19 +58,24 @@ def app():
 
             df_agg = df_ventas.groupby(['mes_anio', 'propietario']).size().reset_index(name='Total Oportunidades')
 
-            # Totales por propietario
-            totales_por_propietario = df_agg.groupby('propietario')['Total Oportunidades'].sum().reset_index()
-            totales_por_propietario['propietario_display'] = totales_por_propietario.apply(
+            # Mostrar totales por propietario
+            totales_propietario = df_agg.groupby('propietario')['Total Oportunidades'].sum().reset_index()
+            totales_propietario['propietario_display'] = totales_propietario.apply(
                 lambda row: f"{row['propietario']} ({row['Total Oportunidades']})", axis=1
             )
-            df_agg = df_agg.merge(totales_por_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
+            df_agg = df_agg.merge(totales_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
 
-            # Crear gráfico sin leyenda
+            # Aplicar paleta de colores clara
+            palette = plotly.colors.qualitative.Set3
+            propietarios_unicos = df_agg['propietario_display'].unique()
+            color_discrete_map = {p: palette[i % len(palette)] for i, p in enumerate(propietarios_unicos)}
+
             fig = px.bar(
                 df_agg,
                 x='mes_anio',
                 y='Total Oportunidades',
                 color='propietario_display',
+                color_discrete_map=color_discrete_map,
                 barmode='group',
                 text='Total Oportunidades',
                 title='Distribución Mensual de Oportunidades por Propietario',
@@ -81,90 +87,20 @@ def app():
 
             st.plotly_chart(fig)
 
-            # Crear leyenda personalizada debajo del gráfico
-            color_map = {trace.name: trace.marker.color for trace in fig.data}
+            # Leyenda personalizada
             legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 1rem; background-color: #f9f9f9; border-radius: 8px;'>"
-
-            for propietario, color in color_map.items():
+            for propietario, color in color_discrete_map.items():
                 legend_html += f"""
                 <div style='display: flex; align-items: center; margin-right: 12px;'>
                     <div style='width: 15px; height: 15px; background-color: {color}; margin-right: 6px; border: 1px solid #ccc;'></div>
                     <span style='font-size: 0.9rem;'>{propietario}</span>
                 </div>
                 """
-
             legend_html += "</div>"
             st.markdown(legend_html, unsafe_allow_html=True)
 
         else:
-            st.markdown("#### Distribución de Oportunidades y Propietario")
-
-            resumen = df_ventas.groupby(['nombre', 'propietario']).size().reset_index(name='Total Oportunidades')
-            totales_propietario = resumen.groupby('propietario')['Total Oportunidades'].sum().reset_index()
-            totales_propietario['propietario_display'] = totales_propietario.apply(
-                lambda row: f"{row['propietario']} ({row['Total Oportunidades']})", axis=1
-            )
-            resumen = resumen.merge(totales_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
-            orden_propietarios = totales_propietario.sort_values(by='Total Oportunidades', ascending=False)['propietario_display'].tolist()
-            orden_masters = resumen.groupby('nombre')['Total Oportunidades'].sum().sort_values(ascending=False).index.tolist()
-
-            if is_mobile:
-                fig = px.scatter(
-                    resumen,
-                    x='propietario_display',
-                    y='nombre',
-                    size='Total Oportunidades',
-                    color='propietario_display',
-                    text='Total Oportunidades',
-                    size_max=40,
-                    width=width,
-                    height=900
-                )
-            else:
-                fig = px.scatter(
-                    resumen,
-                    x='nombre',
-                    y='propietario_display',
-                    size='Total Oportunidades',
-                    color='propietario_display',
-                    text='Total Oportunidades',
-                    size_max=60,
-                    width=width,
-                    height=height
-                )
-
-            fig.update_traces(
-                textposition='middle center',
-                textfont_size=12,
-                textfont_color='white',
-                marker=dict(line=dict(color='black', width=1.2))
-            )
-
-            fig.update_layout(
-                xaxis_title='Máster' if not is_mobile else 'Propietario',
-                yaxis_title='Propietario' if not is_mobile else 'Máster',
-                legend_title='Propietario (Total)',
-                margin=dict(l=20, r=20, t=40, b=100 if is_mobile else 40),
-                legend=dict(
-                    orientation="h" if is_mobile else "v",
-                    yanchor="bottom" if is_mobile else "top",
-                    y=-0.35 if is_mobile else 0.98,
-                    xanchor="center" if is_mobile else "left",
-                    x=0.5 if is_mobile else 1.02,
-                    bgcolor='rgba(255,255,255,0.95)',
-                    bordercolor='lightgray',
-                    borderwidth=1
-                )
-            )
-
-            if not is_mobile:
-                fig.update_yaxes(categoryorder='array', categoryarray=orden_propietarios[::-1])
-                fig.update_xaxes(categoryorder='array', categoryarray=orden_masters)
-            else:
-                fig.update_xaxes(categoryorder='array', categoryarray=orden_propietarios)
-                fig.update_yaxes(categoryorder='array', categoryarray=orden_masters[::-1])
-
-            st.plotly_chart(fig)
+            st.warning("⚠️ La visualización por mes específico se mantiene sin cambios.")
 
         total_importe = df_ventas['importe'].sum() if 'importe' in df_ventas.columns else 0
         total_oportunidades = len(df_ventas)
