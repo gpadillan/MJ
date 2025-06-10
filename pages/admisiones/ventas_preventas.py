@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.colors
 import os
 from datetime import datetime
 from responsive import get_screen_size
@@ -21,9 +20,6 @@ def app():
         "September": "Septiembre", "October": "Octubre", "November": "Noviembre", "December": "Diciembre"
     }
 
-    orden_meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-                   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-
     if not os.path.exists(VENTAS_FILE) or not os.path.exists(PREVENTAS_FILE):
         st.warning("⚠️ No se han encontrado los archivos 'ventas.xlsx' y/o 'preventas.xlsx'.")
         return
@@ -39,9 +35,7 @@ def app():
         df_ventas['fecha de cierre'] = pd.to_datetime(df_ventas['fecha de cierre'], dayfirst=True, errors='coerce')
         df_ventas['mes_num'] = df_ventas['fecha de cierre'].dt.month
         df_ventas['anio'] = df_ventas['fecha de cierre'].dt.year
-        df_ventas['mes'] = df_ventas['fecha de cierre'].dt.month_name().map(traducciones_meses)
-        df_ventas['mes'] = pd.Categorical(df_ventas['mes'], categories=orden_meses, ordered=True)
-        df_ventas['mes_anio'] = df_ventas['mes'].astype(str) + " " + df_ventas['anio'].astype(str)
+        df_ventas['mes_anio'] = df_ventas['fecha de cierre'].dt.month_name().map(traducciones_meses) + " " + df_ventas['anio'].astype(str)
 
         st.subheader("📊 Ventas y Preventas")
         meses_disponibles = df_ventas[['mes_anio', 'mes_num', 'anio']].dropna().drop_duplicates()
@@ -50,13 +44,7 @@ def app():
         mes_seleccionado = st.selectbox("Selecciona un Mes:", opciones_meses)
 
         if mes_seleccionado != "Todos":
-            mes_num_seleccionado = meses_disponibles[meses_disponibles['mes_anio'] == mes_seleccionado]['mes_num'].values[0]
-            anio_seleccionado = meses_disponibles[meses_disponibles['mes_anio'] == mes_seleccionado]['anio'].values[0]
-
-            df_ventas = df_ventas[
-                (df_ventas['anio'] == anio_seleccionado) &
-                (df_ventas['mes_num'] <= mes_num_seleccionado)
-            ]
+            df_ventas = df_ventas[df_ventas['mes_anio'] == mes_seleccionado]
     else:
         st.warning("❌ El archivo de ventas no contiene la columna 'fecha de cierre'.")
         return
@@ -64,72 +52,162 @@ def app():
     st.markdown(f"### 📊 Ventas y Preventas - {mes_seleccionado}")
 
     if 'nombre' in df_ventas.columns and 'propietario' in df_ventas.columns:
-        if len(df_ventas) == 0:
-            st.warning("⚠️ No hay datos disponibles para los filtros seleccionados.")
-            return
+        if mes_seleccionado == "Todos":
+            st.markdown("#### 📊 Oportunidades por Mes y Propietario")
 
-        st.markdown("#### 📊 Oportunidades por Mes y Propietario")
+            df_agg = df_ventas.groupby(['mes_anio', 'propietario']).size().reset_index(name='Total Oportunidades')
+            df_agg = df_agg.sort_values(by='mes_anio')
 
-        df_agg = df_ventas.groupby(['mes', 'propietario']).size().reset_index(name='Total Oportunidades')
-        df_agg = df_agg[df_agg['Total Oportunidades'] > 0]
-        df_agg['mes'] = pd.Categorical(df_agg['mes'], categories=orden_meses, ordered=True)
-        df_agg = df_agg.sort_values('mes')
+            fig = px.bar(
+                df_agg,
+                x='mes_anio',
+                y='Total Oportunidades',
+                color='propietario',
+                barmode='group',
+                text='Total Oportunidades',
+                title='Distribución Mensual de Oportunidades por Propietario',
+                width=width,
+                height=height
+            )
+            fig.update_traces(textposition='outside')
 
-        totales_propietario = df_agg.groupby('propietario')['Total Oportunidades'].sum().reset_index()
-        totales_propietario = totales_propietario.sort_values(by='Total Oportunidades', ascending=False)
-        totales_propietario['propietario_display'] = totales_propietario.apply(
-            lambda row: f"{row['propietario']} ({row['Total Oportunidades']})", axis=1
-        )
+            if is_mobile:
+                fig.update_layout(
+                    xaxis_title="Mes",
+                    yaxis_title="Total Oportunidades",
+                    margin=dict(l=20, r=100, t=40, b=40),
+                    height=height + 300,
+                    legend=dict(
+                        orientation="v",
+                        yanchor="top",
+                        y=1,
+                        xanchor="right",
+                        x=1.1,
+                        bgcolor="rgba(255,255,255,0.95)",
+                        bordercolor="lightgray",
+                        borderwidth=1
+                    )
+                )
+            else:
+                fig.update_layout(
+                    xaxis_title="Mes",
+                    yaxis_title="Total Oportunidades",
+                    margin=dict(l=20, r=20, t=40, b=140),
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=-0.5,
+                        xanchor="center",
+                        x=0.5,
+                        bgcolor="rgba(255,255,255,0.95)",
+                        bordercolor="lightgray",
+                        borderwidth=1
+                    )
+                )
 
-        df_agg = df_agg.merge(totales_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
+            st.plotly_chart(fig)
 
-        palette = px.colors.qualitative.Set3
-        propietarios_ordenados = totales_propietario['propietario_display'].tolist()
-        color_discrete_map = {p: palette[i % len(palette)] for i, p in enumerate(propietarios_ordenados)}
+        else:
+            st.markdown("#### Distribución de Oportunidades y Propietario")
 
-        fig = px.bar(
-            df_agg,
-            x='mes',
-            y='Total Oportunidades',
-            color='propietario_display',
-            color_discrete_map=color_discrete_map,
-            barmode='group',
-            text='Total Oportunidades',
-            title='Distribución Mensual de Oportunidades por Propietario',
-            width=width,
-            height=height
-        )
-        fig.update_traces(textposition='outside')
-        fig.update_layout(showlegend=False)
-        st.plotly_chart(fig)
+            resumen = df_ventas.groupby(['nombre', 'propietario']).size().reset_index(name='Total Oportunidades')
+            totales_propietario = resumen.groupby('propietario')['Total Oportunidades'].sum().reset_index()
+            totales_propietario['propietario_display'] = totales_propietario.apply(
+                lambda row: f"{row['propietario']} ({row['Total Oportunidades']})", axis=1
+            )
+            resumen = resumen.merge(totales_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
+            orden_propietarios = totales_propietario.sort_values(by='Total Oportunidades', ascending=False)['propietario_display'].tolist()
+            orden_masters = resumen.groupby('nombre')['Total Oportunidades'].sum().sort_values(ascending=False).index.tolist()
 
-        legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 1rem; background-color: #f9f9f9; border-radius: 8px;'>"
-        for propietario in propietarios_ordenados:
-            color = color_discrete_map[propietario]
-            legend_html += f"<div style='display: flex; align-items: center; margin-right: 12px;'>" \
-                           f"<div style='width: 15px; height: 15px; background-color: {color}; margin-right: 6px; border: 1px solid #ccc;'></div>" \
-                           f"<span style='font-size: 0.9rem;'>{propietario}</span></div>"
-        legend_html += "</div>"
-        st.markdown(legend_html, unsafe_allow_html=True)
+            if is_mobile:
+                fig = px.scatter(
+                    resumen,
+                    x='propietario_display',
+                    y='nombre',
+                    size='Total Oportunidades',
+                    color='propietario_display',
+                    text='Total Oportunidades',
+                    size_max=40,
+                    width=width,
+                    height=900
+                )
+            else:
+                fig = px.scatter(
+                    resumen,
+                    x='nombre',
+                    y='propietario_display',
+                    size='Total Oportunidades',
+                    color='propietario_display',
+                    text='Total Oportunidades',
+                    size_max=60,
+                    width=width,
+                    height=height
+                )
 
-        # Métricas
+            fig.update_traces(
+                textposition='middle center',
+                textfont_size=12,
+                textfont_color='white',
+                marker=dict(line=dict(color='black', width=1.2))
+            )
+
+            fig.update_layout(
+                xaxis_title='Máster' if not is_mobile else 'Propietario',
+                yaxis_title='Propietario' if not is_mobile else 'Máster',
+                legend_title='Propietario (Total)',
+                margin=dict(l=20, r=20, t=40, b=100 if is_mobile else 40),
+                legend=dict(
+                    orientation="h" if is_mobile else "v",
+                    yanchor="bottom" if is_mobile else "top",
+                    y=-0.35 if is_mobile else 0.98,
+                    xanchor="center" if is_mobile else "left",
+                    x=0.5 if is_mobile else 1.02,
+                    bgcolor='rgba(255,255,255,0.95)',
+                    bordercolor='lightgray',
+                    borderwidth=1
+                )
+            )
+
+            if not is_mobile:
+                fig.update_yaxes(categoryorder='array', categoryarray=orden_propietarios[::-1])
+                fig.update_xaxes(categoryorder='array', categoryarray=orden_masters)
+            else:
+                fig.update_xaxes(categoryorder='array', categoryarray=orden_propietarios)
+                fig.update_yaxes(categoryorder='array', categoryarray=orden_masters[::-1])
+
+            st.plotly_chart(fig)
+
         total_importe = df_ventas['importe'].sum() if 'importe' in df_ventas.columns else 0
         total_oportunidades = len(df_ventas)
 
         col1, col2, col3 = st.columns(3)
 
-        def mostrar_metricas(col, titulo, valor):
-            col.markdown(f"""
+        with col1:
+            st.markdown(f"""
                 <div style='padding: 1rem; background-color: #f1f3f6; border-left: 5px solid #1f77b4;
                             border-radius: 8px;'>
-                    <h4 style='margin: 0;'>{titulo}</h4>
-                    <p style='font-size: 1.5rem; font-weight: bold; margin: 0;'>{valor}</p>
+                    <h4 style='margin: 0;'> Importe Total ({mes_seleccionado})</h4>
+                    <p style='font-size: 1.5rem; font-weight: bold; margin: 0;'>{total_importe:,.2f} €</p>
                 </div>
             """, unsafe_allow_html=True)
 
-        mostrar_metricas(col1, f"Importe Total ({mes_seleccionado})", f"{total_importe:,.2f} €")
-        mostrar_metricas(col2, f"Matrículas ({año_actual})", total_oportunidades)
-        mostrar_metricas(col3, "Preventas", f"{total_preventas_importe:,.2f} € ({total_preventas_count})")
+        with col2:
+            st.markdown(f"""
+                <div style='padding: 1rem; background-color: #f1f3f6; border-left: 5px solid #1f77b4;
+                            border-radius: 8px;'>
+                    <h4 style='margin: 0;'>Matrículas ({año_actual})</h4>
+                    <p style='font-size: 1.5rem; font-weight: bold; margin: 0;'>{total_oportunidades}</p>
+                </div>
+            """, unsafe_allow_html=True)
+
+        with col3:
+            st.markdown(f"""
+                <div style='padding: 1rem; background-color: #f1f3f6; border-left: 5px solid #1f77b4;
+                            border-radius: 8px;'>
+                    <h4 style='margin: 0;'>Preventas</h4>
+                    <p style='font-size: 1.5rem; font-weight: bold; margin: 0;'>{total_preventas_importe:,.2f} € ({total_preventas_count})</p>
+                </div>
+            """, unsafe_allow_html=True)
 
     else:
         st.warning("❌ El archivo de ventas debe tener columnas 'nombre' y 'propietario'.")
