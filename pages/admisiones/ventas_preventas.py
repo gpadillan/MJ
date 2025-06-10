@@ -49,11 +49,11 @@ def app():
         st.warning("❌ El archivo de ventas no contiene la columna 'fecha de cierre'.")
         return
 
-    st.markdown(f"### 📊 Ventas y Preventas - {mes_seleccionado}")
+    st.markdown(f"### Ventas y Preventas - {mes_seleccionado}")
 
     if 'nombre' in df_ventas.columns and 'propietario' in df_ventas.columns:
         if mes_seleccionado == "Todos":
-            st.markdown("#### 📊 Oportunidades por Mes y Propietario")
+            st.markdown("#### Oportunidades por Mes y Propietario")
 
             df_agg = df_ventas.groupby(['mes_anio', 'propietario']).size().reset_index(name='Total Oportunidades')
             df_agg = df_agg.sort_values(by='mes_anio')
@@ -71,39 +71,22 @@ def app():
             )
             fig.update_traces(textposition='outside')
 
-            if is_mobile:
-                fig.update_layout(
-                    xaxis_title="Mes",
-                    yaxis_title="Total Oportunidades",
-                    margin=dict(l=20, r=100, t=40, b=40),
-                    height=height + 300,
-                    legend=dict(
-                        orientation="v",
-                        yanchor="top",
-                        y=1,
-                        xanchor="right",
-                        x=1.1,
-                        bgcolor="rgba(255,255,255,0.95)",
-                        bordercolor="lightgray",
-                        borderwidth=1
-                    )
+            fig.update_layout(
+                xaxis_title="Mes",
+                yaxis_title="Total Oportunidades",
+                margin=dict(l=20, r=20, t=40, b=120),
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=-0.35,
+                    xanchor="center",
+                    x=0.5,
+                    font=dict(size=10),
+                    bgcolor="rgba(255,255,255,0.95)",
+                    bordercolor="lightgray",
+                    borderwidth=1
                 )
-            else:
-                fig.update_layout(
-                    xaxis_title="Mes",
-                    yaxis_title="Total Oportunidades",
-                    margin=dict(l=20, r=20, t=40, b=140),
-                    legend=dict(
-                        orientation="h",
-                        yanchor="bottom",
-                        y=-0.5,
-                        xanchor="center",
-                        x=0.5,
-                        bgcolor="rgba(255,255,255,0.95)",
-                        bordercolor="lightgray",
-                        borderwidth=1
-                    )
-                )
+            )
 
             st.plotly_chart(fig)
 
@@ -119,30 +102,17 @@ def app():
             orden_propietarios = totales_propietario.sort_values(by='Total Oportunidades', ascending=False)['propietario_display'].tolist()
             orden_masters = resumen.groupby('nombre')['Total Oportunidades'].sum().sort_values(ascending=False).index.tolist()
 
-            if is_mobile:
-                fig = px.scatter(
-                    resumen,
-                    x='propietario_display',
-                    y='nombre',
-                    size='Total Oportunidades',
-                    color='propietario_display',
-                    text='Total Oportunidades',
-                    size_max=40,
-                    width=width,
-                    height=900
-                )
-            else:
-                fig = px.scatter(
-                    resumen,
-                    x='nombre',
-                    y='propietario_display',
-                    size='Total Oportunidades',
-                    color='propietario_display',
-                    text='Total Oportunidades',
-                    size_max=60,
-                    width=width,
-                    height=height
-                )
+            fig = px.scatter(
+                resumen,
+                x='nombre',
+                y='propietario_display',
+                size='Total Oportunidades',
+                color='propietario_display',
+                text='Total Oportunidades',
+                size_max=60,
+                width=width,
+                height=height
+            )
 
             fig.update_traces(
                 textposition='middle center',
@@ -152,28 +122,25 @@ def app():
             )
 
             fig.update_layout(
-                xaxis_title='Máster' if not is_mobile else 'Propietario',
-                yaxis_title='Propietario' if not is_mobile else 'Máster',
+                xaxis_title='Máster',
+                yaxis_title='Propietario',
                 legend_title='Propietario (Total)',
-                margin=dict(l=20, r=20, t=40, b=100 if is_mobile else 40),
+                margin=dict(l=20, r=20, t=40, b=140),
                 legend=dict(
-                    orientation="h" if is_mobile else "v",
-                    yanchor="bottom" if is_mobile else "top",
-                    y=-0.35 if is_mobile else 0.98,
-                    xanchor="center" if is_mobile else "left",
-                    x=0.5 if is_mobile else 1.02,
+                    orientation="h",
+                    yanchor="bottom",
+                    y=-0.4,
+                    xanchor="center",
+                    x=0.5,
+                    font=dict(size=10),
                     bgcolor='rgba(255,255,255,0.95)',
                     bordercolor='lightgray',
                     borderwidth=1
                 )
             )
 
-            if not is_mobile:
-                fig.update_yaxes(categoryorder='array', categoryarray=orden_propietarios[::-1])
-                fig.update_xaxes(categoryorder='array', categoryarray=orden_masters)
-            else:
-                fig.update_xaxes(categoryorder='array', categoryarray=orden_propietarios)
-                fig.update_yaxes(categoryorder='array', categoryarray=orden_masters[::-1])
+            fig.update_yaxes(categoryorder='array', categoryarray=orden_propietarios[::-1])
+            fig.update_xaxes(categoryorder='array', categoryarray=orden_masters)
 
             st.plotly_chart(fig)
 
