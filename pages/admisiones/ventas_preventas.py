@@ -69,23 +69,42 @@ def app():
                 width=width,
                 height=height
             )
-            fig.update_layout(
-                xaxis_title="Mes",
-                yaxis_title="Total Oportunidades",
-                margin=dict(l=20, r=20, t=40, b=120),
-                legend=dict(
-                    orientation="h",
-                    x=0.5,
-                    y=0,
-                    xanchor="center",
-                    çyanchor="top",
-                    bgcolor="rgba(255,255,255,1)",
-                    bordercolor="lightgray",
-                    borderwidth=1
-                    )      
-            )
-
             fig.update_traces(textposition='outside')
+
+            if is_mobile:
+                fig.update_layout(
+                    xaxis_title="Mes",
+                    yaxis_title="Total Oportunidades",
+                    margin=dict(l=20, r=100, t=40, b=40),
+                    height=height + 300,
+                    legend=dict(
+                        orientation="v",
+                        yanchor="top",
+                        y=1,
+                        xanchor="right",
+                        x=1.1,
+                        bgcolor="rgba(255,255,255,0.95)",
+                        bordercolor="lightgray",
+                        borderwidth=1
+                    )
+                )
+            else:
+                fig.update_layout(
+                    xaxis_title="Mes",
+                    yaxis_title="Total Oportunidades",
+                    margin=dict(l=20, r=20, t=40, b=140),
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=-0.5,
+                        xanchor="center",
+                        x=0.5,
+                        bgcolor="rgba(255,255,255,0.95)",
+                        bordercolor="lightgray",
+                        borderwidth=1
+                    )
+                )
+
             st.plotly_chart(fig)
 
         else:
