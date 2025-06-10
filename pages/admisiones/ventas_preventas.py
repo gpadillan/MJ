@@ -63,40 +63,52 @@ def app():
             df_agg = df_agg.merge(totales_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
             df_agg = df_agg.sort_values(by='mes_anio')
 
-            fig = px.bar(
-                df_agg,
-                x='mes_anio',
-                y='Total Oportunidades',
-                color='propietario_display',
-                barmode='group',
-                text='Total Oportunidades',
-                title='Distribución Mensual de Oportunidades por Propietario',
-                width=width,
-                height=height
-            )
-            fig.update_traces(textposition='outside')
-
             if is_mobile:
-                fig.update_layout(
-                    xaxis_title="Mes",
-                    yaxis_title="Total Oportunidades",
-                    height=height + 550,
-                    margin=dict(l=10, r=10, t=30, b=220),
-                    xaxis_tickangle=-45,
-                    legend_title_text='',
-                    legend=dict(
-                        orientation="h",
-                        yanchor="bottom",
-                        y=-0.6,
-                        xanchor="center",
-                        x=0.5,
-                        bgcolor="rgba(255,255,255,0.95)",
-                        bordercolor="lightgray",
-                        borderwidth=1,
-                        font=dict(size=12)
+                st.markdown("##### 🥧 Distribución por Mes (Gráfico de Quesito)")
+                meses_unicos = df_agg['mes_anio'].unique()
+
+                for mes in sorted(meses_unicos):
+                    df_mes = df_agg[df_agg['mes_anio'] == mes]
+                    fig = px.pie(
+                        df_mes,
+                        names='propietario_display',
+                        values='Total Oportunidades',
+                        title=f"{mes}",
                     )
-                )
+                    fig.update_traces(
+                        textinfo='percent+label',
+                        textposition='inside',
+                        pull=[0.02] * len(df_mes)
+                    )
+                    fig.update_layout(
+                        height=400,
+                        margin=dict(t=40, b=60),
+                        legend=dict(
+                            orientation="h",
+                            yanchor="bottom",
+                            y=-0.35,
+                            xanchor="center",
+                            x=0.5,
+                            bgcolor="rgba(255,255,255,0.95)",
+                            bordercolor="lightgray",
+                            borderwidth=1,
+                            font=dict(size=12)
+                        )
+                    )
+                    st.plotly_chart(fig)
             else:
+                fig = px.bar(
+                    df_agg,
+                    x='mes_anio',
+                    y='Total Oportunidades',
+                    color='propietario_display',
+                    barmode='group',
+                    text='Total Oportunidades',
+                    title='Distribución Mensual de Oportunidades por Propietario',
+                    width=width,
+                    height=height
+                )
+                fig.update_traces(textposition='outside')
                 fig.update_layout(
                     xaxis_title="Mes",
                     yaxis_title="Total Oportunidades",
@@ -112,8 +124,7 @@ def app():
                         borderwidth=1
                     )
                 )
-
-            st.plotly_chart(fig)
+                st.plotly_chart(fig)
 
         else:
             st.markdown("#### Distribución de Oportunidades y Propietario")
