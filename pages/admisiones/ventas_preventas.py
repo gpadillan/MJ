@@ -58,7 +58,7 @@ def app():
 
             df_agg = df_ventas.groupby(['mes_anio', 'propietario']).size().reset_index(name='Total Oportunidades')
 
-            # Agregamos los totales por propietario
+            # Totales por propietario y etiquetas
             totales_propietario = df_agg.groupby('propietario')['Total Oportunidades'].sum().reset_index()
             totales_propietario = totales_propietario.sort_values(by='Total Oportunidades', ascending=False)
             totales_propietario['propietario_display'] = totales_propietario.apply(
@@ -67,12 +67,11 @@ def app():
 
             df_agg = df_agg.merge(totales_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
 
-            # Paleta y asignación de colores
-            palette = plotly.colors.qualitative.Set3
+            # Colores consistentes
+            palette = px.colors.qualitative.Set3
             propietarios_ordenados = totales_propietario['propietario_display'].tolist()
             color_discrete_map = {p: palette[i % len(palette)] for i, p in enumerate(propietarios_ordenados)}
 
-            # Gráfico sin leyenda nativa
             fig = px.bar(
                 df_agg,
                 x='mes_anio',
@@ -89,21 +88,23 @@ def app():
             fig.update_layout(showlegend=False)
             st.plotly_chart(fig)
 
-            # Leyenda personalizada HTML
+            # ✅ Leyenda personalizada correctamente renderizada
             legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 1rem; background-color: #f9f9f9; border-radius: 8px;'>"
             for propietario in propietarios_ordenados:
                 color = color_discrete_map[propietario]
                 legend_html += f"""
-                <div style='display: flex; align-items: center; margin-right: 12px;'>
-                    <div style='width: 15px; height: 15px; background-color: {color}; margin-right: 6px; border: 1px solid #ccc;'></div>
-                    <span style='font-size: 0.9rem;'>{propietario}</span>
-                </div>
+                    <div style='display: flex; align-items: center; margin-right: 12px;'>
+                        <div style='width: 15px; height: 15px; background-color: {color}; margin-right: 6px; border: 1px solid #ccc;'></div>
+                        <span style='font-size: 0.9rem;'>{propietario}</span>
+                    </div>
                 """
             legend_html += "</div>"
+
+            # ✅ Esta línea es clave para que se vea como HTML y no como texto
             st.markdown(legend_html, unsafe_allow_html=True)
 
         else:
-            st.warning("⚠️ El modo 'mes específico' se mantiene sin modificaciones.")
+            st.warning("⚠️ Visualización por mes específico pendiente de adaptar.")
 
         # Métricas inferiores
         total_importe = df_ventas['importe'].sum() if 'importe' in df_ventas.columns else 0
