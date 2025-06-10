@@ -58,7 +58,7 @@ def app():
 
             df_agg = df_ventas.groupby(['mes_anio', 'propietario']).size().reset_index(name='Total Oportunidades')
 
-            # Totales por propietario y etiquetas
+            # Totales y display
             totales_propietario = df_agg.groupby('propietario')['Total Oportunidades'].sum().reset_index()
             totales_propietario = totales_propietario.sort_values(by='Total Oportunidades', ascending=False)
             totales_propietario['propietario_display'] = totales_propietario.apply(
@@ -67,11 +67,12 @@ def app():
 
             df_agg = df_agg.merge(totales_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
 
-            # Colores consistentes
+            # Paleta y mapeo
             palette = px.colors.qualitative.Set3
             propietarios_ordenados = totales_propietario['propietario_display'].tolist()
             color_discrete_map = {p: palette[i % len(palette)] for i, p in enumerate(propietarios_ordenados)}
 
+            # Gráfico
             fig = px.bar(
                 df_agg,
                 x='mes_anio',
@@ -88,7 +89,12 @@ def app():
             fig.update_layout(showlegend=False)
             st.plotly_chart(fig)
 
-            # ✅ Leyenda personalizada correctamente renderizada
+            # Validación opcional
+            faltantes = set(df_agg['propietario_display'].unique()) - set(color_discrete_map.keys())
+            if faltantes:
+                st.warning(f"⚠️ Faltan en la leyenda: {', '.join(faltantes)}")
+
+            # Leyenda personalizada
             legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 1rem; background-color: #f9f9f9; border-radius: 8px;'>"
             for propietario in propietarios_ordenados:
                 color = color_discrete_map[propietario]
@@ -99,14 +105,12 @@ def app():
                     </div>
                 """
             legend_html += "</div>"
-
-            # ✅ Esta línea es clave para que se vea como HTML y no como texto
             st.markdown(legend_html, unsafe_allow_html=True)
 
         else:
-            st.warning("⚠️ Visualización por mes específico pendiente de adaptar.")
+            st.warning("⚠️ El modo de 'mes específico' aún no tiene leyenda personalizada aplicada.")
 
-        # Métricas inferiores
+        # Métricas
         total_importe = df_ventas['importe'].sum() if 'importe' in df_ventas.columns else 0
         total_oportunidades = len(df_ventas)
 
