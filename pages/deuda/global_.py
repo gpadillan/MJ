@@ -4,8 +4,7 @@ import plotly.express as px
 from datetime import datetime
 import io
 import plotly.io as pio
-from itertools import cycle
-from responsive import get_screen_size
+from responsive import get_screen_size  # 👈 Añadido para adaptar tamaño
 
 def render():
     st.subheader("Estado")
@@ -58,7 +57,7 @@ def render():
 
     df_grouped = df_filtrado.groupby("Estado")[columnas_existentes].sum().reset_index()
     fila_total = pd.DataFrame(df_grouped[columnas_existentes].sum()).T
-    fila_total.insert(0, "Estado", "Total general")
+    fila_total.insert(0, "Estado", "Total General")
     df_final = pd.concat([df_grouped, fila_total], ignore_index=True)
     df_final["Total fila"] = df_final[columnas_existentes].sum(axis=1)
 
@@ -71,6 +70,18 @@ def render():
     # GRÁFICO AGRUPADO POR PERIODO
     df_melted = df_grouped.melt(id_vars="Estado", var_name="Periodo", value_name="Total")
     st.markdown("### Totales por Estado y Periodo")
+
+    # Colores fijos para versión móvil
+    colores_fijos = {
+        "Cobrado": "#1f77b4",
+        "Domiciliacion Confirmada": "#ff7f0e",
+        "Domiciliacion Emitida": "#2ca02c",
+        "Dudoso Cobro": "#d62728",
+        "Incobrable": "#9467bd",
+        "No Cobrado": "#8c564b",
+        "Pendiente": "#e377c2",
+        "Total General": "#7f7f7f"
+    }
 
     if width >= 768:
         fig1 = px.bar(
@@ -86,12 +97,11 @@ def render():
         )
         st.plotly_chart(fig1)
     else:
-        colores = cycle(px.colors.qualitative.Set3)
         for periodo in df_melted["Periodo"].unique():
             st.markdown(f"#### {periodo}")
             df_periodo = df_melted[df_melted["Periodo"] == periodo]
+            color = colores_fijos.get(periodo.strip().title(), "#cccccc")
             for _, row in df_periodo.iterrows():
-                color = next(colores)
                 st.markdown(f"""
                     <div style="background-color:{color}; padding:10px; border-radius:8px; margin-bottom:10px;">
                         <strong>{row['Estado']}</strong><br>
