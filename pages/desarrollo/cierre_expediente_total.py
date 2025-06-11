@@ -21,7 +21,6 @@ def render(df):
                            'EMPRESA PRÁCT.', 'EMPRESA GE', 'AREA', 'AÑO', 'NOMBRE']
     if not all(col in df.columns for col in columnas_requeridas):
         st.error("Faltan columnas requeridas en el DataFrame.")
-        st.write("Columnas encontradas:", df.columns.tolist())
         return
 
     df['PRÁCTCAS/GE'] = df['PRÁCTCAS/GE'].astype(str).str.strip().str.upper()
@@ -34,8 +33,8 @@ def render(df):
     df = df[df['CONSULTOR EIP'].str.upper() != 'NO ENCONTRADO']
 
     df['CONSECUCIÓN_BOOL'] = df['CONSECUCIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
-    df['DEVOLUCIÓN_BOOL'] = df['DEVOLUCIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
     df['INAPLICACIÓN_BOOL'] = df['INAPLICACIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
+    df['DEVOLUCIÓN_BOOL'] = df['DEVOLUCIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
 
     anios_disponibles = sorted(df['AÑO'].dropna().unique().astype(int))
     opciones_informe = [f"Cierre Expediente Año {a}" for a in anios_disponibles] + ["Cierre Expediente Total"]
@@ -132,13 +131,13 @@ def render(df):
         st.dataframe(empresa_pract.style.background_gradient(subset=['EMPLEOS'], cmap='PuBu'), use_container_width=True)
 
     # === 🎯 OBJETIVOS % ===
+    total_alumnado_objetivo = total_consecucion + total_inaplicacion
     df_validos = df[df['NOMBRE'].str.upper() != 'NO ENCONTRADO']
     total_validos = df_validos['NOMBRE'].nunique()
-    total_cierre_expediente = total_consecucion + total_inaplicacion if "Total" in opcion else total_validos
 
     st.markdown(f"""
         <h2 style='margin: 0 0 1rem 0;'>🎯 OBJETIVOS % — 
-        <span style="font-weight: normal; font-size: 1.2rem;">Total Alumnado: {total_cierre_expediente}</span></h2>
+        <span style="font-weight: normal; font-size: 1.2rem;">Total Alumnado: {total_alumnado_objetivo}</span></h2>
     """, unsafe_allow_html=True)
 
     insercion_empleo = df_validos[df_validos['CONSECUCIÓN GE'] == 'TRUE']
