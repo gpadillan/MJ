@@ -60,6 +60,8 @@ def render(df):
     total_empresa_ge = df_filtrado['EMPRESA GE'][~df_filtrado['EMPRESA GE'].isin(['', 'NO ENCONTRADO'])].shape[0]
     total_empresa_pract = df_filtrado['EMPRESA PRÁCT.'][~df_filtrado['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])].shape[0]
 
+    total_alumnado_real = total_consecucion + total_inaplicacion + total_empresa_ge
+
     with st.container():
         if "Total" in opcion:
             col1, col2, col3, col4 = st.columns(4)
@@ -74,70 +76,15 @@ def render(df):
             col2.markdown(render_card(f"INAPLICACIÓN {anio}", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
             col3.markdown(render_card("Alumnado PRÁCTICAS", total_empresa_pract, "#f3e5f5"), unsafe_allow_html=True)
 
-    st.markdown("### Cierres gestionados por Consultor")
-    df_cierre = pd.concat([
-        df_filtrado[df_filtrado['CONSECUCIÓN_BOOL']][['CONSULTOR EIP']].assign(CIERRE='CONSECUCIÓN'),
-        df_filtrado[df_filtrado['INAPLICACIÓN_BOOL']][['CONSULTOR EIP']].assign(CIERRE='INAPLICACIÓN')
-    ])
-    resumen_total_cierres = df_cierre.groupby('CONSULTOR EIP').size().reset_index(name='TOTAL_CIERRES')
+    st.markdown(f"""
+        <h2 style='margin: 0 0 1rem 0;'>🎯 OBJETIVOS % — 
+        <span style="font-weight: normal; font-size: 1.2rem;">
+            Total Alumnado: {total_alumnado_real}
+        </span></h2>
+    """, unsafe_allow_html=True)
 
-    fig_pie = px.pie(
-        resumen_total_cierres,
-        names='CONSULTOR EIP',
-        values='TOTAL_CIERRES',
-        title=f'Distribución de cierres por Consultor ({opcion})',
-        hole=0
-    )
-    fig_pie.update_traces(textinfo='label+value')
-    st.plotly_chart(fig_pie, use_container_width=True)
-
-    st.markdown("### Empresas por ÁREA")
-    areas_disponibles = ['TODAS'] + sorted(df_filtrado['AREA'].dropna().unique())
-    area_seleccionada = st.selectbox("Filtrar empresas por área:", areas_disponibles)
-    df_empresas = df_filtrado if area_seleccionada == 'TODAS' else df_filtrado[df_filtrado['AREA'] == area_seleccionada]
-
-    st.markdown("### Resumen por ÁREA")
-    df_valid_area = df_empresas[df_empresas['AREA'] != '']
-    df_valid_area_pract = df_valid_area.copy()
-
-    resumen_area = pd.DataFrame()
-    resumen_area['TOTAL CONSECUCIÓN'] = df_valid_area[df_valid_area['CONSECUCIÓN_BOOL']].groupby('AREA').size()
-    resumen_area['TOTAL INAPLICACIÓN'] = df_valid_area[df_valid_area['INAPLICACIÓN_BOOL']].groupby('AREA').size()
-    if "Total" in opcion:
-        resumen_area['TOTAL PRÁCTICAS'] = df_valid_area_pract[df_valid_area_pract['PRACTICAS_BOOL']].groupby('AREA').size()
-
-    resumen_area = resumen_area.fillna(0).astype(int).sort_values(by='TOTAL CONSECUCIÓN', ascending=False)
-    total_row = pd.DataFrame(resumen_area.sum()).T
-    total_row.index = ['Total']
-    resumen_area = pd.concat([resumen_area, total_row])
-    resumen_area.index = list(range(1, len(resumen_area))) + ['Total']
-
-    styled_area = resumen_area.style \
-        .background_gradient(subset=['TOTAL CONSECUCIÓN'], cmap='Greens') \
-        .background_gradient(subset=['TOTAL INAPLICACIÓN'], cmap='Reds')
-    if 'TOTAL PRÁCTICAS' in resumen_area.columns:
-        styled_area = styled_area.background_gradient(subset=['TOTAL PRÁCTICAS'], cmap='Blues')
-    st.dataframe(styled_area, use_container_width=True)
-
-    col_emp1, col_emp2 = st.columns(2)
-    with col_emp1:
-        st.markdown("#### Tabla: EMPRESA GE")
-        empresa_ge = df_empresas['EMPRESA GE'][~df_empresas['EMPRESA GE'].isin(['', 'NO ENCONTRADO'])].value_counts().reset_index()
-        empresa_ge.columns = ['EMPRESA GE', 'EMPLEOS']
-        st.dataframe(empresa_ge.style.background_gradient(subset=['EMPLEOS'], cmap='YlOrBr'), use_container_width=True)
-    with col_emp2:
-        st.markdown("#### Tabla: EMPRESA PRÁCT.")
-        empresa_pract = df_empresas['EMPRESA PRÁCT.'][~df_empresas['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])].value_counts().reset_index()
-        empresa_pract.columns = ['EMPRESA PRÁCT.', 'EMPLEOS']
-        st.dataframe(empresa_pract.style.background_gradient(subset=['EMPLEOS'], cmap='PuBu'), use_container_width=True)
-
-    # === 🎯 OBJETIVOS % ===
     df_validos = df[df['NOMBRE'].str.upper() != 'NO ENCONTRADO']
     total_validos = df_validos['NOMBRE'].nunique()
-
-    st.markdown(f"""
-        <h2 style='margin: 0 0 1rem 0;'>🎯 OBJETIVOS % — <span style="font-weight: normal; font-size: 1.2rem;">Total Alumnado: {total_validos}</span></h2>
-    """, unsafe_allow_html=True)
 
     insercion_empleo = df_validos[df_validos['CONSECUCIÓN GE'] == 'TRUE']
     porcentaje_empleo = round((insercion_empleo['NOMBRE'].nunique() / total_validos) * 100, 2)
