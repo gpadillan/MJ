@@ -131,16 +131,12 @@ def render(df):
         empresa_pract.columns = ['EMPRESA PRÁCT.', 'EMPLEOS']
         st.dataframe(empresa_pract.style.background_gradient(subset=['EMPLEOS'], cmap='PuBu'), use_container_width=True)
 
-    st.markdown("## 🎯 OBJETIVOS %")
-
+    # === 🎯 OBJETIVOS % ===
     df_validos = df[df['NOMBRE'].str.upper() != 'NO ENCONTRADO']
     total_validos = df_validos['NOMBRE'].nunique()
 
     st.markdown(f"""
-        <div style='display: flex; justify-content: space-between; align-items: center;'>
-            <h2 style='margin: 0;'>🎯 OBJETIVOS %</h2>
-            <span style='font-size: 1.2rem; color: #555;'>Total Alumnado: <strong>{total_validos}</strong></span>
-        </div>
+        <h2 style='margin: 0 0 1rem 0;'>🎯 OBJETIVOS % — <span style="font-weight: normal; font-size: 1.2rem;">Total Alumnado: {total_validos}</span></h2>
     """, unsafe_allow_html=True)
 
     insercion_empleo = df_validos[df_validos['CONSECUCIÓN GE'] == 'TRUE']
