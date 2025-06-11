@@ -60,6 +60,7 @@ def render(df):
     total_empresa_ge = df_filtrado['EMPRESA GE'][~df_filtrado['EMPRESA GE'].isin(['', 'NO ENCONTRADO'])].shape[0]
     total_empresa_pract = df_filtrado['EMPRESA PRÁCT.'][~df_filtrado['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])].shape[0]
 
+    # TOTAL ALUMNADO REAL
     total_alumnado_real = total_consecucion + total_inaplicacion + total_empresa_ge
 
     with st.container():
@@ -76,34 +77,30 @@ def render(df):
             col2.markdown(render_card(f"INAPLICACIÓN {anio}", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
             col3.markdown(render_card("Alumnado PRÁCTICAS", total_empresa_pract, "#f3e5f5"), unsafe_allow_html=True)
 
+    # === 🎯 OBJETIVOS % ===
     st.markdown(f"""
-        <h2 style='margin: 0 0 1rem 0;'>🎯 OBJETIVOS % — 
-        <span style="font-weight: normal; font-size: 1.2rem;">
-            Total Alumnado: {total_alumnado_real}
-        </span></h2>
+        <h2 style='margin: 0 0 1rem 0;'>🎯 OBJETIVOS % — <span style="font-weight: normal; font-size: 1.2rem;">Total Alumnado: {total_alumnado_real}</span></h2>
     """, unsafe_allow_html=True)
 
     df_validos = df[df['NOMBRE'].str.upper() != 'NO ENCONTRADO']
-    total_validos = df_validos['NOMBRE'].nunique()
-
     insercion_empleo = df_validos[df_validos['CONSECUCIÓN GE'] == 'TRUE']
-    porcentaje_empleo = round((insercion_empleo['NOMBRE'].nunique() / total_validos) * 100, 2)
+    porcentaje_empleo = round((insercion_empleo['NOMBRE'].nunique() / total_alumnado_real) * 100, 2)
 
     cond_cierre_dp = (
         (df_validos['CONSECUCIÓN GE'] == 'TRUE') |
         (df_validos['DEVOLUCIÓN GE'] == 'TRUE') |
         (df_validos['INAPLICACIÓN GE'] == 'TRUE')
     )
-    porcentaje_cierre_dp = round((df_validos[cond_cierre_dp]['NOMBRE'].nunique() / total_validos) * 100, 2)
+    porcentaje_cierre_dp = round((df_validos[cond_cierre_dp]['NOMBRE'].nunique() / total_alumnado_real) * 100, 2)
 
     cond_practicas = ~df_validos['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])
-    porcentaje_practicas = round((df_validos[cond_practicas]['NOMBRE'].nunique() / total_validos) * 100, 2)
+    porcentaje_practicas = round((df_validos[cond_practicas]['NOMBRE'].nunique() / total_alumnado_real) * 100, 2)
 
     cond_conversion = (
         (df_validos['EMPRESA PRÁCT.'] == df_validos['EMPRESA GE']) &
         (~df_validos['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO']))
     )
-    porcentaje_conversion = round((df_validos[cond_conversion]['NOMBRE'].nunique() / total_validos) * 100, 2)
+    porcentaje_conversion = round((df_validos[cond_conversion]['NOMBRE'].nunique() / total_alumnado_real) * 100, 2)
 
     col_obj1, col_obj2, col_obj3, col_obj4 = st.columns(4)
     col_obj1.markdown(render_card("Inserción laboral Empleo", f"{porcentaje_empleo}%", "#c8e6c9"), unsafe_allow_html=True)
