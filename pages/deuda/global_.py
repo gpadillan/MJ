@@ -4,7 +4,8 @@ import plotly.express as px
 from datetime import datetime
 import io
 import plotly.io as pio
-from responsive import get_screen_size  # 👈 Añadido para adaptar tamaño
+from itertools import cycle
+from responsive import get_screen_size
 
 def render():
     st.subheader("Estado")
@@ -70,18 +71,33 @@ def render():
     # GRÁFICO AGRUPADO POR PERIODO
     df_melted = df_grouped.melt(id_vars="Estado", var_name="Periodo", value_name="Total")
     st.markdown("### Totales por Estado y Periodo")
-    fig1 = px.bar(
-        df_melted,
-        x="Estado",
-        y="Total",
-        color="Periodo",
-        barmode="group",
-        text_auto=".2s",
-        height=height,
-        width=width,
-        template="plotly_white"
-    )
-    st.plotly_chart(fig1)
+
+    if width >= 768:
+        fig1 = px.bar(
+            df_melted,
+            x="Estado",
+            y="Total",
+            color="Periodo",
+            barmode="group",
+            text_auto=".2s",
+            height=height,
+            width=width,
+            template="plotly_white"
+        )
+        st.plotly_chart(fig1)
+    else:
+        colores = cycle(px.colors.qualitative.Set3)
+        for periodo in df_melted["Periodo"].unique():
+            st.markdown(f"#### {periodo}")
+            df_periodo = df_melted[df_melted["Periodo"] == periodo]
+            for _, row in df_periodo.iterrows():
+                color = next(colores)
+                st.markdown(f"""
+                    <div style="background-color:{color}; padding:10px; border-radius:8px; margin-bottom:10px;">
+                        <strong>{row['Estado']}</strong><br>
+                        Total: <span style="font-size:1.2em;">{row['Total']:.2f}</span>
+                    </div>
+                """, unsafe_allow_html=True)
 
     # GRÁFICO TOTAL ACUMULADO
     st.markdown("### Total acumulado por Estado")
@@ -141,7 +157,10 @@ def render():
     html_buffer.write(df_final.to_html(index=False))
 
     html_buffer.write("<h2>Gráfico Totales por Estado y Periodo</h2>")
-    html_buffer.write(pio.to_html(fig1, include_plotlyjs='cdn', full_html=False))
+    if width >= 768:
+        html_buffer.write(pio.to_html(fig1, include_plotlyjs='cdn', full_html=False))
+    else:
+        html_buffer.write("<p>Visualización adaptada a móvil (no disponible como gráfico).</p>")
 
     html_buffer.write("<h2>Gráfico Total Acumulado</h2>")
     html_buffer.write(pio.to_html(fig2, include_plotlyjs='cdn', full_html=False))
