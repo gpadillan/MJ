@@ -134,9 +134,11 @@ def render(df):
     # === 🎯 OBJETIVOS % ===
     df_validos = df[df['NOMBRE'].str.upper() != 'NO ENCONTRADO']
     total_validos = df_validos['NOMBRE'].nunique()
+    total_cierre_expediente = total_consecucion + total_inaplicacion if "Total" in opcion else total_validos
 
     st.markdown(f"""
-        <h2 style='margin: 0 0 1rem 0;'>🎯 OBJETIVOS % — <span style="font-weight: normal; font-size: 1.2rem;">Total Alumnado: {total_validos}</span></h2>
+        <h2 style='margin: 0 0 1rem 0;'>🎯 OBJETIVOS % — 
+        <span style="font-weight: normal; font-size: 1.2rem;">Total Alumnado: {total_cierre_expediente}</span></h2>
     """, unsafe_allow_html=True)
 
     insercion_empleo = df_validos[df_validos['CONSECUCIÓN GE'] == 'TRUE']
