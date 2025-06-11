@@ -131,14 +131,29 @@ def render(df):
         empresa_pract.columns = ['EMPRESA PRÁCT.', 'EMPLEOS']
         st.dataframe(empresa_pract.style.background_gradient(subset=['EMPLEOS'], cmap='PuBu'), use_container_width=True)
 
-    # 🎯 OBJETIVOS %
-    total_alumnado = total_consecucion + total_inaplicacion + total_practicas_actual
+    # === 🎯 OBJETIVOS % ===
+    df_validos = df[df['NOMBRE'].str.upper() != 'NO ENCONTRADO'].copy()
+
+    df_validos['CONSECUCIÓN_BOOL'] = df_validos['CONSECUCIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
+    df_validos['INAPLICACIÓN_BOOL'] = df_validos['INAPLICACIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
+    df_validos['PRACTICAS_BOOL'] = (
+        (df_validos['PRÁCTCAS/GE'] == 'GE') &
+        (~df_validos['EMPRESA GE'].isin(['', 'NO ENCONTRADO'])) &
+        (df_validos['CONSECUCIÓN GE'].astype(str).str.strip().str.upper() == 'FALSE') &
+        (df_validos['DEVOLUCIÓN GE'].astype(str).str.strip().str.upper() == 'FALSE') &
+        (df_validos['INAPLICACIÓN GE'].astype(str).str.strip().str.upper() == 'FALSE')
+    )
+
+    consec = set(df_validos[df_validos['CONSECUCIÓN_BOOL']]['NOMBRE'])
+    inap = set(df_validos[df_validos['INAPLICACIÓN_BOOL']]['NOMBRE'])
+    activos = set(df_validos[df_validos['PRACTICAS_BOOL']]['NOMBRE'])
+
+    total_alumnado = len(consec.union(inap).union(activos))
 
     st.markdown(f"""
         <h2 style='margin: 0 0 1rem 0;'>🎯 OBJETIVOS % — <span style="font-weight: normal; font-size: 1.2rem;">Total Alumnado: {total_alumnado}</span></h2>
     """, unsafe_allow_html=True)
 
-    df_validos = df[df['NOMBRE'].str.upper() != 'NO ENCONTRADO']
     insercion_empleo = df_validos[df_validos['CONSECUCIÓN GE'] == 'TRUE']
     porcentaje_empleo = round((insercion_empleo['NOMBRE'].nunique() / total_alumnado) * 100, 2)
 
