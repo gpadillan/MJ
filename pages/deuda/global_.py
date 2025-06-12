@@ -99,21 +99,23 @@ def render():
         )
         st.plotly_chart(fig1)
     else:
-        st.markdown("#### Totales por Estado (vista móvil)")
+        st.markdown("#### Totales por Estado y Periodo (vista móvil)")
 
-        df_estado_total = df_melted.groupby("Estado")["Total"].sum().reset_index()
+        for periodo in columnas_existentes:
+            st.markdown(f"**{periodo}**")
+            df_periodo = df_melted[df_melted["Periodo"] == periodo]
 
-        for _, row in df_estado_total.iterrows():
-            estado = row["Estado"]
-            total = row["Total"]
-            color = colores_fijos.get(estado.strip().upper(), "#cccccc")
+            for _, row in df_periodo.iterrows():
+                estado = row["Estado"]
+                total = row["Total"]
+                color = colores_fijos.get(estado.strip().upper(), "#cccccc")
 
-            st.markdown(f"""
-                <div style="background-color:{color}; padding:10px; border-radius:8px; margin-bottom:10px; color:white;">
-                    <strong>{estado}</strong><br>
-                    Total: <span style="font-size:1.2em;">{total:.2f}</span>
-                </div>
-            """, unsafe_allow_html=True)
+                st.markdown(f"""
+                    <div style="background-color:{color}; padding:10px; border-radius:8px; margin-bottom:10px; color:white;">
+                        <strong>{estado}</strong><br>
+                        Total: <span style="font-size:1.2em;">{total:.2f}</span>
+                    </div>
+                """, unsafe_allow_html=True)
 
     st.markdown("### Total acumulado por Estado")
     df_grouped["Total acumulado"] = df_grouped[columnas_existentes].sum(axis=1)
