@@ -6,6 +6,11 @@ from pages.academica.sharepoint_utils import get_access_token, get_site_id, down
 from google.oauth2 import service_account
 import gspread
 
+# === UTILS ===
+def format_euro(value):
+    return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+# === CACHES ===
 @st.cache_data(show_spinner=False)
 def load_admisiones(ventas_path, preventas_path):
     df_ventas, df_preventas = None, None
@@ -41,6 +46,7 @@ def load_academica_data():
     file = download_excel(config, token, site_id)
     return pd.read_excel(file, sheet_name=None)
 
+# === COMPONENTS ===
 def render_info_card(title, value1, value2, color="#e3f2fd"):
     return f"""<div style='padding: 8px; background-color: {color}; border-radius: 8px;
         font-size: 13px; text-align: center; border: 1px solid #ccc;
@@ -55,6 +61,7 @@ def render_import_card(title, value, color="#ede7f6"):
         box-shadow: 1px 1px 5px rgba(0,0,0,0.1);'>
         <strong>{title}</strong><br><strong>{value}</strong></div>"""
 
+# === MAIN PAGE ===
 def principal_page():
     st.title("📊 Panel Principal")
 
@@ -117,25 +124,27 @@ def principal_page():
     col1.markdown(render_info_card("Matrículas Totales", total_matriculas, f"{sum(importes_por_mes.values()):,.2f}".replace(",", "."), "#c8e6c9"), unsafe_allow_html=True)
     col2.markdown(render_info_card("Preventas", total_preventas, f"{total_preventas_importe:,.2f}".replace(",", "."), "#ffe0b2"), unsafe_allow_html=True)
 
-        # === GESTIÓN COBRO ===
-    if not df_gestion.empty:
-        df_gestion.columns = df_gestion.columns.str.strip().str.upper()
-        if "ESTADO" in df_gestion.columns:
-            columnas_validas = [col for col in df_gestion.columns if col.startswith("TOTAL ") or any(m.upper() in col for m in traduccion_meses.values())]
-            df_gestion[columnas_validas] = df_gestion[columnas_validas].apply(pd.to_numeric, errors='coerce').fillna(0)
-            df_estado_totales = df_gestion.groupby("ESTADO")[columnas_validas].sum()
-            df_estado_totales["TOTAL"] = df_estado_totales.sum(axis=1)
+    # === GESTIÓN COBRO ===
+    if not df_gestion.empty and "Estado" in df_gestion.columns:
+        df_gestion.columns = df_gestion.columns.str.strip()
+        df_gestion["Estado"] = df_gestion["Estado"].astype(str).str.strip().str.upper()
 
+        columnas_validas = [col for col in df_gestion.columns if col.startswith("Total ") or any(m in col for m in traduccion_meses.values())]
+        df_gestion[columnas_validas] = df_gestion[columnas_validas].apply(pd.to_numeric, errors='coerce').fillna(0)
+
+        df_total = df_gestion[df_gestion["Estado"] == "TOTAL"]
+        if not df_total.empty:
             st.markdown("---")
             st.markdown("## 💼 Gestión de Cobro")
             st.markdown("### Totales por Estado")
 
-            for i, (estado, total) in enumerate(df_estado_totales["TOTAL"].sort_values(ascending=False).items()):
-                if i % 4 == 0:
-                    cols = st.columns(4)
-                cols[i % 4].markdown(render_import_card(f"Estado: {estado}", f"{total:,.2f}".replace(",", ".")), unsafe_allow_html=True)
-        else:
-            st.warning("⚠️ La columna 'ESTADO' no se encuentra en el archivo cargado.")
+            total_por_estado = df_total.iloc[0][columnas_validas].to_dict()
+            estado_items = list(total_por_estado.items())
+            for i in range(0, len(estado_items), 4):
+                cols = st.columns(4)
+                for j, (estado, total) in enumerate(estado_items[i:i+4]):
+                    valor_formateado = format_euro(round(total, 2))
+                    cols[j].markdown(render_import_card(f"Estado: {estado.title()}", valor_formateado), unsafe_allow_html=True)
 
     # === ACADÉMICA ===
     if not df_academica.empty:
