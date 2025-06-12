@@ -4,7 +4,7 @@ import plotly.express as px
 from datetime import datetime
 import io
 import plotly.io as pio
-from responsive import get_screen_size  # 👈 Añadido para adaptar tamaño
+from responsive import get_screen_size
 
 def render():
     st.subheader("Estado")
@@ -57,7 +57,7 @@ def render():
 
     df_grouped = df_filtrado.groupby("Estado")[columnas_existentes].sum().reset_index()
     fila_total = pd.DataFrame(df_grouped[columnas_existentes].sum()).T
-    fila_total.insert(0, "Estado", "Total General")
+    fila_total.insert(0, "Estado", "TOTAL GENERAL")
     df_final = pd.concat([df_grouped, fila_total], ignore_index=True)
     df_final["Total fila"] = df_final[columnas_existentes].sum(axis=1)
 
@@ -67,27 +67,29 @@ def render():
     # Obtener tamaño de pantalla
     width, height = get_screen_size()
 
-    # GRÁFICO AGRUPADO POR PERIODO (incluye Total General)
+    # Preparar datos para gráfico y tarjetas
     df_melted = df_final.drop(columns=["Total fila"]).melt(
         id_vars="Estado", var_name="Periodo", value_name="Total"
     )
+
     st.markdown("### Totales por Estado y Periodo")
 
-    # Colores fijos para versión móvil
+    # Colores fijos por categoría (con tildes y mayúsculas como en Excel)
     colores_fijos = {
-        "Cobrado": "#1f77b4",
-        "Domiciliacion Confirmada": "#ff7f0e",
-        "Domiciliacion Emitida": "#2ca02c",
-        "Dudoso Cobro": "#d62728",
-        "Incobrable": "#9467bd",
-        "No Cobrado": "#8c564b",
-        "Pendiente": "#e377c2",
-        "Total General": "#7f7f7f"
+        "COBRADO": "#1f77b4",
+        "DOMICILIACIÓN CONFIRMADA": "#ff7f0e",
+        "DOMICILIACIÓN EMITIDA": "#2ca02c",
+        "DUDOSO COBRO": "#d62728",
+        "INCOBRABLE": "#9467bd",
+        "NO COBRADO": "#8c564b",
+        "PENDIENTE": "#e377c2",
+        "TOTAL GENERAL": "#7f7f7f"
     }
 
     if width >= 768:
+        df_plot = df_melted[df_melted["Estado"] != "TOTAL GENERAL"]
         fig1 = px.bar(
-            df_melted,
+            df_plot,
             x="Estado",
             y="Total",
             color="Periodo",
@@ -102,7 +104,7 @@ def render():
         for periodo in df_melted["Periodo"].unique():
             st.markdown(f"#### {periodo}")
             df_periodo = df_melted[df_melted["Periodo"] == periodo]
-            color = colores_fijos.get(periodo.strip().title(), "#cccccc")
+            color = colores_fijos.get(periodo.strip().upper(), "#cccccc")
             for _, row in df_periodo.iterrows():
                 st.markdown(f"""
                     <div style="background-color:{color}; padding:10px; border-radius:8px; margin-bottom:10px;">
