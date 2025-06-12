@@ -67,8 +67,10 @@ def render():
     # Obtener tamaño de pantalla
     width, height = get_screen_size()
 
-    # GRÁFICO AGRUPADO POR PERIODO
-    df_melted = df_grouped.melt(id_vars="Estado", var_name="Periodo", value_name="Total")
+    # GRÁFICO AGRUPADO POR PERIODO (incluye Total General)
+    df_melted = df_final.drop(columns=["Total fila"]).melt(
+        id_vars="Estado", var_name="Periodo", value_name="Total"
+    )
     st.markdown("### Totales por Estado y Periodo")
 
     # Colores fijos para versión móvil
