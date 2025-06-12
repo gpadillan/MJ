@@ -133,8 +133,8 @@ def render(df):
 
     # === 🎯 OBJETIVOS % ===
     df_validos = df[
-        (df['NOMBRE'] != 'NO ENCONTRADO') &
-        (df['APELLIDOS'] != 'NO ENCONTRADO')
+        ~df['NOMBRE'].str.strip().str.upper().eq('NO ENCONTRADO') &
+        ~df['APELLIDOS'].str.strip().str.upper().eq('NO ENCONTRADO')
     ]
     total_alumnado_objetivo = df_validos[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0]
 
