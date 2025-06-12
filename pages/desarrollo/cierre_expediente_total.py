@@ -133,9 +133,12 @@ def render(df):
 
     # === 🎯 OBJETIVOS % ===
     df_validos = df[
+        df['NOMBRE'].notna() &
+        df['APELLIDOS'].notna() &
         ~df['NOMBRE'].str.strip().str.upper().eq('NO ENCONTRADO') &
         ~df['APELLIDOS'].str.strip().str.upper().eq('NO ENCONTRADO')
     ]
+
     total_alumnado_objetivo = df_validos[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0]
 
     st.markdown(f"""
