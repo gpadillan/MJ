@@ -131,13 +131,11 @@ def render(df):
         empresa_pract.columns = ['EMPRESA PRÁCT.', 'EMPLEOS']
         st.dataframe(empresa_pract.style.background_gradient(subset=['EMPLEOS'], cmap='PuBu'), use_container_width=True)
 
-    # === ✅ TOTAL ALUMNADO CORRECTO ===
-    df_validos = df[
-        df['NOMBRE'].notna() &
-        df['APELLIDOS'].notna() &
-        ~df['NOMBRE'].str.strip().str.upper().eq('NO ENCONTRADO') &
-        ~df['APELLIDOS'].str.strip().str.upper().eq('NO ENCONTRADO')
-    ]
+    # === 👥 TOTAL ALUMNADO ===
+    def es_nombre_valido(x):
+        return isinstance(x, str) and x.strip() and x.strip().upper() != 'NO ENCONTRADO'
+
+    df_validos = df[df['NOMBRE'].apply(es_nombre_valido) & df['APELLIDOS'].apply(es_nombre_valido)]
     total_alumnado_objetivo = df_validos[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0]
 
     st.markdown(f"""
