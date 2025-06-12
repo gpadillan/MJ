@@ -117,19 +117,25 @@ def principal_page():
     col1.markdown(render_info_card("Matrículas Totales", total_matriculas, f"{sum(importes_por_mes.values()):,.2f}".replace(",", "."), "#c8e6c9"), unsafe_allow_html=True)
     col2.markdown(render_info_card("Preventas", total_preventas, f"{total_preventas_importe:,.2f}".replace(",", "."), "#ffe0b2"), unsafe_allow_html=True)
 
-    # === GESTIÓN COBRO ===
-    if not df_gestion.empty and "Estado" in df_gestion.columns:
-        columnas_validas = [col for col in df_gestion.columns if col.startswith("Total ") or any(m in col for m in traduccion_meses.values())]
-        df_gestion[columnas_validas] = df_gestion[columnas_validas].apply(pd.to_numeric, errors='coerce').fillna(0)
-        df_estado_totales = df_gestion.groupby("Estado")[columnas_validas].sum()
-        df_estado_totales["Total"] = df_estado_totales.sum(axis=1)
-        st.markdown("---")
-        st.markdown("## 💼 Gestión de Cobro")
-        st.markdown("### Totales por Estado")
-        for i, (estado, total) in enumerate(df_estado_totales["Total"].sort_values(ascending=False).items()):
-            if i % 4 == 0:
-                cols = st.columns(4)
-            cols[i % 4].markdown(render_import_card(f"Estado: {estado}", f"{total:,.2f}".replace(",", ".")), unsafe_allow_html=True)
+        # === GESTIÓN COBRO ===
+    if not df_gestion.empty:
+        df_gestion.columns = df_gestion.columns.str.strip().str.upper()
+        if "ESTADO" in df_gestion.columns:
+            columnas_validas = [col for col in df_gestion.columns if col.startswith("TOTAL ") or any(m.upper() in col for m in traduccion_meses.values())]
+            df_gestion[columnas_validas] = df_gestion[columnas_validas].apply(pd.to_numeric, errors='coerce').fillna(0)
+            df_estado_totales = df_gestion.groupby("ESTADO")[columnas_validas].sum()
+            df_estado_totales["TOTAL"] = df_estado_totales.sum(axis=1)
+
+            st.markdown("---")
+            st.markdown("## 💼 Gestión de Cobro")
+            st.markdown("### Totales por Estado")
+
+            for i, (estado, total) in enumerate(df_estado_totales["TOTAL"].sort_values(ascending=False).items()):
+                if i % 4 == 0:
+                    cols = st.columns(4)
+                cols[i % 4].markdown(render_import_card(f"Estado: {estado}", f"{total:,.2f}".replace(",", ".")), unsafe_allow_html=True)
+        else:
+            st.warning("⚠️ La columna 'ESTADO' no se encuentra en el archivo cargado.")
 
     # === ACADÉMICA ===
     if not df_academica.empty:
