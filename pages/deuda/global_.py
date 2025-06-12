@@ -30,6 +30,17 @@ def render():
     ]]
     columnas_disponibles = columnas_totales + meses_actuales
 
+    colores_fijos = {
+        "COBRADO": "#1f77b4",
+        "DOMICILIACIÓN CONFIRMADA": "#ff7f0e",
+        "DOMICILIACIÓN EMITIDA": "#2ca02c",
+        "DUDOSO COBRO": "#d62728",
+        "INCOBRABLE": "#9467bd",
+        "NO COBRADO": "#8c564b",
+        "PENDIENTE": "#e377c2",
+        "TOTAL GENERAL": "#7f7f7f"
+    }
+
     estados_seleccionados = st.multiselect(
         "Filtrar por Estado",
         estados_unicos,
@@ -73,92 +84,55 @@ def render():
 
     st.markdown("### Totales por Estado y Periodo")
 
-    colores_fijos = {
-        "COBRADO": "#1f77b4",
-        "DOMICILIACIÓN CONFIRMADA": "#ff7f0e",
-        "DOMICILIACIÓN EMITIDA": "#2ca02c",
-        "DUDOSO COBRO": "#d62728",
-        "INCOBRABLE": "#9467bd",
-        "NO COBRADO": "#8c564b",
-        "PENDIENTE": "#e377c2",
-        "TOTAL GENERAL": "#7f7f7f"
-    }
-
     if width >= 768:
-        df_plot = df_melted[df_melted["Estado"] != "TOTAL GENERAL"]
-        fig1 = px.bar(
-            df_plot,
-            x="Estado",
-            y="Total",
-            color="Periodo",
-            barmode="group",
-            text_auto=".2s",
-            height=height,
-            width=width,
-            template="plotly_white"
-        )
-        st.plotly_chart(fig1)
+        for estado in estados_seleccionados:
+            df_estado = df_melted[df_melted["Estado"] == estado]
+            if df_estado.empty:
+                continue
+            color_estado = colores_fijos.get(estado.strip().upper(), "#cccccc")
+            fig = px.bar(
+                df_estado,
+                x="Periodo",
+                y="Total",
+                color_discrete_sequence=[color_estado],
+                text_auto=".2s",
+                title=f"Gráfico: {estado.upper()}",
+                template="plotly_white"
+            )
+            st.plotly_chart(fig, use_container_width=True)
     else:
-        st.markdown("#### Vista móvil")
+        st.markdown("#### Totales por Estado y Periodo (vista móvil)")
         for periodo in columnas_existentes:
             st.markdown(f"**{periodo}**")
             df_periodo = df_melted[df_melted["Periodo"] == periodo]
-
             for _, row in df_periodo.iterrows():
                 estado = row["Estado"]
+                if estado not in estados_seleccionados:
+                    continue
                 total = row["Total"]
                 color = colores_fijos.get(estado.strip().upper(), "#cccccc")
-
                 st.markdown(f"""
                     <div style="background-color:{color}; padding:10px; border-radius:8px; margin-bottom:10px; color:white;">
                         <strong>{estado}</strong><br>
-                        Total: <span style="font-size:1.2em;">{total:.2f}</span>
+                        Total: <span style="font-size:1.2em;">{total:,.2f}</span>
                     </div>
                 """, unsafe_allow_html=True)
 
     st.markdown("### Total acumulado por Estado")
     df_grouped["Total acumulado"] = df_grouped[columnas_existentes].sum(axis=1)
-
-    if width >= 768:
-        fig2 = px.bar(
-            df_grouped,
-            x="Total acumulado",
-            y="Estado",
-            color="Estado",
-            orientation="h",
-            text_auto=".2s",
-            height=height,
-            width=width,
-            template="plotly_white"
-        )
-        st.plotly_chart(fig2)
-    else:
-        st.markdown("#### Vista móvil: distribución de totales")
-
-        df_cobrado = df_grouped[df_grouped["Estado"] == "COBRADO"]
-        df_otros = df_grouped[df_grouped["Estado"] != "COBRADO"]
-
-        fig_cobrado = px.pie(
-            df_cobrado,
-            names="Estado",
-            values="Total acumulado",
-            hole=0.4,
-            title="Total COBRADO",
-            template="plotly_white"
-        )
-        fig_cobrado.update_traces(textposition="inside", textinfo="percent+value+label")
-        st.plotly_chart(fig_cobrado)
-
-        fig_otros = px.pie(
-            df_otros,
-            names="Estado",
-            values="Total acumulado",
-            hole=0.4,
-            title="Total Otros Estados",
-            template="plotly_white"
-        )
-        fig_otros.update_traces(textposition="inside", textinfo="percent+value+label")
-        st.plotly_chart(fig_otros)
+    fig2 = px.bar(
+        df_grouped[df_grouped["Estado"].isin(estados_seleccionados)],
+        x="Total acumulado",
+        y="Estado",
+        color="Estado",
+        color_discrete_map=colores_fijos,
+        orientation="h",
+        text_auto=".2s",
+        height=height,
+        width=width,
+        template="plotly_white"
+    )
+    st.plotly_chart(fig2)
 
     fig3 = None
     if "Forma Pago" in df_filtrado.columns:
@@ -198,18 +172,25 @@ def render():
     html_buffer.write("<h1>Totales por Estado</h1>")
     html_buffer.write(df_final.to_html(index=False))
 
-    html_buffer.write("<h2>Gráfico Totales por Estado y Periodo</h2>")
-    if width >= 768:
-        html_buffer.write(pio.to_html(fig1, include_plotlyjs='cdn', full_html=False))
-    else:
-        html_buffer.write("<p>Visualización adaptada a móvil (no disponible como gráfico).</p>")
+    html_buffer.write("<h2>Gráficos por Estado y Periodo</h2>")
+    for estado in estados_seleccionados:
+        df_estado = df_melted[df_melted["Estado"] == estado]
+        if df_estado.empty:
+            continue
+        color_estado = colores_fijos.get(estado.strip().upper(), "#cccccc")
+        fig = px.bar(
+            df_estado,
+            x="Periodo",
+            y="Total",
+            color_discrete_sequence=[color_estado],
+            text_auto=".2s",
+            title=f"Gráfico: {estado.upper()}",
+            template="plotly_white"
+        )
+        html_buffer.write(pio.to_html(fig, include_plotlyjs='cdn', full_html=False))
 
     html_buffer.write("<h2>Gráfico Total Acumulado</h2>")
-    if width >= 768:
-        html_buffer.write(pio.to_html(fig2, include_plotlyjs='cdn', full_html=False))
-    else:
-        html_buffer.write(pio.to_html(fig_cobrado, include_plotlyjs='cdn', full_html=False))
-        html_buffer.write(pio.to_html(fig_otros, include_plotlyjs='cdn', full_html=False))
+    html_buffer.write(pio.to_html(fig2, include_plotlyjs='cdn', full_html=False))
 
     if fig3:
         html_buffer.write("<h2>Distribución Forma de Pago</h2>")
