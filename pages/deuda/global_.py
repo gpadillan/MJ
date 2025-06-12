@@ -5,6 +5,7 @@ from datetime import datetime
 import io
 import plotly.io as pio
 from responsive import get_screen_size
+import os
 
 def render():
     st.subheader("Estado")
@@ -64,17 +65,14 @@ def render():
     st.markdown("### Totales agrupados por Estado")
     st.dataframe(df_final, use_container_width=True)
 
-    # Obtener tamaño de pantalla
     width, height = get_screen_size()
 
-    # Preparar datos para gráfico y tarjetas
     df_melted = df_final.drop(columns=["Total fila"]).melt(
         id_vars="Estado", var_name="Periodo", value_name="Total"
     )
 
     st.markdown("### Totales por Estado y Periodo")
 
-    # Colores fijos por categoría (con tildes y mayúsculas como en Excel)
     colores_fijos = {
         "COBRADO": "#1f77b4",
         "DOMICILIACIÓN CONFIRMADA": "#ff7f0e",
@@ -101,19 +99,22 @@ def render():
         )
         st.plotly_chart(fig1)
     else:
-        for periodo in df_melted["Periodo"].unique():
-            st.markdown(f"#### {periodo}")
-            df_periodo = df_melted[df_melted["Periodo"] == periodo]
-            color = colores_fijos.get(periodo.strip().upper(), "#cccccc")
-            for _, row in df_periodo.iterrows():
-                st.markdown(f"""
-                    <div style="background-color:{color}; padding:10px; border-radius:8px; margin-bottom:10px;">
-                        <strong>{row['Estado']}</strong><br>
-                        Total: <span style="font-size:1.2em;">{row['Total']:.2f}</span>
-                    </div>
-                """, unsafe_allow_html=True)
+        st.markdown("#### Totales por Estado (vista móvil)")
 
-    # GRÁFICO TOTAL ACUMULADO
+        df_estado_total = df_melted.groupby("Estado")["Total"].sum().reset_index()
+
+        for _, row in df_estado_total.iterrows():
+            estado = row["Estado"]
+            total = row["Total"]
+            color = colores_fijos.get(estado.strip().upper(), "#cccccc")
+
+            st.markdown(f"""
+                <div style="background-color:{color}; padding:10px; border-radius:8px; margin-bottom:10px; color:white;">
+                    <strong>{estado}</strong><br>
+                    Total: <span style="font-size:1.2em;">{total:.2f}</span>
+                </div>
+            """, unsafe_allow_html=True)
+
     st.markdown("### Total acumulado por Estado")
     df_grouped["Total acumulado"] = df_grouped[columnas_existentes].sum(axis=1)
     fig2 = px.bar(
@@ -129,7 +130,6 @@ def render():
     )
     st.plotly_chart(fig2)
 
-    # DONUT FORMA DE PAGO
     fig3 = None
     if "Forma Pago" in df_filtrado.columns:
         df_pago = df_filtrado.copy()
@@ -148,7 +148,6 @@ def render():
         fig3.update_layout(height=height, width=width)
         st.plotly_chart(fig3)
 
-    # EXPORTAR EXCEL
     st.session_state["descarga_global"] = df_final
     st.markdown("---")
     st.subheader("📥 Exportar esta hoja")
@@ -163,7 +162,6 @@ def render():
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    # EXPORTAR HTML
     st.markdown("### 💾 Exportar informe visual")
     html_buffer = io.StringIO()
     html_buffer.write("<html><head><title>Informe de Estado</title></head><body>")
@@ -192,11 +190,8 @@ def render():
         mime="text/html"
     )
 
-    # Guardar el HTML en disco para consolidado
-    import os
     os.makedirs("uploaded", exist_ok=True)
     with open("uploaded/reporte_estado.html", "w", encoding="utf-8") as f:
         f.write(html_buffer.getvalue())
 
-    # Guardar también en session_state para consolidado
     st.session_state["html_global"] = html_buffer.getvalue()
