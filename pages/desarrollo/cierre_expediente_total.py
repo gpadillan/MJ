@@ -11,6 +11,10 @@ def render_card(title, value, color):
         </div>
     """
 
+def es_nombre_valido(nombre):
+    nombre = str(nombre).strip().upper()
+    return nombre != "" and nombre != "NO ENCONTRADO"
+
 def render(df):
     st.title("Informe de Cierre de Expedientes")
 
@@ -131,18 +135,16 @@ def render(df):
         empresa_pract.columns = ['EMPRESA PRÁCT.', 'EMPLEOS']
         st.dataframe(empresa_pract.style.background_gradient(subset=['EMPLEOS'], cmap='PuBu'), use_container_width=True)
 
-    # === 👥 TOTAL ALUMNADO ===
-    def es_nombre_valido(x):
-        return isinstance(x, str) and x.strip() and x.strip().upper() != 'NO ENCONTRADO'
-
-    df_validos = df[df['NOMBRE'].apply(es_nombre_valido) & df['APELLIDOS'].apply(es_nombre_valido)]
+    # === 🎯 OBJETIVOS % ===
+    nombres_validos = df['NOMBRE'].apply(es_nombre_valido)
+    apellidos_validos = df['APELLIDOS'].apply(es_nombre_valido)
+    df_validos = df[nombres_validos & apellidos_validos]
     total_alumnado_objetivo = df_validos[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0]
 
-    st.markdown(f"""
-        <h4 style='margin-top:2rem; margin-bottom:0;'>👥 <b>Total Alumnado:</b> {total_alumnado_objetivo}</h4>
-    """, unsafe_allow_html=True)
+    st.markdown(f"<h2 style='margin: 0 0 1rem 0;'>Total Alumnado: {total_alumnado_objetivo}</h2>", unsafe_allow_html=True)
 
-    # === 🎯 OBJETIVOS % ===
+    st.markdown(f"<h2 style='margin: 2rem 0 1rem 0;'>🎯 OBJETIVOS %</h2>", unsafe_allow_html=True)
+
     insercion_empleo = df_validos[df_validos['CONSECUCIÓN GE'] == 'TRUE']
     porcentaje_empleo = round((insercion_empleo[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0] / total_alumnado_objetivo) * 100, 2)
 
