@@ -131,18 +131,20 @@ def render(df):
         empresa_pract.columns = ['EMPRESA PRÁCT.', 'EMPLEOS']
         st.dataframe(empresa_pract.style.background_gradient(subset=['EMPLEOS'], cmap='PuBu'), use_container_width=True)
 
-    # === 🎯 OBJETIVOS % ===
+    # === ✅ TOTAL ALUMNADO CORRECTO ===
     df_validos = df[
-        (df['NOMBRE'] != 'NO ENCONTRADO') &
-        (df['APELLIDOS'] != 'NO ENCONTRADO')
+        df['NOMBRE'].notna() &
+        df['APELLIDOS'].notna() &
+        ~df['NOMBRE'].str.strip().str.upper().eq('NO ENCONTRADO') &
+        ~df['APELLIDOS'].str.strip().str.upper().eq('NO ENCONTRADO')
     ]
     total_alumnado_objetivo = df_validos[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0]
 
     st.markdown(f"""
-        <h2 style='margin: 0 0 1rem 0;'>🎯 OBJETIVOS % — 
-        <span style="font-weight: normal; font-size: 1.2rem;">Total Alumnado: {total_alumnado_objetivo}</span></h2>
+        <h4 style='margin-top:2rem; margin-bottom:0;'>👥 <b>Total Alumnado:</b> {total_alumnado_objetivo}</h4>
     """, unsafe_allow_html=True)
 
+    # === 🎯 OBJETIVOS % ===
     insercion_empleo = df_validos[df_validos['CONSECUCIÓN GE'] == 'TRUE']
     porcentaje_empleo = round((insercion_empleo[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0] / total_alumnado_objetivo) * 100, 2)
 
