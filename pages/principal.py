@@ -116,33 +116,23 @@ def principal_page():
     col1.markdown(render_info_card("Matrículas Totales", total_matriculas, f"{sum(importes_por_mes.values()):,.2f}".replace(",", "."), "#c8e6c9"), unsafe_allow_html=True)
     col2.markdown(render_info_card("Preventas", total_preventas, f"{total_preventas_importe:,.2f}".replace(",", "."), "#ffe0b2"), unsafe_allow_html=True)
 
-    # === GESTIÓN COBRO: USANDO "TOTAL FILA" DE GLOBAL_.PY ===
-    df_cobro = st.session_state.get("descarga_global", pd.DataFrame())
-
-    if not df_cobro.empty and "Estado" in df_cobro.columns and "Total fila" in df_cobro.columns:
-        df_cobro = df_cobro.copy()
-        df_cobro["Estado"] = df_cobro["Estado"].astype(str).str.strip()
-        df_cobro = df_cobro[
-            df_cobro["Estado"].notna() &
-            (df_cobro["Estado"] != "") &
-            (~df_cobro["Estado"].str.upper().isin(["TOTAL GENERAL", "TOTAL"]))
-        ]
-        df_cobro = df_cobro[df_cobro["Total fila"] != 0]
-
-        if not df_cobro.empty:
-            st.markdown("---")
-            st.markdown("## 💼 Gestión de Cobro")
-            st.markdown("### Totales por Estado (desde Global)")
-
-            for i in range(0, len(df_cobro), 4):
-                cols = st.columns(4)
-                for j, row in enumerate(df_cobro.iloc[i:i+4].itertuples(index=False)):
-                    estado = row.Estado.title()
-                    total = format_euro(round(row._asdict()["Total fila"], 2))
-                    cols[j].markdown(render_import_card(f"Estado: {estado}", total, "#f3e5f5"), unsafe_allow_html=True)
-
-            total_general = df_cobro["Total fila"].sum()
-            st.markdown(render_import_card("💰 Total General", format_euro(total_general), "#dcedc8"), unsafe_allow_html=True)
+    # === GESTIÓN DE COBRO ===
+    if os.path.exists(GESTION_FILE):
+        df_gestion = pd.read_excel(GESTION_FILE)
+        if "Estado" in df_gestion.columns:
+            for anio in range(2018, anio_actual):
+                col = f"Total {anio}"
+                if col in df_gestion.columns:
+                    columnas_validas.append(col)
+            for mes_num in range(1, mes_actual + 1):
+                nombre_mes = f"{traduccion_meses[mes_num]} {anio_actual}"
+                if nombre_mes in df_gestion.columns:
+                    columnas_validas.append(nombre_mes)
+            if columnas_validas:
+                df_gestion[columnas_validas] = df_gestion[columnas_validas].apply(pd.to_numeric, errors='coerce').fillna(0)
+                df_estado_totales = df_gestion.groupby("Estado")[columnas_validas].sum()
+                df_estado_totales["Total"] = df_estado_totales.sum(axis=1)
+                estados = df_estado_totales["Total"].to_dict()
 
     # === ACADÉMICA ===
     if not df_academica.empty:
