@@ -61,6 +61,25 @@ def principal_page():
     if st.button("🔄 Recargar datos manualmente"):
         st.cache_data.clear()
 
+    # Reprocesar si no existe la sesión de descarga_global
+    if "descarga_global" not in st.session_state:
+        df_raw = st.session_state.get("excel_data")
+        if df_raw is not None and "Estado" in df_raw.columns:
+            df_raw = df_raw.copy()
+            df_raw["Estado"] = df_raw["Estado"].astype(str).str.strip()
+            anio_actual = datetime.now().year
+            columnas_totales = [f'Total {a}' for a in range(2018, anio_actual)]
+            meses_actuales = [f'{mes} {anio_actual}' for mes in [
+                'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+                'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+            ]]
+            columnas_disponibles = columnas_totales + meses_actuales
+            columnas_existentes = [c for c in columnas_disponibles if c in df_raw.columns]
+            df_raw[columnas_existentes] = df_raw[columnas_existentes].apply(pd.to_numeric, errors='coerce').fillna(0)
+            df_grouped = df_raw.groupby("Estado")[columnas_existentes].sum().reset_index()
+            df_grouped["Total fila"] = df_grouped[columnas_existentes].sum(axis=1)
+            st.session_state["descarga_global"] = df_grouped
+
     VENTAS_FILE = "uploaded_admisiones/ventas.xlsx"
     PREVENTAS_FILE = "uploaded_admisiones/preventas.xlsx"
     SHEET_KEY = "1CPhL56knpvaYZznGF-YgIuHWWCWPtWGpkSgbf88GJFQ"
@@ -116,7 +135,7 @@ def principal_page():
     col1.markdown(render_info_card("Matrículas Totales", total_matriculas, f"{sum(importes_por_mes.values()):,.2f}".replace(",", "."), "#c8e6c9"), unsafe_allow_html=True)
     col2.markdown(render_info_card("Preventas", total_preventas, f"{total_preventas_importe:,.2f}".replace(",", "."), "#ffe0b2"), unsafe_allow_html=True)
 
-    # === GESTIÓN COBRO: USANDO "TOTAL FILA" DE GLOBAL_.PY ===
+    # === GESTIÓN COBRO ===
     df_cobro = st.session_state.get("descarga_global", pd.DataFrame())
 
     if not df_cobro.empty and "Estado" in df_cobro.columns and "Total fila" in df_cobro.columns:
@@ -132,7 +151,7 @@ def principal_page():
         if not df_cobro.empty:
             st.markdown("---")
             st.markdown("## 💼 Gestión de Cobro")
-            st.markdown("### Totales por Estado (desde Global)")
+            st.markdown("### Totales por Estado (hasta mes actual)")
 
             for i in range(0, len(df_cobro), 4):
                 cols = st.columns(4)
