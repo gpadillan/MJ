@@ -81,10 +81,11 @@ def principal_page():
 
     mes_actual = datetime.now().month
     anio_actual = datetime.now().year
-    traduccion_meses = {
-        1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
-        7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
-    }
+    nombres_meses = [
+        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+    ]
+    traduccion_meses = {i+1: nombre for i, nombre in enumerate(nombres_meses)}
 
     # === ADMISIONES ===
     total_matriculas = 0
@@ -124,27 +125,29 @@ def principal_page():
     col1.markdown(render_info_card("Matrículas Totales", total_matriculas, f"{sum(importes_por_mes.values()):,.2f}".replace(",", "."), "#c8e6c9"), unsafe_allow_html=True)
     col2.markdown(render_info_card("Preventas", total_preventas, f"{total_preventas_importe:,.2f}".replace(",", "."), "#ffe0b2"), unsafe_allow_html=True)
 
-    # === GESTIÓN COBRO ===
+    # === GESTIÓN COBRO HASTA MES ACTUAL ===
     if not df_gestion.empty and "Estado" in df_gestion.columns:
         df_gestion.columns = df_gestion.columns.str.strip()
         df_gestion["Estado"] = df_gestion["Estado"].astype(str).str.strip().str.upper()
 
-        columnas_validas = [col for col in df_gestion.columns if col.startswith("Total ") or any(m in col for m in traduccion_meses.values())]
-        df_gestion[columnas_validas] = df_gestion[columnas_validas].apply(pd.to_numeric, errors='coerce').fillna(0)
+        columnas_mes_actual = [f"{mes} {anio_actual}" for mes in nombres_meses[:mes_actual]]
+        columnas_validas = [col for col in columnas_mes_actual if col in df_gestion.columns]
 
-        df_total = df_gestion[df_gestion["Estado"] == "TOTAL"]
-        if not df_total.empty:
+        df_gestion[columnas_validas] = df_gestion[columnas_validas].apply(pd.to_numeric, errors='coerce').fillna(0)
+        df_filtrado = df_gestion[df_gestion["Estado"] != "TOTAL"].copy()
+        df_filtrado["Total Acumulado"] = df_filtrado[columnas_validas].sum(axis=1)
+
+        if not df_filtrado.empty:
             st.markdown("---")
             st.markdown("## 💼 Gestión de Cobro")
-            st.markdown("### Totales por Estado")
+            st.markdown(f"### Totales por Estado hasta {nombres_meses[mes_actual - 1].upper()} {anio_actual}")
 
-            total_por_estado = df_total.iloc[0][columnas_validas].to_dict()
-            estado_items = list(total_por_estado.items())
+            estado_items = df_filtrado[["Estado", "Total Acumulado"]].values.tolist()
             for i in range(0, len(estado_items), 4):
                 cols = st.columns(4)
                 for j, (estado, total) in enumerate(estado_items[i:i+4]):
                     valor_formateado = format_euro(round(total, 2))
-                    cols[j].markdown(render_import_card(f"Estado: {estado.title()}", valor_formateado), unsafe_allow_html=True)
+                    cols[j].markdown(render_import_card(f"{estado.title()}", valor_formateado), unsafe_allow_html=True)
 
     # === ACADÉMICA ===
     if not df_academica.empty:
@@ -175,33 +178,3 @@ def principal_page():
         except Exception as e:
             st.warning("⚠️ Error al procesar los indicadores académicos.")
             st.exception(e)
-
-    # === DESARROLLO PROFESIONAL ===
-    st.markdown("---")
-    st.markdown("## 🔧 Indicadores de Desarrollo Profesional")
-    try:
-        df = df_dev
-        df['CONSECUCIÓN_BOOL'] = df['CONSECUCIÓN GE'].astype(str).str.upper() == 'TRUE'
-        df['INAPLICACIÓN_BOOL'] = df['INAPLICACIÓN GE'].astype(str).str.upper() == 'TRUE'
-        df['PRACTICAS_BOOL'] = (
-            (df['PRÁCTCAS/GE'].astype(str).str.upper() == 'GE') &
-            (~df['EMPRESA PRÁCT.'].astype(str).isin(['', 'NO ENCONTRADO'])) &
-            (df['CONSECUCIÓN GE'].astype(str).str.upper() == 'FALSE') &
-            (df['DEVOLUCIÓN GE'].astype(str).str.upper() == 'FALSE') &
-            (df['INAPLICACIÓN GE'].astype(str).str.upper() == 'FALSE')
-        )
-
-        total_consecucion = df['CONSECUCIÓN_BOOL'].sum()
-        total_inaplicacion = df['INAPLICACIÓN_BOOL'].sum()
-        total_alumnos_practicas = df[~df['EMPRESA PRÁCT.'].astype(str).isin(['', 'NO ENCONTRADO'])].shape[0]
-        total_practicas_actuales = df['PRACTICAS_BOOL'].sum()
-
-        cols = st.columns(4)
-        cols[0].markdown(render_import_card("✅ Consecución", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
-        cols[1].markdown(render_import_card("🚫 Inaplicación", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
-        cols[2].markdown(render_import_card("🎓 Alumnos en PRÁCTICAS", total_alumnos_practicas, "#ede7f6"), unsafe_allow_html=True)
-        cols[3].markdown(render_import_card("🛠️ Prácticas actuales", total_practicas_actuales, "#e8f5e9"), unsafe_allow_html=True)
-
-    except Exception as e:
-        st.warning("⚠️ No se pudieron cargar los indicadores de Desarrollo Profesional.")
-        st.exception(e)
