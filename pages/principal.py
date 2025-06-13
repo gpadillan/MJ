@@ -10,6 +10,20 @@ import gspread
 def format_euro(value):
     return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
+def render_info_card(title, value1, value2, color="#e3f2fd"):
+    return f"""<div style='padding: 8px; background-color: {color}; border-radius: 8px;
+        font-size: 13px; text-align: center; border: 1px solid #ccc;
+        box-shadow: 1px 1px 5px rgba(0,0,0,0.1);'>
+        <strong>{title}</strong><br>
+        👥 Matrículas: <strong>{value1}</strong><br>
+        💶 Importe: <strong>{value2} €</strong></div>"""
+
+def render_import_card(title, value, color="#ede7f6"):
+    return f"""<div style='padding: 8px; background-color: {color}; border-radius: 8px;
+        font-size: 13px; text-align: center; border: 1px solid #ccc;
+        box-shadow: 1px 1px 5px rgba(0,0,0,0.1);'>
+        <strong>{title}</strong><br><strong>{value}</strong></div>"""
+
 # === CACHES ===
 @st.cache_data(show_spinner=False)
 def load_admisiones(ventas_path, preventas_path):
@@ -19,12 +33,6 @@ def load_admisiones(ventas_path, preventas_path):
     if os.path.exists(preventas_path):
         df_preventas = pd.read_excel(preventas_path)
     return df_ventas, df_preventas
-
-@st.cache_data(show_spinner=False)
-def load_gestion_data(file_path):
-    if os.path.exists(file_path):
-        return pd.read_excel(file_path)
-    return pd.DataFrame()
 
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_key):
@@ -46,21 +54,6 @@ def load_academica_data():
     file = download_excel(config, token, site_id)
     return pd.read_excel(file, sheet_name=None)
 
-# === COMPONENTS ===
-def render_info_card(title, value1, value2, color="#e3f2fd"):
-    return f"""<div style='padding: 8px; background-color: {color}; border-radius: 8px;
-        font-size: 13px; text-align: center; border: 1px solid #ccc;
-        box-shadow: 1px 1px 5px rgba(0,0,0,0.1);'>
-        <strong>{title}</strong><br>
-        👥 Matrículas: <strong>{value1}</strong><br>
-        💶 Importe: <strong>{value2} €</strong></div>"""
-
-def render_import_card(title, value, color="#ede7f6"):
-    return f"""<div style='padding: 8px; background-color: {color}; border-radius: 8px;
-        font-size: 13px; text-align: center; border: 1px solid #ccc;
-        box-shadow: 1px 1px 5px rgba(0,0,0,0.1);'>
-        <strong>{title}</strong><br><strong>{value}</strong></div>"""
-
 # === MAIN PAGE ===
 def principal_page():
     st.title("📊 Panel Principal")
@@ -70,11 +63,9 @@ def principal_page():
 
     VENTAS_FILE = "uploaded_admisiones/ventas.xlsx"
     PREVENTAS_FILE = "uploaded_admisiones/preventas.xlsx"
-    GESTION_FILE = "uploaded/archivo_cargado.xlsx"
     SHEET_KEY = "1CPhL56knpvaYZznGF-YgIuHWWCWPtWGpkSgbf88GJFQ"
 
     df_ventas, df_preventas = load_admisiones(VENTAS_FILE, PREVENTAS_FILE)
-    df_gestion = load_gestion_data(GESTION_FILE)
     df_dev = load_google_sheet(SHEET_KEY)
     df_academica_dict = load_academica_data()
     df_academica = df_academica_dict.get("CONSOLIDADO ACADÉMICO", pd.DataFrame())
@@ -125,29 +116,42 @@ def principal_page():
     col1.markdown(render_info_card("Matrículas Totales", total_matriculas, f"{sum(importes_por_mes.values()):,.2f}".replace(",", "."), "#c8e6c9"), unsafe_allow_html=True)
     col2.markdown(render_info_card("Preventas", total_preventas, f"{total_preventas_importe:,.2f}".replace(",", "."), "#ffe0b2"), unsafe_allow_html=True)
 
-    # === GESTIÓN COBRO HASTA MES ACTUAL ===
-    if not df_gestion.empty and "Estado" in df_gestion.columns:
-        df_gestion.columns = df_gestion.columns.str.strip()
-        df_gestion["Estado"] = df_gestion["Estado"].astype(str).str.strip().str.upper()
+    # === GESTIÓN COBRO: TOTALES HISTÓRICOS + MESES ACTUALES ===
+    df_cobro = st.session_state.get("descarga_global", pd.DataFrame())
 
-        columnas_mes_actual = [f"{mes} {anio_actual}" for mes in nombres_meses[:mes_actual]]
-        columnas_validas = [col for col in columnas_mes_actual if col in df_gestion.columns]
+    if not df_cobro.empty and "Estado" in df_cobro.columns:
+        meses_hasta_actual = nombres_meses[:mes_actual]
 
-        df_gestion[columnas_validas] = df_gestion[columnas_validas].apply(pd.to_numeric, errors='coerce').fillna(0)
-        df_filtrado = df_gestion[df_gestion["Estado"] != "TOTAL"].copy()
-        df_filtrado["Total Acumulado"] = df_filtrado[columnas_validas].sum(axis=1)
+        columnas_total_anterior = [col for col in df_cobro.columns if col.startswith("Total ")]
+        columnas_total_anterior = [col for col in columnas_total_anterior if int(col.split(" ")[1]) < anio_actual]
 
-        if not df_filtrado.empty:
+        columnas_mes_actual = [
+            col for col in df_cobro.columns
+            if any(col.startswith(mes) for mes in meses_hasta_actual) and str(anio_actual) in col
+        ]
+
+        columnas_sumar = columnas_total_anterior + columnas_mes_actual
+
+        df_cobro = df_cobro[df_cobro["Estado"].notna()]
+        df_cobro = df_cobro[~df_cobro["Estado"].str.upper().isin(["TOTAL GENERAL", "TOTAL"])]
+        df_cobro[columnas_sumar] = df_cobro[columnas_sumar].apply(pd.to_numeric, errors='coerce').fillna(0)
+        df_cobro["Total Acumulado"] = df_cobro[columnas_sumar].sum(axis=1)
+        df_cobro = df_cobro[df_cobro["Total Acumulado"] > 0]
+
+        if not df_cobro.empty:
             st.markdown("---")
             st.markdown("## 💼 Gestión de Cobro")
-            st.markdown(f"### Totales por Estado hasta {nombres_meses[mes_actual - 1].upper()} {anio_actual}")
+            st.markdown(f"### Totales por Estado (2018 hasta {nombres_meses[mes_actual - 1]} {anio_actual})")
 
-            estado_items = df_filtrado[["Estado", "Total Acumulado"]].values.tolist()
-            for i in range(0, len(estado_items), 4):
+            for i in range(0, len(df_cobro), 4):
                 cols = st.columns(4)
-                for j, (estado, total) in enumerate(estado_items[i:i+4]):
-                    valor_formateado = format_euro(round(total, 2))
-                    cols[j].markdown(render_import_card(f"{estado.title()}", valor_formateado), unsafe_allow_html=True)
+                for j, row in enumerate(df_cobro.iloc[i:i+4].itertuples(index=False)):
+                    estado = row.Estado.title()
+                    total = format_euro(round(row.Total_Acumulado, 2))
+                    cols[j].markdown(render_import_card(estado, total), unsafe_allow_html=True)
+
+            total_general = df_cobro["Total Acumulado"].sum()
+            st.markdown(render_import_card("💰 Total General", format_euro(total_general), "#c8e6c9"), unsafe_allow_html=True)
 
     # === ACADÉMICA ===
     if not df_academica.empty:
