@@ -6,25 +6,6 @@ from pages.academica.sharepoint_utils import get_access_token, get_site_id, down
 from google.oauth2 import service_account
 import gspread
 
-# === UTILS ===
-def format_euro(value):
-    return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-def render_info_card(title, value1, value2, color="#e3f2fd"):
-    return f"""<div style='padding: 8px; background-color: {color}; border-radius: 8px;
-        font-size: 13px; text-align: center; border: 1px solid #ccc;
-        box-shadow: 1px 1px 5px rgba(0,0,0,0.1);'>
-        <strong>{title}</strong><br>
-        👥 Matrículas: <strong>{value1}</strong><br>
-        💶 Importe: <strong>{value2} €</strong></div>"""
-
-def render_import_card(title, value, color="#ede7f6"):
-    return f"""<div style='padding: 8px; background-color: {color}; border-radius: 8px;
-        font-size: 13px; text-align: center; border: 1px solid #ccc;
-        box-shadow: 1px 1px 5px rgba(0,0,0,0.1);'>
-        <strong>{title}</strong><br><strong>{value}</strong></div>"""
-
-# === CACHES ===
 @st.cache_data(show_spinner=False)
 def load_admisiones(ventas_path, preventas_path):
     df_ventas, df_preventas = None, None
@@ -33,6 +14,12 @@ def load_admisiones(ventas_path, preventas_path):
     if os.path.exists(preventas_path):
         df_preventas = pd.read_excel(preventas_path)
     return df_ventas, df_preventas
+
+@st.cache_data(show_spinner=False)
+def load_gestion_data(file_path):
+    if os.path.exists(file_path):
+        return pd.read_excel(file_path)
+    return pd.DataFrame()
 
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_key):
@@ -54,7 +41,20 @@ def load_academica_data():
     file = download_excel(config, token, site_id)
     return pd.read_excel(file, sheet_name=None)
 
-# === MAIN PAGE ===
+def render_info_card(title, value1, value2, color="#e3f2fd"):
+    return f"""<div style='padding: 8px; background-color: {color}; border-radius: 8px;
+        font-size: 13px; text-align: center; border: 1px solid #ccc;
+        box-shadow: 1px 1px 5px rgba(0,0,0,0.1);'>
+        <strong>{title}</strong><br>
+        👥 Matrículas: <strong>{value1}</strong><br>
+        💶 Importe: <strong>{value2} €</strong></div>"""
+
+def render_import_card(title, value, color="#ede7f6"):
+    return f"""<div style='padding: 8px; background-color: {color}; border-radius: 8px;
+        font-size: 13px; text-align: center; border: 1px solid #ccc;
+        box-shadow: 1px 1px 5px rgba(0,0,0,0.1);'>
+        <strong>{title}</strong><br><strong>{value}</strong></div>"""
+
 def principal_page():
     st.title("📊 Panel Principal")
 
@@ -63,20 +63,21 @@ def principal_page():
 
     VENTAS_FILE = "uploaded_admisiones/ventas.xlsx"
     PREVENTAS_FILE = "uploaded_admisiones/preventas.xlsx"
+    GESTION_FILE = "uploaded/archivo_cargado.xlsx"
     SHEET_KEY = "1CPhL56knpvaYZznGF-YgIuHWWCWPtWGpkSgbf88GJFQ"
 
     df_ventas, df_preventas = load_admisiones(VENTAS_FILE, PREVENTAS_FILE)
+    df_gestion = load_gestion_data(GESTION_FILE)
     df_dev = load_google_sheet(SHEET_KEY)
     df_academica_dict = load_academica_data()
     df_academica = df_academica_dict.get("CONSOLIDADO ACADÉMICO", pd.DataFrame())
 
     mes_actual = datetime.now().month
     anio_actual = datetime.now().year
-    nombres_meses = [
-        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
-    ]
-    traduccion_meses = {i+1: nombre for i, nombre in enumerate(nombres_meses)}
+    traduccion_meses = {
+        1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
+        7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
+    }
 
     # === ADMISIONES ===
     total_matriculas = 0
@@ -116,43 +117,26 @@ def principal_page():
     col1.markdown(render_info_card("Matrículas Totales", total_matriculas, f"{sum(importes_por_mes.values()):,.2f}".replace(",", "."), "#c8e6c9"), unsafe_allow_html=True)
     col2.markdown(render_info_card("Preventas", total_preventas, f"{total_preventas_importe:,.2f}".replace(",", "."), "#ffe0b2"), unsafe_allow_html=True)
 
-    # === GESTIÓN COBRO: TOTALES HISTÓRICOS + MESES ACTUALES ===
-    df_cobro = st.session_state.get("descarga_global", pd.DataFrame())
+    # === GESTIÓN COBRO ===
+    if not df_gestion.empty and "Estado" in df_gestion.columns:
+        df_gestion.columns = df_gestion.columns.str.strip()
+        df_gestion["Estado"] = df_gestion["Estado"].astype(str).str.strip().str.upper()
 
-    if not df_cobro.empty and "Estado" in df_cobro.columns:
-        meses_hasta_actual = nombres_meses[:mes_actual]
+        columnas_validas = [col for col in df_gestion.columns if col.startswith("Total ") or any(m in col for m in traduccion_meses.values())]
+        df_gestion[columnas_validas] = df_gestion[columnas_validas].apply(pd.to_numeric, errors='coerce').fillna(0)
 
-        columnas_total_anterior = [col for col in df_cobro.columns if col.startswith("Total ")]
-        columnas_total_anterior = [col for col in columnas_total_anterior if int(col.split(" ")[1]) < anio_actual]
+        df_estado_totales = df_gestion.groupby("Estado")[columnas_validas].sum()
+        df_estado_totales["Total"] = df_estado_totales.sum(axis=1)
 
-        columnas_mes_actual = [
-            col for col in df_cobro.columns
-            if any(col.startswith(mes) for mes in meses_hasta_actual) and str(anio_actual) in col
-        ]
-
-        columnas_sumar = columnas_total_anterior + columnas_mes_actual
-
-        df_cobro = df_cobro[df_cobro["Estado"].notna()]
-        df_cobro = df_cobro[~df_cobro["Estado"].str.upper().isin(["TOTAL GENERAL", "TOTAL"])]
-        df_cobro[columnas_sumar] = df_cobro[columnas_sumar].apply(pd.to_numeric, errors='coerce').fillna(0)
-        df_cobro["Total Acumulado"] = df_cobro[columnas_sumar].sum(axis=1)
-        df_cobro = df_cobro[df_cobro["Total Acumulado"] > 0]
-
-        if not df_cobro.empty:
-            st.markdown("---")
-            st.markdown("## 💼 Gestión de Cobro")
-            st.markdown(f"### Totales por Estado (2018 hasta {nombres_meses[mes_actual - 1]} {anio_actual})")
-
-            for i in range(0, len(df_cobro), 4):
+        st.markdown("---")
+        st.markdown("## 💼 Gestión de Cobro")
+        st.markdown("### Totales por Estado")
+        for i, (estado, total) in enumerate(df_estado_totales["Total"].sort_values(ascending=False).items()):
+            if i % 4 == 0:
                 cols = st.columns(4)
-                for j, row in enumerate(df_cobro.iloc[i:i+4].itertuples(index=False)):
-                    estado = row.Estado.title()
-                    total = format_euro(round(row.Total_Acumulado, 2))
-                    cols[j].markdown(render_import_card(estado, total), unsafe_allow_html=True)
+            cols[i % 4].markdown(render_import_card(f"Estado: {estado.title()}", f"{total:,.2f}".replace(",", ".")), unsafe_allow_html=True)
 
-            total_general = df_cobro["Total Acumulado"].sum()
-            st.markdown(render_import_card("💰 Total General", format_euro(total_general), "#c8e6c9"), unsafe_allow_html=True)
-
+   
     # === ACADÉMICA ===
     if not df_academica.empty:
         st.markdown("---")
@@ -182,3 +166,33 @@ def principal_page():
         except Exception as e:
             st.warning("⚠️ Error al procesar los indicadores académicos.")
             st.exception(e)
+
+    # === DESARROLLO PROFESIONAL ===
+    st.markdown("---")
+    st.markdown("## 🔧 Indicadores de Desarrollo Profesional")
+    try:
+        df = df_dev
+        df['CONSECUCIÓN_BOOL'] = df['CONSECUCIÓN GE'].astype(str).str.upper() == 'TRUE'
+        df['INAPLICACIÓN_BOOL'] = df['INAPLICACIÓN GE'].astype(str).str.upper() == 'TRUE'
+        df['PRACTICAS_BOOL'] = (
+            (df['PRÁCTCAS/GE'].astype(str).str.upper() == 'GE') &
+            (~df['EMPRESA PRÁCT.'].astype(str).isin(['', 'NO ENCONTRADO'])) &
+            (df['CONSECUCIÓN GE'].astype(str).str.upper() == 'FALSE') &
+            (df['DEVOLUCIÓN GE'].astype(str).str.upper() == 'FALSE') &
+            (df['INAPLICACIÓN GE'].astype(str).str.upper() == 'FALSE')
+        )
+
+        total_consecucion = df['CONSECUCIÓN_BOOL'].sum()
+        total_inaplicacion = df['INAPLICACIÓN_BOOL'].sum()
+        total_alumnos_practicas = df[~df['EMPRESA PRÁCT.'].astype(str).isin(['', 'NO ENCONTRADO'])].shape[0]
+        total_practicas_actuales = df['PRACTICAS_BOOL'].sum()
+
+        cols = st.columns(4)
+        cols[0].markdown(render_import_card("✅ Consecución", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
+        cols[1].markdown(render_import_card("🚫 Inaplicación", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
+        cols[2].markdown(render_import_card("🎓 Alumnos en PRÁCTICAS", total_alumnos_practicas, "#ede7f6"), unsafe_allow_html=True)
+        cols[3].markdown(render_import_card("🛠️ Prácticas actuales", total_practicas_actuales, "#e8f5e9"), unsafe_allow_html=True)
+
+    except Exception as e:
+        st.warning("⚠️ No se pudieron cargar los indicadores de Desarrollo Profesional.")
+        st.exception(e)
