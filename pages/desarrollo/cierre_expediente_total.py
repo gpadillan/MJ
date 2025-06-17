@@ -14,18 +14,6 @@ def render_card(title, value, color):
 def render(df):
     st.title("Informe de Cierre de Expedientes")
 
-    # ✅ BOTÓN DE RECARGA LOCAL
-    if st.button("🔄 Recargar datos manualmente"):
-        if "df_cierre_expedientes" in st.session_state:
-            del st.session_state["df_cierre_expedientes"]
-        st.rerun()
-
-    # ✅ GUARDAR O RECUPERAR EL DATAFRAME DESDE SESSION_STATE
-    if "df_cierre_expedientes" not in st.session_state:
-        st.session_state["df_cierre_expedientes"] = df
-    else:
-        df = st.session_state["df_cierre_expedientes"]
-
     df.columns = df.columns.str.strip().str.upper()
 
     columnas_requeridas = ['CONSECUCIÓN GE', 'DEVOLUCIÓN GE', 'INAPLICACIÓN GE',
