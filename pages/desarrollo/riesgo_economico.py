@@ -5,6 +5,18 @@ import plotly.express as px
 def render(df):
     st.title("💰 Riesgo Económico")
 
+    # ✅ BOTÓN DE RECARGA INDEPENDIENTE
+    if st.button("🔄 Recargar datos manualmente"):
+        if "df_riesgo_economico" in st.session_state:
+            del st.session_state["df_riesgo_economico"]
+        st.rerun()
+
+    # ✅ GUARDAR EN SESSION_STATE SI NO ESTÁ YA
+    if "df_riesgo_economico" not in st.session_state:
+        st.session_state["df_riesgo_economico"] = df
+    else:
+        df = st.session_state["df_riesgo_economico"]
+
     df.columns = df.columns.str.strip().str.upper()
 
     columnas_requeridas = [
@@ -63,11 +75,9 @@ def render(df):
         (df_resultado['EJECUCIÓN GARANTÍA'] < hoy)
     ].shape[0]
 
-    # ✅ Conteo de DEVOLUCIÓN GE == TRUE en todo el DataFrame original
     devolucion_true_count = df['DEVOLUCIÓN GE'].astype(str).str.lower().str.strip() == 'true'
     num_devoluciones_true = devolucion_true_count.sum()
 
-    # 🎯 Visualización métrica limpia
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric(label="📌 ALUMNO RIESGO TRIM", value=total_alumnos)

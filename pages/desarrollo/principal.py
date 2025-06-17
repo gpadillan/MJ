@@ -22,10 +22,21 @@ def clean_headers(df):
 def render(df=None):
     st.title("📊 Principal - Área de Desarrollo Profesional")
 
+    # ✅ BOTÓN DE RECARGA DIRECTO EN ESTE ARCHIVO
+    if st.button("🔄 Recargar datos manualmente"):
+        if "df_desarrollo_profesional" in st.session_state:
+            del st.session_state["df_desarrollo_profesional"]
+        st.rerun()
+
     if df is None:
-        if not os.path.exists(ARCHIVO_DESARROLLO):
-            return
-        df = pd.read_excel(ARCHIVO_DESARROLLO)
+        if "df_desarrollo_profesional" not in st.session_state:
+            if not os.path.exists(ARCHIVO_DESARROLLO):
+                st.warning("⚠️ No se encontró el archivo de desarrollo profesional.")
+                return
+            df = pd.read_excel(ARCHIVO_DESARROLLO)
+            st.session_state["df_desarrollo_profesional"] = df
+        else:
+            df = st.session_state["df_desarrollo_profesional"]
 
     df = clean_headers(df)
 

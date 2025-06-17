@@ -14,6 +14,18 @@ def render_card(title, value, color):
 def render(df):
     st.title("Informe de Cierre de Expedientes")
 
+    # ✅ BOTÓN DE RECARGA LOCAL
+    if st.button("🔄 Recargar datos manualmente"):
+        if "df_cierre_expedientes" in st.session_state:
+            del st.session_state["df_cierre_expedientes"]
+        st.rerun()
+
+    # ✅ GUARDAR O RECUPERAR EL DATAFRAME DESDE SESSION_STATE
+    if "df_cierre_expedientes" not in st.session_state:
+        st.session_state["df_cierre_expedientes"] = df
+    else:
+        df = st.session_state["df_cierre_expedientes"]
+
     df.columns = df.columns.str.strip().str.upper()
 
     columnas_requeridas = ['CONSECUCIÓN GE', 'DEVOLUCIÓN GE', 'INAPLICACIÓN GE',
@@ -131,7 +143,6 @@ def render(df):
         empresa_pract.columns = ['EMPRESA PRÁCT.', 'EMPLEOS']
         st.dataframe(empresa_pract.style.background_gradient(subset=['EMPLEOS'], cmap='PuBu'), use_container_width=True)
 
-    # === 👥 TOTAL ALUMNADO ===
     df_validos = df[
         (df['NOMBRE'] != 'NO ENCONTRADO') &
         (df['APELLIDOS'] != 'NO ENCONTRADO')
@@ -141,7 +152,6 @@ def render(df):
     st.markdown("## 👥 Total Alumnado")
     st.markdown(render_card("Alumnado único", total_alumnado_objetivo, "#bbdefb"), unsafe_allow_html=True)
 
-    # === 🎯 OBJETIVOS % ===
     st.markdown("## 🎯 OBJETIVOS %")
 
     insercion_empleo = df_validos[df_validos['CONSECUCIÓN GE'] == 'TRUE']

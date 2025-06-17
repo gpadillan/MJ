@@ -4,10 +4,10 @@ import gspread
 from google.oauth2 import service_account
 from datetime import datetime
 
+# ✅ FUNCIÓN PARA CARGAR GOOGLE SHEET CON CACHÉ
 @st.cache_data
 def cargar_google_sheet():
     try:
-        # ✅ Cargar desde st.secrets (funciona en Streamlit Cloud)
         creds = st.secrets["google_service_account"]
         credentials = service_account.Credentials.from_service_account_info(
             creds,
@@ -24,6 +24,11 @@ def cargar_google_sheet():
 
 def desarrollo_page():
     fecha_actual = datetime.today().strftime("%d/%m/%Y")
+
+    # ✅ BOTÓN DE RECARGA QUE BORRA LA CACHÉ Y ACTUALIZA DATOS
+    if st.button("🔄 Recargar datos desde Google Sheets"):
+        st.cache_data.clear()
+        st.rerun()
 
     st.markdown(
         f"<h1>🚀 Área Desarrollo Profesional <span style='font-size:18px; color: gray;'>🗓️ {fecha_actual}</span></h1>",
