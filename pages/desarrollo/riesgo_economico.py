@@ -1,30 +1,26 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import unicodedata
 
 def render(df):
     st.title("💰 Riesgo Económico")
 
-    # 🧼 Limpieza reforzada de nombres de columnas
-    df.columns = df.columns.map(
-        lambda x: str(x).strip()
-        .upper()
-        .replace("Á", "A")
-        .replace("É", "E")
-        .replace("Í", "I")
-        .replace("Ó", "O")
-        .replace("Ú", "U")
+    # ✅ Normalización: elimina tildes, espacios y mayúsculas uniformes
+    df.columns = (
+        df.columns
+        .str.strip()
+        .str.upper()
+        .str.normalize('NFKD')                      # Elimina tildes
+        .str.encode('ascii', errors='ignore')       # Convierte a ASCII
+        .str.decode('utf-8')                        # Regresa a str
     )
-
-    # 🧪 Mostrar columnas disponibles para depuración
-    st.write("📋 Columnas actuales en el DataFrame:", df.columns.tolist())
 
     columnas_requeridas = [
         'NOMBRE', 'APELLIDOS', 'PRACTCAS/GE', 'CONSULTOR EIP',
         'CONSECUCION GE', 'DEVOLUCION GE', 'INAPLICACION GE',
         'FIN CONV', 'MES 3M', 'RIESGO ECONOMICO', 'EJECUCION GARANTIA', 'AREA'
     ]
-
     for col in columnas_requeridas:
         if col not in df.columns:
             st.error(f"❌ Falta la columna: {col}")
