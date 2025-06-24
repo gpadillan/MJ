@@ -5,26 +5,39 @@ import plotly.express as px
 def render(df):
     st.title("💰 Riesgo Económico")
 
-    df.columns = df.columns.str.strip().str.upper()
+    # 🧼 Limpieza reforzada de nombres de columnas
+    df.columns = df.columns.map(
+        lambda x: str(x).strip()
+        .upper()
+        .replace("Á", "A")
+        .replace("É", "E")
+        .replace("Í", "I")
+        .replace("Ó", "O")
+        .replace("Ú", "U")
+    )
+
+    # 🧪 Mostrar columnas disponibles para depuración
+    st.write("📋 Columnas actuales en el DataFrame:", df.columns.tolist())
 
     columnas_requeridas = [
-        'NOMBRE', 'APELLIDOS', 'PRÁCTCAS/GE', 'CONSULTOR EIP',
-        'CONSECUCIÓN GE', 'DEVOLUCIÓN GE', 'INAPLICACIÓN GE',
-        'FIN CONV', 'MES 3M', 'RIESGO ECONÓMICO', 'EJECUCIÓN GARANTÍA', 'AREA'
+        'NOMBRE', 'APELLIDOS', 'PRACTCAS/GE', 'CONSULTOR EIP',
+        'CONSECUCION GE', 'DEVOLUCION GE', 'INAPLICACION GE',
+        'FIN CONV', 'MES 3M', 'RIESGO ECONOMICO', 'EJECUCION GARANTIA', 'AREA'
     ]
+
     for col in columnas_requeridas:
         if col not in df.columns:
             st.error(f"❌ Falta la columna: {col}")
             return
 
     df_filtrado = df[
-        ((df['CONSECUCIÓN GE'].astype(str).str.lower().str.strip().isin(['false', 'nan', ''])) |
-         (df['CONSECUCIÓN GE'].isna())) &
-        ((df['DEVOLUCIÓN GE'].astype(str).str.lower().str.strip().isin(['false', 'nan', ''])) |
-         (df['DEVOLUCIÓN GE'].isna())) &
-        ((df['INAPLICACIÓN GE'].astype(str).str.lower().str.strip().isin(['false', 'nan', ''])) |
-         (df['INAPLICACIÓN GE'].isna())) &
-        (df['PRÁCTCAS/GE'].str.strip().str.upper() == 'GE')
+        ((df['CONSECUCION GE'].astype(str).str.lower().str.strip().isin(['false', 'nan', ''])) |
+         (df['CONSECUCION GE'].isna())) &
+        ((df['DEVOLUCION GE'].astype(str).str.lower().str.strip().isin(['false', 'nan', ''])) |
+         (df['DEVOLUCION GE'].isna())) &
+        ((df['INAPLICACION GE'].astype(str).str.lower().str.strip().isin(['false', 'nan', ''])) |
+         (df['INAPLICACION GE'].isna())) &
+        (df['PRACTCAS/GE'].str.strip().str.upper() == 'GE')
     ].copy()
 
     df_filtrado['FIN CONV'] = pd.to_datetime(df_filtrado['FIN CONV'], errors='coerce')
@@ -44,8 +57,8 @@ def render(df):
 
     total_alumnos = len(df_resultado)
 
-    df_resultado['RIESGO ECONÓMICO'] = (
-        df_resultado['RIESGO ECONÓMICO']
+    df_resultado['RIESGO ECONOMICO'] = (
+        df_resultado['RIESGO ECONOMICO']
         .astype(str)
         .str.replace("€", "", regex=False)
         .str.replace(" ", "", regex=False)
@@ -54,13 +67,13 @@ def render(df):
         .astype(float)
         .fillna(0)
     )
-    suma_riesgo = df_resultado['RIESGO ECONÓMICO'].sum()
+    suma_riesgo = df_resultado['RIESGO ECONOMICO'].sum()
     suma_riesgo_str = f"{suma_riesgo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
 
-    df_resultado['EJECUCIÓN GARANTÍA'] = pd.to_datetime(df_resultado['EJECUCIÓN GARANTÍA'], errors='coerce')
+    df_resultado['EJECUCION GARANTIA'] = pd.to_datetime(df_resultado['EJECUCION GARANTIA'], errors='coerce')
     total_ejecucion_pasada = df_resultado[
-        (df_resultado['EJECUCIÓN GARANTÍA'].notna()) &
-        (df_resultado['EJECUCIÓN GARANTÍA'] < hoy)
+        (df_resultado['EJECUCION GARANTIA'].notna()) &
+        (df_resultado['EJECUCION GARANTIA'] < hoy)
     ].shape[0]
 
     col1, col2, col3 = st.columns(3)
@@ -89,10 +102,10 @@ def render(df):
         st.plotly_chart(fig, use_container_width=True)
 
         st.markdown("### 📋 Detalle de alumnos en riesgo")
-        columnas_tabla = ['NOMBRE', 'APELLIDOS', 'CONSULTOR EIP', 'AREA', 'RIESGO ECONÓMICO']
+        columnas_tabla = ['NOMBRE', 'APELLIDOS', 'CONSULTOR EIP', 'AREA', 'RIESGO ECONOMICO']
         df_resultado_vista = df_resultado[columnas_tabla].copy()
 
-        df_resultado_vista['RIESGO ECONÓMICO'] = df_resultado_vista['RIESGO ECONÓMICO'].apply(
+        df_resultado_vista['RIESGO ECONOMICO'] = df_resultado_vista['RIESGO ECONOMICO'].apply(
             lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
         )
 
