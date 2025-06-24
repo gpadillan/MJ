@@ -42,6 +42,14 @@ def render(df):
         (df_filtrado['FIN CONV'] <= hoy)
     ].copy()
 
+    # ✅ NUEVO: Mostrar advertencia si no hay datos
+    if df_resultado.empty:
+        st.warning("⚠️ No hay alumnos en riesgo bajo los criterios actuales. Por eso no se muestra el gráfico.")
+        return
+
+    # ✅ OPCIONAL: Mostrar datos para depurar
+    # st.dataframe(df_resultado[['NOMBRE', 'CONSULTOR EIP', 'DIF_MESES']].head())
+
     total_alumnos = len(df_resultado)
 
     df_resultado['RIESGO ECONÓMICO'] = (
@@ -59,7 +67,7 @@ def render(df):
 
     df_resultado['EJECUCIÓN GARANTÍA'] = pd.to_datetime(df_resultado['EJECUCIÓN GARANTÍA'], errors='coerce')
     total_ejecucion_pasada = df_resultado[
-        (df_resultado['EJECUCIÓN GARANTÍA'].notna()) &
+        (df_resultado['EJECUCIÓN GARANTÍA'].notna()) & 
         (df_resultado['EJECUCIÓN GARANTÍA'] < hoy)
     ].shape[0]
 
