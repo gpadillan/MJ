@@ -24,7 +24,7 @@ def render(df):
          (df['DEVOLUCIÓN GE'].isna())) &
         ((df['INAPLICACIÓN GE'].astype(str).str.lower().str.strip().isin(['false', 'nan', ''])) |
          (df['INAPLICACIÓN GE'].isna())) &
-        (df['PRÁCTCAS/GE'].astype(str).str.strip().str.upper() == 'GE')
+        (df['PRÁCTCAS/GE'].str.strip().str.upper() == 'GE')
     ].copy()
 
     df_filtrado['FIN CONV'] = pd.to_datetime(df_filtrado['FIN CONV'], errors='coerce')
@@ -37,20 +37,10 @@ def render(df):
 
     hoy = pd.to_datetime("today")
 
-    # ✅ NUEVO: selector para mostrar futuros o no
-    incluir_fechas_futuras = st.checkbox("🗓️ Incluir 'FIN CONV' en el futuro", value=False)
-
-    if incluir_fechas_futuras:
-        df_resultado = df_filtrado[df_filtrado['DIF_MESES'] == 3].copy()
-    else:
-        df_resultado = df_filtrado[
-            (df_filtrado['DIF_MESES'] == 3) &
-            (df_filtrado['FIN CONV'] <= hoy)
-        ].copy()
-
-    if df_resultado.empty:
-        st.warning("⚠️ No hay alumnos en riesgo bajo los criterios actuales. Por eso no se muestra el gráfico.")
-        return
+    df_resultado = df_filtrado[
+        (df_filtrado['DIF_MESES'] == 3) &
+        (df_filtrado['FIN CONV'] <= hoy)
+    ].copy()
 
     total_alumnos = len(df_resultado)
 
