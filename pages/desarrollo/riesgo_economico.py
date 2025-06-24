@@ -1,48 +1,46 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import unicodedata
 
 def render(df):
     st.title("💰 Riesgo Económico")
 
-    # ✅ Normalización: elimina tildes, espacios y mayúsculas uniformes
-    df.columns = (
-        df.columns
-        .str.strip()
-        .str.upper()
-        .str.normalize('NFKD')                      # Elimina tildes
-        .str.encode('ascii', errors='ignore')       # Convierte a ASCII
-        .str.decode('utf-8')                        # Regresa a str
-    )
+    df.columns = df.columns.str.strip().str.upper()
 
     columnas_requeridas = [
-        'NOMBRE', 'APELLIDOS', 'PRACTCAS/GE', 'CONSULTOR EIP',
-        'CONSECUCION GE', 'DEVOLUCION GE', 'INAPLICACION GE',
-        'FIN CONV', 'MES 3M', 'RIESGO ECONOMICO', 'EJECUCION GARANTIA', 'AREA'
+        'NOMBRE', 'APELLIDOS', 'PRÁCTCAS/GE', 'CONSULTOR EIP',
+        'CONSECUCIÓN GE', 'DEVOLUCIÓN GE', 'INAPLICACIÓN GE',
+        'FIN CONV', 'MES 3M', 'RIESGO ECONÓMICO', 'EJECUCIÓN GARANTÍA', 'AREA'
     ]
     for col in columnas_requeridas:
         if col not in df.columns:
             st.error(f"❌ Falta la columna: {col}")
             return
 
-    df_filtrado = df[
-        ((df['CONSECUCION GE'].astype(str).str.lower().str.strip().isin(['false', 'nan', ''])) |
-         (df['CONSECUCION GE'].isna())) &
-        ((df['DEVOLUCION GE'].astype(str).str.lower().str.strip().isin(['false', 'nan', ''])) |
-         (df['DEVOLUCION GE'].isna())) &
-        ((df['INAPLICACION GE'].astype(str).str.lower().str.strip().isin(['false', 'nan', ''])) |
-         (df['INAPLICACION GE'].isna())) &
-        (df['PRACTCAS/GE'].str.strip().str.upper() == 'GE')
-    ].copy()
+    # ✅ Diagnóstico: valores antes de filtrar
+    st.markdown("### 🔍 Diagnóstico inicial de columnas clave")
+    st.dataframe(df[['FIN CONV', 'MES 3M', 'PRÁCTCAS/GE', 'CONSECUCIÓN GE', 'DEVOLUCIÓN GE', 'INAPLICACIÓN GE']].head(10))
 
-    df_filtrado['FIN CONV'] = pd.to_datetime(df_filtrado['FIN CONV'], errors='coerce')
-    df_filtrado['MES 3M'] = pd.to_datetime(df_filtrado['MES 3M'], errors='coerce')
+    df['FIN CONV'] = pd.to_datetime(df['FIN CONV'], errors='coerce')
+    df['MES 3M'] = pd.to_datetime(df['MES 3M'], errors='coerce')
+
+    df_filtrado = df[
+        ((df['CONSECUCIÓN GE'].astype(str).str.lower().str.strip().isin(['false', 'nan', ''])) |
+         (df['CONSECUCIÓN GE'].isna())) &
+        ((df['DEVOLUCIÓN GE'].astype(str).str.lower().str.strip().isin(['false', 'nan', ''])) |
+         (df['DEVOLUCIÓN GE'].isna())) &
+        ((df['INAPLICACIÓN GE'].astype(str).str.lower().str.strip().isin(['false', 'nan', ''])) |
+         (df['INAPLICACIÓN GE'].isna())) &
+        (df['PRÁCTCAS/GE'].str.strip().str.upper() == 'GE')
+    ].copy()
 
     df_filtrado['DIF_MESES'] = (
         (df_filtrado['MES 3M'].dt.year - df_filtrado['FIN CONV'].dt.year) * 12 +
         (df_filtrado['MES 3M'].dt.month - df_filtrado['FIN CONV'].dt.month)
     )
+
+    # ✅ Diagnóstico: mostrar valores únicos de DIF_MESES
+    st.write("📊 Valores únicos de DIF_MESES:", df_filtrado['DIF_MESES'].dropna().unique())
 
     hoy = pd.to_datetime("today")
 
@@ -53,8 +51,8 @@ def render(df):
 
     total_alumnos = len(df_resultado)
 
-    df_resultado['RIESGO ECONOMICO'] = (
-        df_resultado['RIESGO ECONOMICO']
+    df_resultado['RIESGO ECONÓMICO'] = (
+        df_resultado['RIESGO ECONÓMICO']
         .astype(str)
         .str.replace("€", "", regex=False)
         .str.replace(" ", "", regex=False)
@@ -63,13 +61,12 @@ def render(df):
         .astype(float)
         .fillna(0)
     )
-    suma_riesgo = df_resultado['RIESGO ECONOMICO'].sum()
+    suma_riesgo = df_resultado['RIESGO ECONÓMICO'].sum()
     suma_riesgo_str = f"{suma_riesgo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
 
-    df_resultado['EJECUCION GARANTIA'] = pd.to_datetime(df_resultado['EJECUCION GARANTIA'], errors='coerce')
+    df_resultado['EJECUCIÓN GARANTÍA'] = pd.to_datetime(df_resultado['EJECUCIÓN GARANTÍA'], errors='coerce')
     total_ejecucion_pasada = df_resultado[
-        (df_resultado['EJECUCION GARANTIA'].notna()) &
-        (df_resultado['EJECUCION GARANTIA'] < hoy)
+        (df_resultado['EJECUCIÓN GARANTÍA'].notna()) & (df_resultado['EJECUCIÓN GARANTÍA'] < hoy)
     ].shape[0]
 
     col1, col2, col3 = st.columns(3)
@@ -98,10 +95,10 @@ def render(df):
         st.plotly_chart(fig, use_container_width=True)
 
         st.markdown("### 📋 Detalle de alumnos en riesgo")
-        columnas_tabla = ['NOMBRE', 'APELLIDOS', 'CONSULTOR EIP', 'AREA', 'RIESGO ECONOMICO']
+        columnas_tabla = ['NOMBRE', 'APELLIDOS', 'CONSULTOR EIP', 'AREA', 'RIESGO ECONÓMICO']
         df_resultado_vista = df_resultado[columnas_tabla].copy()
 
-        df_resultado_vista['RIESGO ECONOMICO'] = df_resultado_vista['RIESGO ECONOMICO'].apply(
+        df_resultado_vista['RIESGO ECONÓMICO'] = df_resultado_vista['RIESGO ECONÓMICO'].apply(
             lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
         )
 
