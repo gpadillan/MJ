@@ -24,7 +24,7 @@ def render(df):
          (df['DEVOLUCIÓN GE'].isna())) &
         ((df['INAPLICACIÓN GE'].astype(str).str.lower().str.strip().isin(['false', 'nan', ''])) |
          (df['INAPLICACIÓN GE'].isna())) &
-        (df['PRÁCTCAS/GE'].str.strip().str.upper() == 'GE')
+        (df['PRÁCTCAS/GE'].astype(str).str.strip().str.upper() == 'GE')
     ].copy()
 
     df_filtrado['FIN CONV'] = pd.to_datetime(df_filtrado['FIN CONV'], errors='coerce')
@@ -37,18 +37,20 @@ def render(df):
 
     hoy = pd.to_datetime("today")
 
-    df_resultado = df_filtrado[
-        (df_filtrado['DIF_MESES'] == 3) &
-        (df_filtrado['FIN CONV'] <= hoy)
-    ].copy()
+    # ✅ NUEVO: selector para mostrar futuros o no
+    incluir_fechas_futuras = st.checkbox("🗓️ Incluir 'FIN CONV' en el futuro", value=False)
 
-    # ✅ NUEVO: Mostrar advertencia si no hay datos
+    if incluir_fechas_futuras:
+        df_resultado = df_filtrado[df_filtrado['DIF_MESES'] == 3].copy()
+    else:
+        df_resultado = df_filtrado[
+            (df_filtrado['DIF_MESES'] == 3) &
+            (df_filtrado['FIN CONV'] <= hoy)
+        ].copy()
+
     if df_resultado.empty:
         st.warning("⚠️ No hay alumnos en riesgo bajo los criterios actuales. Por eso no se muestra el gráfico.")
         return
-
-    # ✅ OPCIONAL: Mostrar datos para depurar
-    # st.dataframe(df_resultado[['NOMBRE', 'CONSULTOR EIP', 'DIF_MESES']].head())
 
     total_alumnos = len(df_resultado)
 
@@ -67,7 +69,7 @@ def render(df):
 
     df_resultado['EJECUCIÓN GARANTÍA'] = pd.to_datetime(df_resultado['EJECUCIÓN GARANTÍA'], errors='coerce')
     total_ejecucion_pasada = df_resultado[
-        (df_resultado['EJECUCIÓN GARANTÍA'].notna()) & 
+        (df_resultado['EJECUCIÓN GARANTÍA'].notna()) &
         (df_resultado['EJECUCIÓN GARANTÍA'] < hoy)
     ].shape[0]
 
