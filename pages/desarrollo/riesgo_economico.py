@@ -63,18 +63,13 @@ def render(df):
         (df_resultado['EJECUCIÓN GARANTÍA'] < hoy)
     ].shape[0]
 
-    devolucion_true_count = df['DEVOLUCIÓN GE'].astype(str).str.lower().str.strip() == 'true'
-    num_devoluciones_true = devolucion_true_count.sum()
-
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.metric(label="📌 ALUMNO RIESGO TRIM", value=total_alumnos)
     with col2:
         st.metric(label="💰 RIESGO ECONÓMICO", value=suma_riesgo_str)
     with col3:
         st.metric(label="⏳ VENCIDA GE", value=total_ejecucion_pasada)
-    with col4:
-        st.metric(label="🔴 DEVOLUCIÓN GE", value=num_devoluciones_true)
 
     st.markdown("---")
 
