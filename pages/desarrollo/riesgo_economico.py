@@ -76,28 +76,27 @@ def render(df):
     st.markdown("---")
 
     if "CONSULTOR EIP" in df_resultado.columns:
+        # ✅ Pie chart de distribución por consultor
         conteo_consultores = df_resultado["CONSULTOR EIP"].value_counts().reset_index()
         conteo_consultores.columns = ["CONSULTOR", "ALUMNOS EN RIESGO"]
 
-        st.subheader("🔄 Distribución por Consultor")
+        st.subheader("🔄 Distribución de Alumnado en Riesgo por Consultor")
         fig = px.pie(
             conteo_consultores,
             names="CONSULTOR",
             values="ALUMNOS EN RIESGO",
-            hole=0.5,
-            title="Distribución de Alumnado en Riesgo por Consultor"
+            hole=0.5
         )
         fig.update_traces(textinfo='label+value')
         st.plotly_chart(fig, use_container_width=True)
 
+        # ✅ Tabla detallada
         st.markdown("### 📋 Detalle de alumnos en riesgo")
         columnas_tabla = ['NOMBRE', 'APELLIDOS', 'CONSULTOR EIP', 'AREA', 'RIESGO ECONÓMICO']
         df_resultado_vista = df_resultado[columnas_tabla].copy()
-
         df_resultado_vista['RIESGO ECONÓMICO'] = df_resultado_vista['RIESGO ECONÓMICO'].apply(
             lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
         )
-
         st.dataframe(df_resultado_vista, use_container_width=True)
     else:
         st.warning("⚠️ La columna 'CONSULTOR EIP' no está disponible en los datos.")
