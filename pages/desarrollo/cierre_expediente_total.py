@@ -131,10 +131,7 @@ def render(df):
         empresa_pract.columns = ['EMPRESA PRÁCT.', 'EMPLEOS']
         st.dataframe(empresa_pract.style.background_gradient(subset=['EMPLEOS'], cmap='PuBu'), use_container_width=True)
 
-    df_validos = df[
-        (df['NOMBRE'] != 'NO ENCONTRADO') &
-        (df['APELLIDOS'] != 'NO ENCONTRADO')
-    ]
+    df_validos = df[ (df['NOMBRE'] != 'NO ENCONTRADO') & (df['APELLIDOS'] != 'NO ENCONTRADO') ]
     total_alumnado_objetivo = df_validos[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0]
 
     st.markdown("## 👥 Total Alumnado")
@@ -152,14 +149,14 @@ def render(df):
     )
     porcentaje_cierre_dp = round((df_validos[cond_cierre_dp][['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0] / total_alumnado_objetivo) * 100, 2)
 
-    cond_practicas = ~df_validos['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])
-    porcentaje_practicas = round((df_validos[cond_practicas][['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0] / total_alumnado_objetivo) * 100, 2)
+    practicas_realizadas = df_validos[~df_validos['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])]
+    porcentaje_practicas = round((practicas_realizadas[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0] / total_alumnado_objetivo) * 100, 2)
 
-    cond_conversion = (
-        (df_validos['EMPRESA PRÁCT.'] == df_validos['EMPRESA GE']) &
-        (~df_validos['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO']))
-    )
-    porcentaje_conversion = round((df_validos[cond_conversion][['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0] / total_alumnado_objetivo) * 100, 2)
+    conversion_realizada = practicas_realizadas[practicas_realizadas['EMPRESA PRÁCT.'] == practicas_realizadas['EMPRESA GE']]
+    if not practicas_realizadas.empty:
+        porcentaje_conversion = round((conversion_realizada[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0] / practicas_realizadas[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0]) * 100, 2)
+    else:
+        porcentaje_conversion = 0.0
 
     col_obj1, col_obj2, col_obj3, col_obj4 = st.columns(4)
     col_obj1.markdown(render_card("Inserción laboral Empleo", f"{porcentaje_empleo}%", "#c8e6c9"), unsafe_allow_html=True)
