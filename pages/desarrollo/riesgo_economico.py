@@ -17,13 +17,6 @@ def render(df):
             st.error(f"❌ Falta la columna: {col}")
             return
 
-    # ✅ Diagnóstico: valores antes de filtrar
-    st.markdown("### 🔍 Diagnóstico inicial de columnas clave")
-    st.dataframe(df[['FIN CONV', 'MES 3M', 'PRÁCTCAS/GE', 'CONSECUCIÓN GE', 'DEVOLUCIÓN GE', 'INAPLICACIÓN GE']].head(10))
-
-    df['FIN CONV'] = pd.to_datetime(df['FIN CONV'], errors='coerce')
-    df['MES 3M'] = pd.to_datetime(df['MES 3M'], errors='coerce')
-
     df_filtrado = df[
         ((df['CONSECUCIÓN GE'].astype(str).str.lower().str.strip().isin(['false', 'nan', ''])) |
          (df['CONSECUCIÓN GE'].isna())) &
@@ -34,19 +27,18 @@ def render(df):
         (df['PRÁCTCAS/GE'].str.strip().str.upper() == 'GE')
     ].copy()
 
+    df_filtrado['FIN CONV'] = pd.to_datetime(df_filtrado['FIN CONV'], errors='coerce')
+    df_filtrado['MES 3M'] = pd.to_datetime(df_filtrado['MES 3M'], errors='coerce')
+
     df_filtrado['DIF_MESES'] = (
         (df_filtrado['MES 3M'].dt.year - df_filtrado['FIN CONV'].dt.year) * 12 +
         (df_filtrado['MES 3M'].dt.month - df_filtrado['FIN CONV'].dt.month)
     )
 
-    # ✅ Diagnóstico: mostrar valores únicos de DIF_MESES
-    st.write("📊 Valores únicos de DIF_MESES:", df_filtrado['DIF_MESES'].dropna().unique())
-
     hoy = pd.to_datetime("today")
 
     df_resultado = df_filtrado[
-        (df_filtrado['DIF_MESES'] == 3) &
-        (df_filtrado['FIN CONV'] <= hoy)
+        (df_filtrado['DIF_MESES'] == 3) & (df_filtrado['FIN CONV'] <= hoy)
     ].copy()
 
     total_alumnos = len(df_resultado)
@@ -69,13 +61,18 @@ def render(df):
         (df_resultado['EJECUCIÓN GARANTÍA'].notna()) & (df_resultado['EJECUCIÓN GARANTÍA'] < hoy)
     ].shape[0]
 
-    col1, col2, col3 = st.columns(3)
+    devolucion_true_count = df['DEVOLUCIÓN GE'].astype(str).str.lower().str.strip() == 'true'
+    total_devolucion_true = devolucion_true_count.sum()
+
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric(label="📌 ALUMNO RIESGO TRIM", value=total_alumnos)
     with col2:
         st.metric(label="💰 RIESGO ECONÓMICO", value=suma_riesgo_str)
     with col3:
         st.metric(label="⏳ VENCIDA GE", value=total_ejecucion_pasada)
+    with col4:
+        st.metric(label="🔴 DEVOLUCIÓN GE", value=total_devolucion_true)
 
     st.markdown("---")
 
@@ -97,11 +94,9 @@ def render(df):
         st.markdown("### 📋 Detalle de alumnos en riesgo")
         columnas_tabla = ['NOMBRE', 'APELLIDOS', 'CONSULTOR EIP', 'AREA', 'RIESGO ECONÓMICO']
         df_resultado_vista = df_resultado[columnas_tabla].copy()
-
         df_resultado_vista['RIESGO ECONÓMICO'] = df_resultado_vista['RIESGO ECONÓMICO'].apply(
             lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
         )
-
         st.dataframe(df_resultado_vista, use_container_width=True)
     else:
         st.warning("⚠️ La columna 'CONSULTOR EIP' no está disponible en los datos.")
