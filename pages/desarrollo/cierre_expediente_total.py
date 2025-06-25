@@ -80,14 +80,8 @@ def render(df):
         df_filtrado[df_filtrado['INAPLICACIÓN_BOOL']][['CONSULTOR EIP']].assign(CIERRE='INAPLICACIÓN')
     ])
     resumen_total_cierres = df_cierre.groupby('CONSULTOR EIP').size().reset_index(name='TOTAL_CIERRES')
-
-    fig_pie = px.pie(
-        resumen_total_cierres,
-        names='CONSULTOR EIP',
-        values='TOTAL_CIERRES',
-        title=f'Distribución de cierres por Consultor ({opcion})',
-        hole=0
-    )
+    fig_pie = px.pie(resumen_total_cierres, names='CONSULTOR EIP', values='TOTAL_CIERRES',
+                     title=f'Distribución de cierres por Consultor ({opcion})', hole=0)
     fig_pie.update_traces(textinfo='label+value')
     st.plotly_chart(fig_pie, use_container_width=True)
 
@@ -106,17 +100,24 @@ def render(df):
     if "Total" in opcion:
         resumen_area['TOTAL PRÁCTICAS'] = df_valid_area_pract[df_valid_area_pract['PRACTICAS_BOOL']].groupby('AREA').size()
 
-    resumen_area = resumen_area.fillna(0).astype(int).sort_values(by='TOTAL CONSECUCIÓN', ascending=False)
-    total_row = pd.DataFrame(resumen_area.sum()).T
-    total_row.index = ['Total']
-    resumen_area = pd.concat([resumen_area, total_row])
-    resumen_area.index = list(range(1, len(resumen_area))) + ['Total']
+    resumen_area = resumen_area.fillna(0).astype(int).sort_values(by='TOTAL CONSECUCIÓN', ascending=False).reset_index()
+
+    total_row = {
+        'AREA': 'Total',
+        'TOTAL CONSECUCIÓN': resumen_area['TOTAL CONSECUCIÓN'].sum(),
+        'TOTAL INAPLICACIÓN': resumen_area['TOTAL INAPLICACIÓN'].sum()
+    }
+    if 'TOTAL PRÁCTICAS' in resumen_area.columns:
+        total_row['TOTAL PRÁCTICAS'] = resumen_area['TOTAL PRÁCTICAS'].sum()
+
+    resumen_area = pd.concat([resumen_area, pd.DataFrame([total_row])], ignore_index=True)
 
     styled_area = resumen_area.style \
         .background_gradient(subset=['TOTAL CONSECUCIÓN'], cmap='Greens') \
         .background_gradient(subset=['TOTAL INAPLICACIÓN'], cmap='Reds')
     if 'TOTAL PRÁCTICAS' in resumen_area.columns:
         styled_area = styled_area.background_gradient(subset=['TOTAL PRÁCTICAS'], cmap='Blues')
+
     st.dataframe(styled_area, use_container_width=True)
 
     col_emp1, col_emp2 = st.columns(2)
@@ -131,7 +132,7 @@ def render(df):
         empresa_pract.columns = ['EMPRESA PRÁCT.', 'EMPLEOS']
         st.dataframe(empresa_pract.style.background_gradient(subset=['EMPLEOS'], cmap='PuBu'), use_container_width=True)
 
-    df_validos = df[ (df['NOMBRE'] != 'NO ENCONTRADO') & (df['APELLIDOS'] != 'NO ENCONTRADO') ]
+    df_validos = df[(df['NOMBRE'] != 'NO ENCONTRADO') & (df['APELLIDOS'] != 'NO ENCONTRADO')]
     total_alumnado_objetivo = df_validos[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0]
 
     st.markdown("## 👥 Total Alumnado")
