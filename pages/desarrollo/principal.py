@@ -90,8 +90,13 @@ def render(df=None):
         x="Área",
         y="Cantidad",
         color="Cantidad",
-        color_continuous_scale=["#1f77b4", "#ffff00"],  # Degradado azul a amarillo
-        text_auto=True
+        color_continuous_scale=["#ffff00", "#1f77b4"],  # Amarillo (menos) a azul (más)
+        text="Cantidad"
+    )
+    fig_bar.update_traces(
+        textposition='inside',
+        insidetextanchor='middle',
+        textfont_color="black"
     )
     fig_bar.update_layout(
         xaxis_title="Área",
