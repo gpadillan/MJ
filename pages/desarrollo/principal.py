@@ -85,6 +85,8 @@ def render(df=None):
     conteo_practicas.columns = ["Tipo", "Cantidad"]
 
     st.subheader("Número de Alumnos por Área")
+    max_val = conteo_area['Cantidad'].max()
+
     fig_bar = px.bar(
         conteo_area,
         x="Área",
@@ -94,15 +96,16 @@ def render(df=None):
         text="Cantidad"
     )
     fig_bar.update_traces(
-        textposition='outside',           # ENCIMA de la barra
-        textfont_color='white',           # Texto blanco
-        marker_line_color='black',        # Borde negro
+        textposition='outside',
+        textfont_color='white',
+        marker_line_color='black',
         marker_line_width=1.5
     )
     fig_bar.update_layout(
         xaxis_title="Área",
         yaxis_title="Número de Alumnos",
-        height=500
+        height=500,
+        yaxis=dict(range=[0, max_val * 1.2])  # espacio extra para que se vea el texto
     )
     st.plotly_chart(fig_bar, use_container_width=True)
 
