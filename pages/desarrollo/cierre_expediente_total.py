@@ -56,17 +56,14 @@ def render(df):
 
     total_consecucion = df_filtrado['CONSECUCIÓN_BOOL'].sum()
     total_inaplicacion = df_filtrado['INAPLICACIÓN_BOOL'].sum()
-    total_practicas_actual = df_filtrado['PRACTICAS_BOOL'].sum()
     total_empresa_ge = df_filtrado['EMPRESA GE'][~df_filtrado['EMPRESA GE'].isin(['', 'NO ENCONTRADO'])].shape[0]
     total_empresa_pract = df_filtrado['EMPRESA PRÁCT.'][~df_filtrado['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])].shape[0]
 
     with st.container():
         if "Total" in opcion:
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2 = st.columns(2)
             col1.markdown(render_card("CONSECUCIÓN", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
             col2.markdown(render_card("INAPLICACIÓN", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
-            col3.markdown(render_card("Alumnado total en PRÁCTICAS", total_empresa_ge, "#ede7f6"), unsafe_allow_html=True)
-            col4.markdown(render_card("Prácticas actuales", total_practicas_actual, "#e8f5e9"), unsafe_allow_html=True)
         else:
             col1, col2, col3 = st.columns(3)
             anio = opcion.split()[-1]
