@@ -7,7 +7,6 @@ from datetime import datetime
 UPLOAD_FOLDER = "uploaded_admisiones"
 ARCHIVO_DESARROLLO = os.path.join(UPLOAD_FOLDER, "desarrollo_profesional.xlsx")
 
-
 def clean_headers(df):
     df.columns = [
         str(col).strip().upper() if str(col).strip() != '' else f'UNNAMED_{i}'
@@ -17,7 +16,6 @@ def clean_headers(df):
         st.warning("⚠️ Se encontraron columnas duplicadas. Se eliminarán automáticamente.")
         df = df.loc[:, ~df.columns.duplicated()]
     return df
-
 
 def render(df=None):
     st.title("📊 Principal - Área de Desarrollo Profesional")
@@ -91,8 +89,9 @@ def render(df=None):
         conteo_area,
         x="Área",
         y="Cantidad",
-        text_auto=True,
-        title=None,
+        color="Cantidad",  # Para degradado
+        color_continuous_scale="Blues",
+        text_auto=True
     )
     fig_bar.update_layout(
         xaxis_title="Área",
@@ -157,8 +156,7 @@ def render(df=None):
         fig_pie = px.pie(
             conteo_practicas,
             names="Tipo",
-            values="Cantidad",
-            title=None,
+            values="Cantidad"
         )
         fig_pie.update_traces(textposition='inside', textinfo='label+percent+value')
         fig_pie.update_layout(height=500)
@@ -170,8 +168,7 @@ def render(df=None):
         fig_pie_consultor = px.pie(
             conteo_consultor,
             names="Consultor",
-            values="Cantidad",
-            title=None,
+            values="Cantidad"
         )
         fig_pie_consultor.update_traces(textposition='inside', textinfo='label+percent+value')
         fig_pie_consultor.update_layout(height=500)
