@@ -82,9 +82,6 @@ def render(df=None):
     conteo_area = df_filtrado['AREA'].value_counts().reset_index()
     conteo_area.columns = ["Área", "Cantidad"]
 
-    conteo_practicas = df_filtrado['PRÁCTCAS/GE'].value_counts().reset_index()
-    conteo_practicas.columns = ["Tipo", "Cantidad"]
-
     st.subheader("Número de Alumnos por Área")
 
     x_data = conteo_area["Área"]
@@ -100,8 +97,8 @@ def render(df=None):
             colorscale=[[0, "#ffff00"], [1, "#1f77b4"]],
             line=dict(color='black', width=1.5)
         ),
-        text=y_data,
-        textposition='none'  # No texto automático, lo haremos manual
+        hoverinfo='skip',  # desactiva el tooltip al pasar el ratón
+        showlegend=False
     ))
 
     for x, y in zip(x_data, y_data):
@@ -126,78 +123,3 @@ def render(df=None):
     )
 
     st.plotly_chart(fig_bar, use_container_width=True)
-
-    total_alumnos = conteo_area['Cantidad'].sum()
-
-    df['FIN CONV'] = pd.to_datetime(df['FIN CONV'], errors='coerce')
-    df['MES 3M'] = pd.to_datetime(df['MES 3M'], errors='coerce')
-
-    df_ge_activos = df[
-        (df['PRÁCTCAS/GE'] == 'GE') &
-        (df['CONSECUCIÓN GE'] == False) &
-        (df['DEVOLUCIÓN GE'] == False) &
-        (df['INAPLICACIÓN GE'] == False)
-    ].copy()
-
-    df_ge_activos['DIF_MESES'] = (
-        (df_ge_activos['MES 3M'].dt.year - df_ge_activos['FIN CONV'].dt.year) * 12 +
-        (df_ge_activos['MES 3M'].dt.month - df_ge_activos['FIN CONV'].dt.month)
-    )
-
-    hoy = pd.to_datetime("today")
-
-    df_resultado = df_ge_activos[
-        (df_ge_activos['DIF_MESES'] == 3) &
-        (df_ge_activos['FIN CONV'] <= hoy)
-    ].copy()
-
-    total_ge_indicador = len(df_resultado)
-
-    df_resultado['RIESGO ECONÓMICO'] = (
-        df_resultado['RIESGO ECONÓMICO']
-        .astype(str)
-        .str.replace("€", "", regex=False)
-        .str.replace(" ", "", regex=False)
-        .str.replace(".", "", regex=False)
-        .str.replace(",", ".", regex=False)
-        .astype(float)
-        .fillna(0)
-    )
-    suma_riesgo_eco = df_resultado['RIESGO ECONÓMICO'].sum()
-    suma_riesgo_formateada = f"{suma_riesgo_eco:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric(label="🎯 Total Alumnos", value=total_alumnos)
-    with col2:
-        st.metric(label="📌 ALUMNO RIESGO TRIM", value=total_ge_indicador)
-    with col3:
-        st.metric(label="💰 RIESGO ECONOMICO", value=suma_riesgo_formateada)
-
-    st.markdown("---")
-
-    st.subheader("Distribución")
-    colpie1, colpie2 = st.columns(2)
-
-    with colpie1:
-        fig_pie = px.pie(
-            conteo_practicas,
-            names="Tipo",
-            values="Cantidad"
-        )
-        fig_pie.update_traces(textposition='inside', textinfo='label+percent+value')
-        fig_pie.update_layout(height=500)
-        st.plotly_chart(fig_pie, use_container_width=True)
-
-    with colpie2:
-        conteo_consultor = df_filtrado['CONSULTOR EIP'].value_counts().reset_index()
-        conteo_consultor.columns = ["Consultor", "Cantidad"]
-        fig_pie_consultor = px.pie(
-            conteo_consultor,
-            names="Consultor",
-            values="Cantidad"
-        )
-        fig_pie_consultor.update_traces(textposition='inside', textinfo='label+percent+value')
-        fig_pie_consultor.update_layout(height=500)
-        st.subheader("Alumnado por Consultor")
-        st.plotly_chart(fig_pie_consultor, use_container_width=True)
