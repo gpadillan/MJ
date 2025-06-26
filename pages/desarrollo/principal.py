@@ -1,5 +1,6 @@
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 import os
 from datetime import datetime
@@ -85,28 +86,45 @@ def render(df=None):
     conteo_practicas.columns = ["Tipo", "Cantidad"]
 
     st.subheader("Número de Alumnos por Área")
-    max_val = conteo_area['Cantidad'].max()
 
-    fig_bar = px.bar(
-        conteo_area,
-        x="Área",
-        y="Cantidad",
-        color="Cantidad",
-        color_continuous_scale=["#ffff00", "#1f77b4"],  # Amarillo a azul
-        text="Cantidad"
-    )
-    fig_bar.update_traces(
-        textposition='outside',
-        textfont_color='white',
-        marker_line_color='black',
-        marker_line_width=1.5
-    )
+    x_data = conteo_area["Área"]
+    y_data = conteo_area["Cantidad"]
+
+    fig_bar = go.Figure()
+
+    fig_bar.add_trace(go.Bar(
+        x=x_data,
+        y=y_data,
+        marker=dict(
+            color=y_data,
+            colorscale=[[0, "#ffff00"], [1, "#1f77b4"]],
+            line=dict(color='black', width=1.5)
+        ),
+        text=y_data,
+        textposition='none'  # No texto automático, lo haremos manual
+    ))
+
+    for x, y in zip(x_data, y_data):
+        fig_bar.add_annotation(
+            x=x,
+            y=y,
+            text=f"<b>{y}</b>",
+            showarrow=False,
+            yshift=5,
+            font=dict(color="white", size=13),
+            align="center",
+            bgcolor="black",
+            borderpad=4
+        )
+
     fig_bar.update_layout(
+        height=500,
         xaxis_title="Área",
         yaxis_title="Número de Alumnos",
-        height=500,
-        yaxis=dict(range=[0, max_val * 1.2])  # espacio extra para que se vea el texto
+        yaxis=dict(range=[0, max(y_data) * 1.2]),
+        plot_bgcolor='white'
     )
+
     st.plotly_chart(fig_bar, use_container_width=True)
 
     total_alumnos = conteo_area['Cantidad'].sum()
