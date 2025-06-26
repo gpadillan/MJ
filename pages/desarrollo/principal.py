@@ -89,8 +89,8 @@ def render(df=None):
         conteo_area,
         x="Área",
         y="Cantidad",
-        color="Cantidad",  # Para degradado
-        color_continuous_scale="Blues",
+        color="Cantidad",
+        color_continuous_scale=["#1f77b4", "#ffff00"],  # Degradado azul a amarillo
         text_auto=True
     )
     fig_bar.update_layout(
