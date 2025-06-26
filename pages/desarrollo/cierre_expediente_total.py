@@ -61,12 +61,13 @@ def render(df):
 
     with st.container():
         if "Total" in opcion:
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             col1.markdown(render_card("CONSECUCIÓN", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
             col2.markdown(render_card("INAPLICACIÓN", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
+            col3.markdown(render_card("Alumnado total en PRÁCTICAS", total_empresa_ge, "#ede7f6"), unsafe_allow_html=True)
         else:
-            col1, col2, col3 = st.columns(3)
             anio = opcion.split()[-1]
+            col1, col2, col3 = st.columns(3)
             col1.markdown(render_card(f"CONSECUCIÓN {anio}", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
             col2.markdown(render_card(f"INAPLICACIÓN {anio}", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
             col3.markdown(render_card("Alumnado PRÁCTICAS", total_empresa_pract, "#f3e5f5"), unsafe_allow_html=True)
