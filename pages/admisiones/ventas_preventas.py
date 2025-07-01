@@ -20,15 +20,22 @@ def app():
         "September": "Septiembre", "October": "Octubre", "November": "Noviembre", "December": "Diciembre"
     }
 
-    if not os.path.exists(VENTAS_FILE) or not os.path.exists(PREVENTAS_FILE):
-        st.warning("⚠️ No se han encontrado los archivos 'ventas.xlsx' y/o 'preventas.xlsx'.")
+    if not os.path.exists(VENTAS_FILE):
+        st.warning("⚠️ No se ha encontrado el archivo 'ventas.xlsx'.")
         return
 
     df_ventas = pd.read_excel(VENTAS_FILE)
-    df_preventas = pd.read_excel(PREVENTAS_FILE)
+
+    # Preventas: carga si existe, usa DataFrame vacío si no
+    if os.path.exists(PREVENTAS_FILE):
+        df_preventas = pd.read_excel(PREVENTAS_FILE)
+    else:
+        df_preventas = pd.DataFrame()
 
     columnas_importe = [col for col in df_preventas.columns if "importe" in col.lower()]
-    total_preventas_importe = df_preventas[columnas_importe].sum(numeric_only=True).sum() if columnas_importe else 0
+    total_preventas_importe = (
+        df_preventas[columnas_importe].sum(numeric_only=True).sum() if columnas_importe else 0
+    )
     total_preventas_count = df_preventas.shape[0]
 
     if 'fecha de cierre' in df_ventas.columns:
