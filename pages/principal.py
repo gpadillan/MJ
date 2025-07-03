@@ -79,7 +79,6 @@ def principal_page():
         7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
     }
 
-    mes_actual = datetime.now().month
     anio_actual = datetime.now().year
 
     total_matriculas = 0
@@ -98,10 +97,10 @@ def principal_page():
             df_ventas = df_ventas.dropna(subset=['fecha de cierre'])
             df_ventas = df_ventas[df_ventas['fecha de cierre'].dt.year == anio_actual]
 
-            total_matriculas = df_ventas.shape[0]  # 🔁 CORREGIDO: Total del año completo
+            total_matriculas = df_ventas.shape[0]
 
             df_ventas['mes'] = df_ventas['fecha de cierre'].dt.month
-            for m in range(1, mes_actual + 1):
+            for m in range(1, 13):  # Mostrar todos los meses del año
                 df_mes = df_ventas[df_ventas['mes'] == m]
                 matriculas_por_mes[m] = len(df_mes)
                 importes_por_mes[m] = df_mes.get('importe', pd.Series(0)).sum()
@@ -117,16 +116,12 @@ def principal_page():
     # === GESTIÓN DE COBRO ===
     if os.path.exists(GESTION_FILE):
         df_gestion = pd.read_excel(GESTION_FILE)
-
         if "Estado" in df_gestion.columns:
-            columnas_validas = []
-
             for anio in range(2018, anio_actual):
                 col = f"Total {anio}"
                 if col in df_gestion.columns:
                     columnas_validas.append(col)
-
-            for mes_num in range(1, mes_actual + 1):
+            for mes_num in range(1, 13):
                 nombre_mes = f"{traduccion_meses[mes_num]} {anio_actual}"
                 if nombre_mes in df_gestion.columns:
                     columnas_validas.append(nombre_mes)
@@ -143,7 +138,7 @@ def principal_page():
 
     meses = [
         (traduccion_meses[m], matriculas_por_mes.get(m, 0), f"{importes_por_mes.get(m, 0):,.2f}".replace(",", "."))
-        for m in range(1, mes_actual + 1)
+        for m in range(1, 13)
     ]
     for i in range(0, len(meses), 4):
         cols = st.columns(4)
