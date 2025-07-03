@@ -79,7 +79,7 @@ def principal_page():
         7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
     }
 
-    anio_actual = 2025  # Año fijo para alineación
+    anio_actual = datetime.now().year
     total_matriculas = 0
     total_preventas = 0
     total_preventas_importe = 0
