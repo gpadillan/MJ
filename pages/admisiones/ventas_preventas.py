@@ -39,11 +39,11 @@ def app():
         total_preventas_importe = 0
         total_preventas_count = 0
 
-    # ✅ Conversión robusta de fechas
+    # Conversión robusta de fechas
     if 'fecha de cierre' in df_ventas.columns:
         df_ventas['fecha de cierre'] = pd.to_datetime(
             df_ventas['fecha de cierre'],
-            format="%Y-%m-%d",  # Asume formato ISO
+            format="%Y-%m-%d",
             errors='coerce'
         )
 
@@ -92,34 +92,62 @@ def app():
             meses_presentes = df_bar['mes'].dropna().unique().tolist()
             orden_mes_filtrado = [m for m in orden_meses if m in meses_presentes]
 
-            fig = px.bar(
-                df_bar,
-                x='mes',
-                y='Total Matrículas',
-                color='propietario_display',
-                barmode='group',
-                text='Total Matrículas',
-                title='Distribución Mensual de Matrículas por Propietario',
-                width=width,
-                height=height
-            )
-            fig.update_traces(textposition='outside')
-            fig.update_layout(
-                xaxis_title="Mes",
-                yaxis_title="Total Matrículas",
-                margin=dict(l=20, r=20, t=40, b=140),
-                xaxis=dict(categoryorder='array', categoryarray=orden_mes_filtrado),
-                legend=dict(
-                    orientation="h",
-                    yanchor="bottom",
-                    y=-0.5,
-                    xanchor="center",
-                    x=0.5,
-                    bgcolor="rgba(255,255,255,0.95)",
-                    bordercolor="lightgray",
-                    borderwidth=1
+            if is_mobile:
+                fig = px.bar(
+                    df_bar,
+                    x='Total Matrículas',
+                    y='propietario_display',
+                    color='mes',
+                    orientation='h',
+                    text='Total Matrículas',
+                    title='Matrículas por Propietario (Vista Móvil)',
+                    width=width,
+                    height=height + 500
                 )
-            )
+                fig.update_layout(
+                    margin=dict(l=20, r=20, t=40, b=100),
+                    yaxis_title='Propietario',
+                    xaxis_title='Total Matrículas',
+                    legend_title='Mes',
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=-0.35,
+                        xanchor="center",
+                        x=0.5
+                    )
+                )
+                fig.update_traces(textposition='outside', textfont_size=14)
+            else:
+                fig = px.bar(
+                    df_bar,
+                    x='mes',
+                    y='Total Matrículas',
+                    color='propietario_display',
+                    barmode='group',
+                    text='Total Matrículas',
+                    title='Distribución Mensual de Matrículas por Propietario',
+                    width=width,
+                    height=height
+                )
+                fig.update_traces(textposition='outside')
+                fig.update_layout(
+                    xaxis_title="Mes",
+                    yaxis_title="Total Matrículas",
+                    margin=dict(l=20, r=20, t=40, b=140),
+                    xaxis=dict(categoryorder='array', categoryarray=orden_mes_filtrado),
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=-0.5,
+                        xanchor="center",
+                        x=0.5,
+                        bgcolor="rgba(255,255,255,0.95)",
+                        bordercolor="lightgray",
+                        borderwidth=1
+                    )
+                )
+
             st.plotly_chart(fig)
 
         else:
