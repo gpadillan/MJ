@@ -67,7 +67,7 @@ def app():
         if propietario_seleccionado != "Todos":
             df_filtrado = df_filtrado[df_filtrado["propietario"] == propietario_seleccionado]
 
-    # ==== TOTAL DE LEADS POR MES Y POR PROGRAMA LADO A LADO ====
+    # ==== TOTAL DE LEADS POR MES Y PROGRAMA (LADO A LADO) ====
     leads_por_mes = df_filtrado.groupby(["mes_anio", "mes_num", "anio"]).size().reset_index(name="Cantidad")
     leads_por_mes = leads_por_mes.sort_values(["anio", "mes_num"])
     leads_por_mes["Mes"] = leads_por_mes["mes_anio"]
@@ -104,14 +104,16 @@ def app():
         )
 
     col1, col2 = st.columns(2)
+
     with col1:
         st.subheader("📆 Total de Leads por Mes")
         st.plotly_chart(fig_leads, use_container_width=True)
 
     with col2:
-        st.subheader("📘 Total de Leads por Programa")
         conteo_programas = df_filtrado["programa"].value_counts().reset_index()
         conteo_programas.columns = ["Programa", "Cantidad"]
+        total_programas = conteo_programas["Cantidad"].sum()
+        st.subheader(f"📘 Total de Leads por Programa – TOTAL: {total_programas}")
         st.dataframe(conteo_programas.style.background_gradient(cmap="Blues"), use_container_width=True)
 
     # ==== TOTAL LEADS POR PROPIETARIO ====
