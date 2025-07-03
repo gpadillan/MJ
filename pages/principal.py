@@ -90,19 +90,23 @@ def principal_page():
     importes_por_mes = {}
     estados = {}
 
+    # === VENTAS ===
     if os.path.exists(VENTAS_FILE):
         df_ventas = pd.read_excel(VENTAS_FILE)
         if "fecha de cierre" in df_ventas.columns:
             df_ventas['fecha de cierre'] = pd.to_datetime(df_ventas['fecha de cierre'], dayfirst=True, errors='coerce')
             df_ventas = df_ventas.dropna(subset=['fecha de cierre'])
             df_ventas = df_ventas[df_ventas['fecha de cierre'].dt.year == anio_actual]
-            total_matriculas = len(df_ventas)
+
+            total_matriculas = df_ventas.shape[0]  # 🔁 CORREGIDO: Total del año completo
+
             df_ventas['mes'] = df_ventas['fecha de cierre'].dt.month
             for m in range(1, mes_actual + 1):
                 df_mes = df_ventas[df_ventas['mes'] == m]
                 matriculas_por_mes[m] = len(df_mes)
                 importes_por_mes[m] = df_mes.get('importe', pd.Series(0)).sum()
 
+    # === PREVENTAS ===
     if os.path.exists(PREVENTAS_FILE):
         df_preventas = pd.read_excel(PREVENTAS_FILE)
         total_preventas = len(df_preventas)
@@ -110,6 +114,7 @@ def principal_page():
         if columnas_importe:
             total_preventas_importe = df_preventas[columnas_importe].sum(numeric_only=True).sum()
 
+    # === GESTIÓN DE COBRO ===
     if os.path.exists(GESTION_FILE):
         df_gestion = pd.read_excel(GESTION_FILE)
 
@@ -132,6 +137,7 @@ def principal_page():
                 df_estado_totales["Total"] = df_estado_totales.sum(axis=1)
                 estados = df_estado_totales["Total"].to_dict()
 
+    # === ADMISIONES ===
     st.markdown("## 📥 Admisiones")
     st.markdown(f"### 📅 Matrículas por Mes ({anio_actual})")
 
@@ -140,9 +146,8 @@ def principal_page():
         for m in range(1, mes_actual + 1)
     ]
     for i in range(0, len(meses), 4):
-        current_row = meses[i:i+4]
-        cols = st.columns(len(current_row))
-        for j, (mes, matriculas, importe) in enumerate(current_row):
+        cols = st.columns(4)
+        for j, (mes, matriculas, importe) in enumerate(meses[i:i+4]):
             cols[j].markdown(render_info_card(mes, matriculas, importe), unsafe_allow_html=True)
 
     st.markdown("### Total General")
@@ -150,6 +155,7 @@ def principal_page():
     col1.markdown(render_info_card("Matrículas Totales", total_matriculas, f"{sum(importes_por_mes.values()):,.2f}".replace(",", "."), "#c8e6c9"), unsafe_allow_html=True)
     col2.markdown(render_info_card("Preventas", total_preventas, f"{total_preventas_importe:,.2f}".replace(",", "."), "#ffe0b2"), unsafe_allow_html=True)
 
+    # === COBRO ===
     if estados:
         st.markdown("---")
         st.markdown("## 💼 Gestión de Cobro")
@@ -163,6 +169,7 @@ def principal_page():
                     unsafe_allow_html=True
                 )
 
+    # === ACADÉMICA ===
     if "academica_excel_data" in st.session_state:
         data = st.session_state["academica_excel_data"]
         hoja = "CONSOLIDADO ACADÉMICO"
@@ -197,6 +204,7 @@ def principal_page():
                 st.warning("⚠️ Error al procesar los indicadores académicos.")
                 st.exception(e)
 
+    # === DESARROLLO PROFESIONAL ===
     st.markdown("---")
     st.markdown("## 🔧 Indicadores de Desarrollo Profesional")
     try:
