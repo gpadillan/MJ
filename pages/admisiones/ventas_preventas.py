@@ -39,7 +39,6 @@ def app():
         total_preventas_importe = 0
         total_preventas_count = 0
 
-    # Conversión robusta de fechas
     if 'fecha de cierre' in df_ventas.columns:
         df_ventas['fecha de cierre'] = pd.to_datetime(
             df_ventas['fecha de cierre'],
@@ -159,47 +158,72 @@ def app():
                 lambda row: f"{row['propietario']} ({row['Total Matrículas']})", axis=1
             )
             resumen = resumen.merge(totales_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
+
             orden_propietarios = totales_propietario.sort_values(by='Total Matrículas', ascending=False)['propietario_display'].tolist()
             orden_masters = resumen.groupby('nombre')['Total Matrículas'].sum().sort_values(ascending=False).index.tolist()
 
-            fig = px.scatter(
-                resumen,
-                x='nombre',
-                y='propietario_display',
-                size='Total Matrículas',
-                color='propietario_display',
-                text='Total Matrículas',
-                size_max=60,
-                width=width,
-                height=height if not is_mobile else 1100
-            )
-
-            fig.update_traces(
-                textposition='middle center',
-                textfont_size=12,
-                textfont_color='white',
-                marker=dict(line=dict(color='black', width=1.2))
-            )
-
-            fig.update_layout(
-                xaxis_title='Máster',
-                yaxis_title='Propietario',
-                legend_title='Propietario (Total)',
-                margin=dict(l=20, r=20, t=40, b=100 if is_mobile else 40),
-                legend=dict(
-                    orientation="h" if is_mobile else "v",
-                    yanchor="bottom" if is_mobile else "top",
-                    y=-0.35 if is_mobile else 0.98,
-                    xanchor="center" if is_mobile else "left",
-                    x=0.5 if is_mobile else 1.02,
-                    bgcolor='rgba(255,255,255,0.95)',
-                    bordercolor='lightgray',
-                    borderwidth=1
+            if is_mobile:
+                fig = px.bar(
+                    resumen,
+                    x='Total Matrículas',
+                    y='nombre',
+                    color='propietario_display',
+                    orientation='h',
+                    text='Total Matrículas',
+                    width=width,
+                    height=height + 400,
+                    title='Matrículas por Programa (Vista Móvil)'
                 )
-            )
-
-            fig.update_yaxes(categoryorder='array', categoryarray=orden_propietarios[::-1])
-            fig.update_xaxes(categoryorder='array', categoryarray=orden_masters)
+                fig.update_layout(
+                    margin=dict(l=20, r=20, t=40, b=120),
+                    yaxis_title='Programa',
+                    xaxis_title='Total Matrículas',
+                    legend_title='Propietario',
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=-0.35,
+                        xanchor="center",
+                        x=0.5
+                    )
+                )
+                fig.update_traces(textposition='outside', textfont_size=13)
+            else:
+                fig = px.scatter(
+                    resumen,
+                    x='nombre',
+                    y='propietario_display',
+                    size='Total Matrículas',
+                    color='propietario_display',
+                    text='Total Matrículas',
+                    size_max=60,
+                    width=width,
+                    height=height
+                )
+                fig.update_traces(
+                    textposition='middle center',
+                    textfont_size=12,
+                    textfont_color='white',
+                    marker=dict(line=dict(color='black', width=1.2))
+                )
+                fig.update_layout(
+                    xaxis_title='Máster',
+                    yaxis_title='Propietario',
+                    legend_title='Propietario (Total)',
+                    margin=dict(l=20, r=20, t=40, b=80),
+                    legend=dict(
+                        orientation="v",
+                        yanchor="top",
+                        y=0.98,
+                        xanchor="left",
+                        x=1.02,
+                        bgcolor='rgba(255,255,255,0.95)',
+                        bordercolor='lightgray',
+                        borderwidth=1
+                    )
+                )
+                fig.update_yaxes(categoryorder='array', categoryarray=orden_propietarios[::-1])
+                fig.update_xaxes(categoryorder='array', categoryarray=orden_masters)
 
             st.plotly_chart(fig)
 
