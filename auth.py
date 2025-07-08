@@ -5,7 +5,7 @@ USUARIOS = {
     "admin": {"password": "admin", "role": "admin"},
     "AntonioM": {"password": "Mainjobs=50-", "role": "viewer"},
     "JorgeG": {"password": "Mainjobs=50-", "role": "viewer"},
-    "Juanantonio": {"password": "Mainjobs=50-", "role": "viewer"},
+    "PalomaS": {"password": "Mainjobs=50-", "role": "viewer"},
     "GabrielAles": {"password": "Mainjobs=50-", "role": "viewer"},
     "SusanaPerez": {"password": "Mainjobs=50-", "role": "viewer"},
 }
