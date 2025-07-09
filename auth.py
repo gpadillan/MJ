@@ -8,6 +8,11 @@ USUARIOS = {
     "GabrielAles": {"password": "Mainjobs=50-", "role": "viewer"},
     "SusanaPerez": {"password": "Mainjobs=50-", "role": "viewer"},
     "PalomaS": {"password": "Mainjobs=50-", "role": "viewer"},
+    "AlejandroR": {"password": "Mainjobs$14-", "role": "viewer"},
+    "AguaS": {"password": "Mainjobs$18-", "role": "viewer"},
+    "LauraR": {"password": "Mainjobs$19-", "role": "viewer"},
+    "IsabelJ": {"password": "Mainjobs$22-", "role": "viewer"},
+    "RobertoA": {"password": "Mainjobs$16-", "role": "viewer"},
 }
 
 # Función para verificar credenciales
