@@ -86,14 +86,16 @@ def render(df):
     with col3:
         st.metric(label="⏳ VENCIDA GE", value=total_ejecucion_pasada)
     with col4:
-        # Usamos HTML para ajustar tamaño del texto del riesgo económico
         st.markdown(
-            f"""
-            <div style='font-size:1.2em; font-weight: bold;'>🔴 DEVOLUCIÓN GE</div>
-            <div style='font-size:2em; font-weight: bold;'>{total_devoluciones} <small style='font-size:0.7em'>({riesgo_devolucion_str})</small></div>
-            """,
-            unsafe_allow_html=True
-        )
+        f"""
+        <div style='text-align:center'>
+            <div style='font-size:1.1em;'>🔴 DEVOLUCIÓN GE</div>
+            <div style='font-size:1.9em'>{total_devoluciones} <span style='font-size:0.75em; color:gray;'>({riesgo_devolucion_str})</span></div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 
     st.markdown("---")
 
