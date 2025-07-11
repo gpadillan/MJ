@@ -77,25 +77,32 @@ def render(df):
     total_riesgo_devolucion = df_devolucion['RIESGO ECONÓMICO'].sum()
     riesgo_devolucion_str = f"{total_riesgo_devolucion:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
 
-    # 🔢 MÉTRICAS
+    # 🔢 MÉTRICAS UNIFORMES
     col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric(label="📌 ALUMNO RIESGO TRIM", value=total_alumnos)
-    with col2:
-        st.metric(label="💰 RIESGO ECONÓMICO", value=suma_riesgo_str)
-    with col3:
-        st.metric(label="⏳ VENCIDA GE", value=total_ejecucion_pasada)
-    with col4:
-        st.markdown(
-        f"""
-        <div style='text-align:center'>
-            <div style='font-size:1.1em;'>🔴 DEVOLUCIÓN GE</div>
-            <div style='font-size:1.9em'>{total_devoluciones} <span style='font-size:0.75em; color:gray;'>({riesgo_devolucion_str})</span></div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
 
+    with col1:
+        with st.container():
+            st.metric(label="📌 ALUMNO RIESGO TRIM", value=total_alumnos)
+
+    with col2:
+        with st.container():
+            st.metric(label="💰 RIESGO ECONÓMICO", value=suma_riesgo_str)
+
+    with col3:
+        with st.container():
+            st.metric(label="⏳ VENCIDA GE", value=total_ejecucion_pasada)
+
+    with col4:
+        with st.container():
+            st.markdown(
+                f"""
+                <div style='text-align:center; padding-top: 12px'>
+                    <div style='font-size:1.1em;'>🔴 DEVOLUCIÓN GE</div>
+                    <div style='font-size:1.9em'>{total_devoluciones} <span style='font-size:0.75em; color:gray;'>({riesgo_devolucion_str})</span></div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
     st.markdown("---")
 
