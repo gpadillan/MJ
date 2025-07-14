@@ -215,7 +215,7 @@ def principal_page():
 
     # === DESARROLLO PROFESIONAL ===
     st.markdown("---")
-    st.markdown("## 🔧 Indicadores de Desarrollo Profesional")
+    st.markdown("## 🔧 Indicadores de Empleo")
     try:
         df = df_dev
         df['CONSECUCIÓN_BOOL'] = df['CONSECUCIÓN GE'].astype(str).str.upper() == 'TRUE'
