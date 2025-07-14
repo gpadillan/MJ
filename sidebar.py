@@ -9,10 +9,10 @@ def show_sidebar():
         st.markdown("### 📂 Navegación")
 
         nav_items = {
-            "Área Principal": "Principal",  # ✅ Agregada
+            "Área Principal": "Principal",         # ✅ Agregada
             "Área de Admisiones": "Admisiones",
             "Área Académica": "Academica",
-            "Área Desarrollo Profesional": "Desarrollo",
+            "Área de Empleo": "Desarrollo",        # 🔁 Modificado aquí
             "Área Gestión de Cobro": "Gestión de Cobro"
         }
 
