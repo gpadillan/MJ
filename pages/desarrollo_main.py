@@ -4,7 +4,7 @@ import gspread
 from google.oauth2 import service_account
 from datetime import datetime
 
-# ✅ FUNCIÓN PARA CARGAR GOOGLE SHEET CON CACHÉ
+# ✅ FUNCIÓN PARA CARGAR GOOGLE SHEET CON CACHÉ Y LIMPIEZA DE ENCABEZADOS
 @st.cache_data
 def cargar_google_sheet():
     try:
@@ -16,16 +16,28 @@ def cargar_google_sheet():
         client = gspread.authorize(credentials)
         sheet = client.open_by_key("1CPhL56knpvaYZznGF-YgIuHWWCWPtWGpkSgbf88GJFQ")
         worksheet = sheet.get_worksheet(0)
-        data = worksheet.get_all_records()
-        return pd.DataFrame(data)
+
+        # ✅ Obtener todos los valores y limpiar encabezados
+        values = worksheet.get_all_values()
+        headers = [col.strip() for col in values[0]]
+        df = pd.DataFrame(values[1:], columns=headers)
+
+        # ✅ Detectar y eliminar columnas duplicadas
+        duplicadas = df.columns[df.columns.duplicated()]
+        if not duplicadas.empty:
+            st.warning(f"⚠️ Columnas duplicadas detectadas y eliminadas: {duplicadas.tolist()}")
+            df = df.loc[:, ~df.columns.duplicated()]
+
+        return df
+
     except Exception as e:
         st.error(f"❌ Error al cargar los datos: {e}")
         return None
 
+# ✅ FUNCIÓN PRINCIPAL DE LA PÁGINA
 def desarrollo_page():
     fecha_actual = datetime.today().strftime("%d/%m/%Y")
 
-    # ✅ BOTÓN DE RECARGA QUE BORRA LA CACHÉ Y ACTUALIZA DATOS
     if st.button("🔄 Recargar datos desde Google Sheets"):
         st.cache_data.clear()
         st.rerun()
