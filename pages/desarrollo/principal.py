@@ -1,8 +1,9 @@
+import os
+import tempfile
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-import os
 from datetime import datetime
 
 UPLOAD_FOLDER = "uploaded_admisiones"
@@ -19,7 +20,7 @@ def clean_headers(df):
     return df
 
 def render(df=None):
-    st.title("📊 Principal - Área de Desarrollo Profesional")
+    st.title("📊 Principal - Área de Empleo")
 
     if df is None:
         if not os.path.exists(ARCHIVO_DESARROLLO):
@@ -101,7 +102,7 @@ def render(df=None):
             line=dict(color='black', width=1.5)
         ),
         text=y_data,
-        textposition='none'  # No texto automático, lo haremos manual
+        textposition='none'
     ))
 
     for x, y in zip(x_data, y_data):
