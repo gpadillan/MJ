@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 import plotly.express as px
+from datetime import datetime
 
 def render_card(title, value, color):
     return f"""
@@ -11,74 +12,66 @@ def render_card(title, value, color):
     """
 
 def render(df):
-    st.title("📁 Informe de Cierre de Expedientes")
+    st.title("Informe de Cierre de Expedientes")
 
-    # Normalización de columnas
     df.columns = df.columns.str.strip().str.upper()
 
-    columnas_requeridas = [
-        'CONSECUCIÓN GE', 'DEVOLUCIÓN GE', 'INAPLICACIÓN GE',
-        'MODALIDAD PRÁCTICAS', 'CONSULTOR EIP', 'PRÁCTCAS/GE',
-        'EMPRESA PRÁCT.', 'EMPRESA GE', 'AREA', 'AÑO',
-        'NOMBRE', 'APELLIDOS'
-    ]
+    columnas_requeridas = ['CONSECUCIÓN GE', 'DEVOLUCIÓN GE', 'INAPLICACIÓN GE',
+                           'MODALIDAD PRÁCTICAS', 'CONSULTOR EIP', 'PRÁCTCAS/GE',
+                           'EMPRESA PRÁCT.', 'EMPRESA GE', 'AREA', 'AÑO', 'NOMBRE', 'APELLIDOS']
     if not all(col in df.columns for col in columnas_requeridas):
-        st.error("❌ Faltan columnas requeridas.")
+        st.error("Faltan columnas requeridas en el DataFrame.")
         return
 
-    # Limpieza básica
-    for col in ['PRÁCTCAS/GE', 'EMPRESA PRÁCT.', 'EMPRESA GE', 'AREA', 'NOMBRE', 'APELLIDOS']:
-        df[col] = df[col].astype(str).str.strip().str.upper()
-
+    df['PRÁCTCAS/GE'] = df['PRÁCTCAS/GE'].astype(str).str.strip().str.upper()
+    df['EMPRESA PRÁCT.'] = df['EMPRESA PRÁCT.'].astype(str).str.strip().str.upper()
+    df['EMPRESA GE'] = df['EMPRESA GE'].astype(str).str.strip().str.upper()
+    df['AREA'] = df['AREA'].astype(str).str.strip().str.upper()
+    df['AÑO'] = pd.to_numeric(df['AÑO'], errors='coerce')
+    df['NOMBRE'] = df['NOMBRE'].astype(str).str.strip().str.upper()
+    df['APELLIDOS'] = df['APELLIDOS'].astype(str).str.strip().str.upper()
     df['CONSULTOR EIP'] = df['CONSULTOR EIP'].astype(str).str.strip().replace('', 'Otros').fillna('Otros')
     df = df[df['CONSULTOR EIP'].str.upper() != 'NO ENCONTRADO']
-    df['AÑO'] = pd.to_numeric(df['AÑO'], errors='coerce')
 
-    # Columnas booleanas
-    df['CONSECUCIÓN_BOOL'] = df['CONSECUCIÓN GE'].astype(str).str.upper() == 'TRUE'
-    df['INAPLICACIÓN_BOOL'] = df['INAPLICACIÓN GE'].astype(str).str.upper() == 'TRUE'
-    df['DEVOLUCIÓN_BOOL'] = df['DEVOLUCIÓN GE'].astype(str).str.upper() == 'TRUE'
+    df['CONSECUCIÓN_BOOL'] = df['CONSECUCIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
+    df['INAPLICACIÓN_BOOL'] = df['INAPLICACIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
+    df['DEVOLUCIÓN_BOOL'] = df['DEVOLUCIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
 
-    # Selector de año o total
     anios_disponibles = sorted(df['AÑO'].dropna().unique().astype(int))
-    opciones = [f"Cierre Expediente Año {a}" for a in anios_disponibles] + ["Cierre Expediente Total"]
-    opcion = st.selectbox("Selecciona el tipo de informe:", opciones)
+    opciones_informe = [f"Cierre Expediente Año {a}" for a in anios_disponibles] + ["Cierre Expediente Total"]
+    opcion = st.selectbox("Selecciona el tipo de informe:", opciones_informe)
 
     df_base = df.copy() if "Total" in opcion else df[df['AÑO'] == int(opcion.split()[-1])].copy()
-
-    # Filtro por consultores
-    consultores = sorted(df_base['CONSULTOR EIP'].dropna().unique())
-    seleccion_consultores = st.multiselect("Filtrar por Consultor:", options=consultores, default=consultores)
+    consultores_unicos = sorted(df_base['CONSULTOR EIP'].dropna().unique())
+    seleccion_consultores = st.multiselect("Filtrar por Consultor:", options=consultores_unicos, default=consultores_unicos)
     df_filtrado = df_base[df_base['CONSULTOR EIP'].isin(seleccion_consultores)]
 
-    # Condición para prácticas efectivas
     df_filtrado['PRACTICAS_BOOL'] = (
         (df_filtrado['PRÁCTCAS/GE'] == 'GE') &
         (~df_filtrado['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])) &
-        (df_filtrado['CONSECUCIÓN GE'].astype(str).str.upper() == 'FALSE') &
-        (df_filtrado['DEVOLUCIÓN GE'].astype(str).str.upper() == 'FALSE') &
-        (df_filtrado['INAPLICACIÓN GE'].astype(str).str.upper() == 'FALSE')
+        (df_filtrado['CONSECUCIÓN GE'].astype(str).str.strip().str.upper() == 'FALSE') &
+        (df_filtrado['DEVOLUCIÓN GE'].astype(str).str.strip().str.upper() == 'FALSE') &
+        (df_filtrado['INAPLICACIÓN GE'].astype(str).str.strip().str.upper() == 'FALSE')
     )
 
-    # Métricas superiores
     total_consecucion = df_filtrado['CONSECUCIÓN_BOOL'].sum()
     total_inaplicacion = df_filtrado['INAPLICACIÓN_BOOL'].sum()
     total_empresa_ge = df_filtrado['EMPRESA GE'][~df_filtrado['EMPRESA GE'].isin(['', 'NO ENCONTRADO'])].shape[0]
     total_empresa_pract = df_filtrado['EMPRESA PRÁCT.'][~df_filtrado['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])].shape[0]
 
-    # Tarjetas métricas
-    col1, col2, col3 = st.columns(3)
-    if "Total" in opcion:
-        col1.markdown(render_card("CONSECUCIÓN", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
-        col2.markdown(render_card("INAPLICACIÓN", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
-        col3.markdown(render_card("Alumnado total en PRÁCTICAS", total_empresa_ge, "#ede7f6"), unsafe_allow_html=True)
-    else:
-        anio = opcion.split()[-1]
-        col1.markdown(render_card(f"CONSECUCIÓN {anio}", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
-        col2.markdown(render_card(f"INAPLICACIÓN {anio}", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
-        col3.markdown(render_card("Alumnado PRÁCTICAS", total_empresa_pract, "#f3e5f5"), unsafe_allow_html=True)
+    with st.container():
+        if "Total" in opcion:
+            col1, col2, col3 = st.columns(3)
+            col1.markdown(render_card("CONSECUCIÓN", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
+            col2.markdown(render_card("INAPLICACIÓN", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
+            col3.markdown(render_card("Alumnado total en PRÁCTICAS", total_empresa_ge, "#ede7f6"), unsafe_allow_html=True)
+        else:
+            anio = opcion.split()[-1]
+            col1, col2, col3 = st.columns(3)
+            col1.markdown(render_card(f"CONSECUCIÓN {anio}", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
+            col2.markdown(render_card(f"INAPLICACIÓN {anio}", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
+            col3.markdown(render_card("Alumnado PRÁCTICAS", total_empresa_pract, "#f3e5f5"), unsafe_allow_html=True)
 
-    # Pie chart: Cierres por consultor
     st.markdown("### Cierres gestionados por Consultor")
     df_cierre = pd.concat([
         df_filtrado[df_filtrado['CONSECUCIÓN_BOOL']][['CONSULTOR EIP']].assign(CIERRE='CONSECUCIÓN'),
@@ -90,24 +83,23 @@ def render(df):
     fig_pie.update_traces(textinfo='label+value')
     st.plotly_chart(fig_pie, use_container_width=True)
 
-    # Filtro por área
     st.markdown("### Empresas por ÁREA")
     areas_disponibles = ['TODAS'] + sorted(df_filtrado['AREA'].dropna().unique())
     area_seleccionada = st.selectbox("Filtrar empresas por área:", areas_disponibles)
     df_empresas = df_filtrado if area_seleccionada == 'TODAS' else df_filtrado[df_filtrado['AREA'] == area_seleccionada]
 
-    # Resumen por área
     st.markdown("### Resumen por ÁREA")
     df_valid_area = df_empresas[df_empresas['AREA'] != '']
+    df_valid_area_pract = df_valid_area.copy()
+
     resumen_area = pd.DataFrame()
     resumen_area['TOTAL CONSECUCIÓN'] = df_valid_area[df_valid_area['CONSECUCIÓN_BOOL']].groupby('AREA').size()
     resumen_area['TOTAL INAPLICACIÓN'] = df_valid_area[df_valid_area['INAPLICACIÓN_BOOL']].groupby('AREA').size()
     if "Total" in opcion:
-        resumen_area['TOTAL PRÁCTICAS'] = df_valid_area[df_valid_area['PRACTICAS_BOOL']].groupby('AREA').size()
+        resumen_area['TOTAL PRÁCTICAS'] = df_valid_area_pract[df_valid_area_pract['PRACTICAS_BOOL']].groupby('AREA').size()
 
     resumen_area = resumen_area.fillna(0).astype(int).sort_values(by='TOTAL CONSECUCIÓN', ascending=False).reset_index()
 
-    # Totales
     total_row = {
         'AREA': 'Total',
         'TOTAL CONSECUCIÓN': resumen_area['TOTAL CONSECUCIÓN'].sum(),
@@ -126,7 +118,6 @@ def render(df):
 
     st.dataframe(styled_area, use_container_width=True)
 
-    # Tablas por empresa
     col_emp1, col_emp2 = st.columns(2)
     with col_emp1:
         st.markdown("#### Tabla: EMPRESA GE")
@@ -139,7 +130,6 @@ def render(df):
         empresa_pract.columns = ['EMPRESA PRÁCT.', 'EMPLEOS']
         st.dataframe(empresa_pract.style.background_gradient(subset=['EMPLEOS'], cmap='PuBu'), use_container_width=True)
 
-    # Objetivos globales
     df_validos = df[(df['NOMBRE'] != 'NO ENCONTRADO') & (df['APELLIDOS'] != 'NO ENCONTRADO')]
     total_alumnado_objetivo = df_validos[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0]
 
