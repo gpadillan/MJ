@@ -3,8 +3,8 @@ import pandas as pd
 import gspread
 from google.oauth2 import service_account
 from datetime import datetime
+from pages.desarrollo.principal import clean_headers  # 👈 Importamos la limpieza
 
-# ✅ FUNCIÓN PARA CARGAR GOOGLE SHEET CON CACHÉ Y LIMPIEZA DE ENCABEZADOS
 @st.cache_data
 def cargar_google_sheet():
     try:
@@ -17,16 +17,11 @@ def cargar_google_sheet():
         sheet = client.open_by_key("1CPhL56knpvaYZznGF-YgIuHWWCWPtWGpkSgbf88GJFQ")
         worksheet = sheet.get_worksheet(0)
 
-        # ✅ Obtener todos los valores y limpiar encabezados
         values = worksheet.get_all_values()
         headers = [col.strip() for col in values[0]]
         df = pd.DataFrame(values[1:], columns=headers)
 
-        # ✅ Detectar y eliminar columnas duplicadas
-        duplicadas = df.columns[df.columns.duplicated()]
-        if not duplicadas.empty:
-            st.warning(f"⚠️ Columnas duplicadas detectadas y eliminadas: {duplicadas.tolist()}")
-            df = df.loc[:, ~df.columns.duplicated()]
+        df = clean_headers(df)  # 👈 Aplicamos limpieza robusta
 
         return df
 
@@ -34,7 +29,6 @@ def cargar_google_sheet():
         st.error(f"❌ Error al cargar los datos: {e}")
         return None
 
-# ✅ FUNCIÓN PRINCIPAL DE LA PÁGINA
 def desarrollo_page():
     fecha_actual = datetime.today().strftime("%d/%m/%Y")
 

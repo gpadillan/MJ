@@ -61,7 +61,7 @@ def render(df):
         (df_resultado['EJECUCIÓN GARANTÍA'].notna()) & (df_resultado['EJECUCIÓN GARANTÍA'] < hoy)
     ].shape[0]
 
-    # 🔴 Devolución GE
+    # 🔴 DEVOLUCIÓN GE ANALYSIS
     df_devolucion = df[df['DEVOLUCIÓN GE'].astype(str).str.lower().str.strip() == 'true'].copy()
     df_devolucion['RIESGO ECONÓMICO'] = (
         df_devolucion['RIESGO ECONÓMICO']
@@ -77,20 +77,32 @@ def render(df):
     total_riesgo_devolucion = df_devolucion['RIESGO ECONÓMICO'].sum()
     riesgo_devolucion_str = f"{total_riesgo_devolucion:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
 
-    # 🔢 Métricas
+    # 🔢 MÉTRICAS UNIFORMES
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("📌 ALUMNO RIESGO TRIM", total_alumnos)
-    col2.metric("💰 RIESGO ECONÓMICO", suma_riesgo_str)
-    col3.metric("⏳ VENCIDA GE", total_ejecucion_pasada)
-    col4.markdown(
-        f"""
-        <div style='text-align:center; padding-top: 12px'>
-            <div style='font-size:1.1em;'>🔴 DEVOLUCIÓN GE</div>
-            <div style='font-size:1.9em'>{total_devoluciones} <span style='font-size:0.75em; color:gray;'>({riesgo_devolucion_str})</span></div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+
+    with col1:
+        with st.container():
+            st.metric(label="📌 ALUMNO RIESGO TRIM", value=total_alumnos)
+
+    with col2:
+        with st.container():
+            st.metric(label="💰 RIESGO ECONÓMICO", value=suma_riesgo_str)
+
+    with col3:
+        with st.container():
+            st.metric(label="⏳ VENCIDA GE", value=total_ejecucion_pasada)
+
+    with col4:
+        with st.container():
+            st.markdown(
+                f"""
+                <div style='text-align:center; padding-top: 12px'>
+                    <div style='font-size:1.1em;'>🔴 DEVOLUCIÓN GE</div>
+                    <div style='font-size:1.9em'>{total_devoluciones} <span style='font-size:0.75em; color:gray;'>({riesgo_devolucion_str})</span></div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
     st.markdown("---")
 
@@ -108,7 +120,6 @@ def render(df):
         fig.update_traces(textinfo='label+value')
         st.plotly_chart(fig, use_container_width=True)
 
-        # Tabla alumnos en riesgo
         st.markdown("### 📋 Detalle de alumnos en riesgo")
         columnas_tabla = ['NOMBRE', 'APELLIDOS', 'CONSULTOR EIP', 'AREA', 'RIESGO ECONÓMICO']
         df_resultado_vista = df_resultado[columnas_tabla].copy()
@@ -117,7 +128,6 @@ def render(df):
         )
         st.dataframe(df_resultado_vista, use_container_width=True)
 
-        # Tabla devoluciones
         st.markdown("### 🔴 Detalle de alumnos con DEVOLUCIÓN GE")
         columnas_devolucion = ['NOMBRE', 'APELLIDOS', 'AREA', 'RIESGO ECONÓMICO']
         df_devolucion_vista = df_devolucion[columnas_devolucion].copy()
