@@ -31,7 +31,7 @@ def desarrollo_page():
         st.rerun()
 
     st.markdown(
-        f"<h1>🚀 Área Desarrollo Profesional <span style='font-size:18px; color: gray;'>🗓️ {fecha_actual}</span></h1>",
+        f"<h1>🚀 Área de Empleo <span style='font-size:18px; color: gray;'>🗓️ {fecha_actual}</span></h1>",
         unsafe_allow_html=True
     )
 
