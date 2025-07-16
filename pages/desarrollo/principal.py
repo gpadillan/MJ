@@ -19,7 +19,7 @@ def clean_headers(df):
     return df
 
 def render(df=None):
-    st.title("📊 Principal - Área de Desarrollo Profesional")
+    st.title("📊 Principal - Área de Empleo")
 
     if df is None:
         if not os.path.exists(ARCHIVO_DESARROLLO):
