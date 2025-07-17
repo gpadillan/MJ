@@ -5,6 +5,9 @@ from datetime import datetime
 from pages.academica.sharepoint_utils import get_access_token, get_site_id, download_excel
 from google.oauth2 import service_account
 import gspread
+from streamlit_folium import folium_static
+import folium
+from utils.geo_utils import normalize_text, PROVINCIAS_COORDS, PAISES_COORDS, geolocalizar_pais
 
 # === UTILS ===
 def format_euro(value):
@@ -111,7 +114,7 @@ def principal_page():
                 matriculas_por_mes[m] = len(df_mes)
                 importes_por_mes[m] = df_mes['importe'].sum()
 
-        # === PREVENTAS ===
+    # === PREVENTAS ===
     if os.path.exists(PREVENTAS_FILE):
         df_preventas = pd.read_excel(PREVENTAS_FILE)
         df_preventas.columns = df_preventas.columns.str.strip().str.lower()
@@ -242,3 +245,61 @@ def principal_page():
     except Exception as e:
         st.warning("⚠️ No se pudieron cargar los indicadores de Desarrollo Profesional.")
         st.exception(e)
+
+    # === MAPA ===
+    st.markdown("---")
+    st.markdown("## 🌍 Mapa de Alumnos (España + Internacional)")
+
+    if 'excel_data' not in st.session_state or st.session_state['excel_data'] is None:
+        st.warning("⚠️ No hay archivo cargado desde deuda.")
+    else:
+        df_mapa = st.session_state['excel_data']
+        required_cols = ['Cliente', 'Provincia', 'País']
+        if not all(col in df_mapa.columns for col in required_cols):
+            st.error("❌ El archivo debe tener columnas: Cliente, Provincia, País.")
+        else:
+            if "coords_cache" not in st.session_state:
+                st.session_state["coords_cache"] = {}
+
+            df_u = df_mapa.drop_duplicates(subset=['Cliente', 'Provincia', 'País']).copy()
+            df_u['Provincia'] = df_u['Provincia'].apply(normalize_text)
+            df_u['País'] = df_u['País'].apply(normalize_text)
+
+            df_esp = df_u[df_u['Provincia'].isin(PROVINCIAS_COORDS)]
+            df_ext = df_u[~df_u['Provincia'].isin(PROVINCIAS_COORDS)]
+
+            count_prov = df_esp['Provincia'].value_counts().reset_index()
+            count_prov.columns = ['Entidad', 'Alumnos']
+
+            count_pais = df_ext['País'].value_counts().reset_index()
+            count_pais.columns = ['Entidad', 'Alumnos']
+
+            mapa = folium.Map(location=[25, 0], zoom_start=2, width="100%", height="700px", max_bounds=True)
+
+            for _, row in count_prov.iterrows():
+                entidad, alumnos = row['Entidad'], row['Alumnos']
+                coords = PROVINCIAS_COORDS.get(entidad)
+                if coords:
+                    folium.Marker(
+                        location=coords,
+                        popup=f"<b>{entidad}</b><br>Alumnos: {alumnos}",
+                        tooltip=f"{entidad} ({alumnos})",
+                        icon=folium.Icon(color="blue", icon="user", prefix="fa")
+                    ).add_to(mapa)
+
+            for _, row in count_pais.iterrows():
+                entidad, alumnos = row['Entidad'], row['Alumnos']
+                coords = PAISES_COORDS.get(entidad) or st.session_state["coords_cache"].get(entidad)
+                if not coords:
+                    coords = geolocalizar_pais(entidad)
+                    if coords:
+                        st.session_state["coords_cache"][entidad] = coords
+                if coords:
+                    folium.Marker(
+                        location=coords,
+                        popup=f"<b>{entidad}</b><br>Alumnos: {alumnos}",
+                        tooltip=f"{entidad} ({alumnos})",
+                        icon=folium.Icon(color="red", icon="globe", prefix="fa")
+                    ).add_to(mapa)
+
+            folium_static(mapa)
