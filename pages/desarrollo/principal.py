@@ -184,17 +184,21 @@ def render(df=None):
 
     # [...] continúa como antes...
 
-    # --- Mapa al final ---
+        # --- Mapa al final del todo ---
     st.markdown("---")
     st.subheader("🌍 Mapa de Alumnos (España + Internacional)")
 
+    # Solo usar el Excel de 'deuda/gestion_datos.py'
     if 'excel_data' not in st.session_state or st.session_state['excel_data'] is None:
-        st.warning("⚠️ No hay archivo cargado para el mapa.")
+        st.warning("⚠️ Para ver el mapa, primero sube el Excel desde ➜ Deuda > Gestión de Datos.")
         return
 
     df_mapa = st.session_state['excel_data']
-    if not all(col in df_mapa.columns for col in ['Cliente', 'Provincia', 'País']):
-        st.error("❌ El archivo debe tener columnas: Cliente, Provincia, País.")
+
+    columnas_requeridas = ['Cliente', 'Provincia', 'País']
+    if not all(col in df_mapa.columns for col in columnas_requeridas):
+        st.error(f"❌ El archivo debe tener las columnas: {', '.join(columnas_requeridas)}")
+        st.write("📄 Columnas encontradas:", df_mapa.columns.tolist())
         return
 
     if "coords_cache" not in st.session_state:
