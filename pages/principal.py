@@ -248,14 +248,16 @@ def principal_page():
 
     # === MAPA ===
     st.markdown("---")
-    st.markdown("## 🌍 Mapa de Alumnos (España + Internacional)")
 
     if 'excel_data' not in st.session_state or st.session_state['excel_data'] is None:
+        st.markdown("## 🌍 Global Alumnos")
         st.warning("⚠️ No hay archivo cargado desde deuda.")
     else:
         df_mapa = st.session_state['excel_data']
         required_cols = ['Cliente', 'Provincia', 'País']
+
         if not all(col in df_mapa.columns for col in required_cols):
+            st.markdown("## 🌍 Global Alumnos")
             st.error("❌ El archivo debe tener columnas: Cliente, Provincia, País.")
         else:
             if "coords_cache" not in st.session_state:
@@ -273,6 +275,18 @@ def principal_page():
 
             count_pais = df_ext['País'].value_counts().reset_index()
             count_pais.columns = ['Entidad', 'Alumnos']
+
+            total_alumnos = count_prov['Alumnos'].sum() + count_pais['Alumnos'].sum()
+
+            st.markdown(f"""
+                <div style='display: flex; align-items: center; justify-content: space-between;'>
+                    <h3>🌍 Global Alumnos</h3>
+                    <div style='padding: 4px 12px; background-color: #e3f2fd; border-radius: 6px;
+                                font-weight: bold; color: #1565c0;'>
+                        👥 Total: {total_alumnos}
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
 
             mapa = folium.Map(location=[25, 0], zoom_start=2, width="100%", height="700px", max_bounds=True)
 
