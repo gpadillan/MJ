@@ -14,3 +14,5 @@ streamlit-js-eval
 streamlit-aggrid
 pygsheets
 pytz
+streamlit-folium
+geopy
