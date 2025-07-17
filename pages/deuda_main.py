@@ -45,7 +45,7 @@ from pages.deuda import (
     global_,
     pendiente,
     becas_unificado,
-    pendiente_cobro_isa
+    pendiente_cobro_isa,
 )
 
 def deuda_page():
@@ -79,7 +79,7 @@ def deuda_page():
         archivo = st.file_uploader("📤 Sube un archivo Excel", type=["xlsx", "xls"])
         if archivo:
             try:
-                xls = pd.ExcelFile(archivo, engine="openpyxl")  # más eficiente
+                xls = pd.ExcelFile(archivo, engine="openpyxl")
                 df = pd.read_excel(xls, sheet_name=xls.sheet_names[0], dtype=str)
                 hora_local = guardar_marca_tiempo()
 
@@ -118,7 +118,7 @@ def deuda_page():
         "Global",
         "Pendiente Total",
         "Becas ISA - Consolidado",
-        "Pendiente Cobro ISA"
+        "Pendiente Cobro ISA",
     ]
 
     if "subcategoria_deuda" not in st.session_state:
