@@ -317,3 +317,40 @@ def principal_page():
                     ).add_to(mapa)
 
             folium_static(mapa)
+
+
+                        # === RESUMEN POR PROYECTO ===
+            proyecto_col = next((col for col in df_mapa.columns if col.strip().upper() == "PROYECTO"), None)
+
+            if proyecto_col:
+                st.markdown("### 📁 Alumnos por Proyecto")
+
+                alumnos_proyecto = (
+                    df_mapa[["Cliente", proyecto_col]]
+                    .dropna(subset=["Cliente", proyecto_col])
+                    .drop_duplicates()
+                    .sort_values(by=proyecto_col)
+                )
+
+                resumen = alumnos_proyecto.groupby(proyecto_col)["Cliente"].count().reset_index()
+                resumen.columns = ["Proyecto", "Alumnos"]
+
+                for i in range(0, len(resumen), 4):
+                    cols = st.columns(4)
+                    for j, (_, row) in enumerate(resumen.iloc[i:i+4].iterrows()):
+                        cols[j].markdown(
+                            render_import_card(row["Proyecto"], row["Alumnos"], "#fff3e0"),
+                            unsafe_allow_html=True
+                        )
+
+                # Lista detallada por proyecto
+                with st.expander("📋 Ver alumnos por proyecto"):
+                    for proyecto in resumen["Proyecto"]:
+                        alumnos = alumnos_proyecto[alumnos_proyecto[proyecto_col] == proyecto]["Cliente"].sort_values()
+                        st.markdown(f"#### {proyecto} ({len(alumnos)} alumnos)")
+                        for alumno in alumnos:
+                            st.markdown(f"- {alumno}")
+
+            else:
+                st.info("ℹ️ No se encontró la columna 'Proyecto' en el archivo.")
+
