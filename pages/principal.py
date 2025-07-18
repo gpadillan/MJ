@@ -276,7 +276,12 @@ def principal_page():
             count_pais = df_ext['País'].value_counts().reset_index()
             count_pais.columns = ['Entidad', 'Alumnos']
 
-            total_alumnos = count_prov['Alumnos'].sum() + count_pais['Alumnos'].sum()
+            # Usar columna 'PROYECTO' si existe para calcular el total
+            proyecto_col = next((col for col in df_mapa.columns if col.strip().upper() == "PROYECTO"), None)
+            if proyecto_col:
+                total_alumnos = df_mapa[proyecto_col].dropna().nunique()
+            else:
+                total_alumnos = count_prov['Alumnos'].sum() + count_pais['Alumnos'].sum()
 
             st.markdown(f"""
                 <div style='display: flex; align-items: center; justify-content: space-between;'>
@@ -318,16 +323,12 @@ def principal_page():
 
             folium_static(mapa)
 
-
-                        # === RESUMEN POR PROYECTO ===
-            proyecto_col = next((col for col in df_mapa.columns if col.strip().upper() == "PROYECTO"), None)
-
+            # === RESUMEN POR PROYECTO ===
             if proyecto_col:
                 st.markdown("### 📁 Alumnos por Proyecto")
-
                 alumnos_proyecto = (
                     df_mapa[["Cliente", proyecto_col]]
-                    .dropna(subset=["Cliente", proyecto_col])
+                    .dropna(subset=[proyecto_col])
                     .drop_duplicates()
                     .sort_values(by=proyecto_col)
                 )
@@ -343,14 +344,11 @@ def principal_page():
                             unsafe_allow_html=True
                         )
 
-                # Lista detallada por proyecto
                 with st.expander("📋 Ver alumnos por proyecto"):
                     for proyecto in resumen["Proyecto"]:
                         alumnos = alumnos_proyecto[alumnos_proyecto[proyecto_col] == proyecto]["Cliente"].sort_values()
                         st.markdown(f"#### {proyecto} ({len(alumnos)} alumnos)")
                         for alumno in alumnos:
                             st.markdown(f"- {alumno}")
-
             else:
                 st.info("ℹ️ No se encontró la columna 'Proyecto' en el archivo.")
-
