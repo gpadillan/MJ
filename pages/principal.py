@@ -247,110 +247,113 @@ def principal_page():
         st.exception(e)
 
     # === MAPA ===
-st.markdown("---")
+    st.markdown("---")
 
-if 'excel_data' not in st.session_state or st.session_state['excel_data'] is None:
-    st.markdown("## 🌍 Global Alumnos")
-    st.warning("⚠️ No hay archivo cargado desde deuda.")
-else:
-    df_mapa = st.session_state['excel_data']
-    required_cols = ['Cliente', 'Provincia', 'País']
-
-    if not all(col in df_mapa.columns for col in required_cols):
+    if 'excel_data' not in st.session_state or st.session_state['excel_data'] is None:
         st.markdown("## 🌍 Global Alumnos")
-        st.error("❌ El archivo debe tener columnas: Cliente, Provincia, País.")
+        st.warning("⚠️ No hay archivo cargado desde deuda.")
     else:
-        if "coords_cache" not in st.session_state:
-            st.session_state["coords_cache"] = {}
+        df_mapa = st.session_state['excel_data']
+        required_cols = ['Cliente', 'Provincia', 'País']
 
-        df_u = df_mapa.drop_duplicates(subset=['Cliente', 'Provincia', 'País']).copy()
-        df_u['Provincia'] = df_u['Provincia'].apply(normalize_text)
-        df_u['País'] = df_u['País'].apply(normalize_text)
-
-        df_esp = df_u[df_u['Provincia'].isin(PROVINCIAS_COORDS)]
-        df_ext = df_u[~df_u['Provincia'].isin(PROVINCIAS_COORDS)]
-
-        count_prov = df_esp['Provincia'].value_counts().reset_index()
-        count_prov.columns = ['Entidad', 'Alumnos']
-
-        count_pais = df_ext['País'].value_counts().reset_index()
-        count_pais.columns = ['Entidad', 'Alumnos']
-
-        # TOTAL ALUMNOS POR PROYECTO
-        proyecto_col = next((col for col in df_mapa.columns if col.strip().upper() == "PROYECTO"), None)
-        if proyecto_col:
-            df_total = df_mapa.dropna(subset=["Cliente", proyecto_col]).drop_duplicates(subset=["Cliente", proyecto_col])
-            total_alumnos = len(df_total)
+        if not all(col in df_mapa.columns for col in required_cols):
+            st.markdown("## 🌍 Global Alumnos")
+            st.error("❌ El archivo debe tener columnas: Cliente, Provincia, País.")
         else:
+            if "coords_cache" not in st.session_state:
+                st.session_state["coords_cache"] = {}
+
+            df_u = df_mapa.drop_duplicates(subset=['Cliente', 'Provincia', 'País']).copy()
+            df_u['Provincia'] = df_u['Provincia'].apply(normalize_text)
+            df_u['País'] = df_u['País'].apply(normalize_text)
+
+            df_esp = df_u[df_u['Provincia'].isin(PROVINCIAS_COORDS)]
+            df_ext = df_u[~df_u['Provincia'].isin(PROVINCIAS_COORDS)]
+
+            count_prov = df_esp['Provincia'].value_counts().reset_index()
+            count_prov.columns = ['Entidad', 'Alumnos']
+
+            count_pais = df_ext['País'].value_counts().reset_index()
+            count_pais.columns = ['Entidad', 'Alumnos']
+
             total_alumnos = count_prov['Alumnos'].sum() + count_pais['Alumnos'].sum()
 
-        st.markdown(f"""
-            <div style='display: flex; align-items: center; justify-content: space-between;'>
-                <h3>🌍 Global Alumnos</h3>
-                <div style='padding: 4px 12px; background-color: #e3f2fd; border-radius: 6px;
-                            font-weight: bold; color: #1565c0;'>
-                    👥 Total: {total_alumnos}
+            st.markdown(f"""
+                <div style='display: flex; align-items: center; justify-content: space-between;'>
+                    <h3>🌍 Global Alumnos</h3>
+                    <div style='padding: 4px 12px; background-color: #e3f2fd; border-radius: 6px;
+                                font-weight: bold; color: #1565c0;'>
+                        👥 Total: {total_alumnos}
+                    </div>
                 </div>
-            </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
-        mapa = folium.Map(location=[25, 0], zoom_start=2, width="100%", height="700px", max_bounds=True)
+            mapa = folium.Map(location=[25, 0], zoom_start=2, width="100%", height="700px", max_bounds=True)
 
-        for _, row in count_prov.iterrows():
-            entidad, alumnos = row['Entidad'], row['Alumnos']
-            coords = PROVINCIAS_COORDS.get(entidad)
-            if coords:
-                folium.Marker(
-                    location=coords,
-                    popup=f"<b>{entidad}</b><br>Alumnos: {alumnos}",
-                    tooltip=f"{entidad} ({alumnos})",
-                    icon=folium.Icon(color="blue", icon="user", prefix="fa")
-                ).add_to(mapa)
-
-        for _, row in count_pais.iterrows():
-            entidad, alumnos = row['Entidad'], row['Alumnos']
-            coords = PAISES_COORDS.get(entidad) or st.session_state["coords_cache"].get(entidad)
-            if not coords:
-                coords = geolocalizar_pais(entidad)
+            for _, row in count_prov.iterrows():
+                entidad, alumnos = row['Entidad'], row['Alumnos']
+                coords = PROVINCIAS_COORDS.get(entidad)
                 if coords:
-                    st.session_state["coords_cache"][entidad] = coords
-            if coords:
-                folium.Marker(
-                    location=coords,
-                    popup=f"<b>{entidad}</b><br>Alumnos: {alumnos}",
-                    tooltip=f"{entidad} ({alumnos})",
-                    icon=folium.Icon(color="red", icon="globe", prefix="fa")
-                ).add_to(mapa)
+                    folium.Marker(
+                        location=coords,
+                        popup=f"<b>{entidad}</b><br>Alumnos: {alumnos}",
+                        tooltip=f"{entidad} ({alumnos})",
+                        icon=folium.Icon(color="blue", icon="user", prefix="fa")
+                    ).add_to(mapa)
 
-        folium_static(mapa)
+            for _, row in count_pais.iterrows():
+                entidad, alumnos = row['Entidad'], row['Alumnos']
+                coords = PAISES_COORDS.get(entidad) or st.session_state["coords_cache"].get(entidad)
+                if not coords:
+                    coords = geolocalizar_pais(entidad)
+                    if coords:
+                        st.session_state["coords_cache"][entidad] = coords
+                if coords:
+                    folium.Marker(
+                        location=coords,
+                        popup=f"<b>{entidad}</b><br>Alumnos: {alumnos}",
+                        tooltip=f"{entidad} ({alumnos})",
+                        icon=folium.Icon(color="red", icon="globe", prefix="fa")
+                    ).add_to(mapa)
 
-        # === RESUMEN POR PROYECTO ===
-        if proyecto_col:
-            st.markdown("### 📁 Alumnos por Proyecto")
+            folium_static(mapa)
 
-            alumnos_proyecto = (
-                df_mapa[["Cliente", proyecto_col]]
-                .dropna(subset=["Cliente", proyecto_col])
-                .drop_duplicates()
-                .sort_values(by=proyecto_col)
+
+    # === RESUMEN POR PROYECTO ===
+    proyecto_col = next((col for col in df_mapa.columns if col.strip().upper() == "PROYECTO"), None)
+    if proyecto_col:
+        st.markdown("### 📁 Alumnos por Proyecto")
+    
+    alumnos_proyecto = (
+        df_mapa[["Cliente", proyecto_col]]
+        .dropna(subset=["Cliente", proyecto_col])
+        .drop_duplicates()
+        .sort_values(by=proyecto_col)
+    )
+    
+    resumen = alumnos_proyecto.groupby(proyecto_col)["Cliente"].count().reset_index()
+    resumen.columns = ["Proyecto", "Alumnos"]
+    
+    for i in range(0, len(resumen), 4):
+        cols = st.columns(4)
+        for j, (_, row) in enumerate(resumen.iloc[i:i+4].iterrows()):
+            cols[j].markdown(
+                render_import_card(row["Proyecto"], row["Alumnos"], "#fff3e0"),
+                unsafe_allow_html=True
             )
+    
+    # ✅ Total global de alumnos con proyecto (una sola vez)
+    total_alumnos_proyecto = resumen["Alumnos"].sum()
+    st.markdown(
+        render_import_card("👥 Total Alumnos con Proyecto", total_alumnos_proyecto, "#c8e6c9"),
+        unsafe_allow_html=True
+    )
+    
+    # Lista detallada por proyecto
+    with st.expander("📋 Ver alumnos por proyecto"):
+        for proyecto in resumen["Proyecto"]:
+            alumnos = alumnos_proyecto[alumnos_proyecto[proyecto_col] == proyecto]["Cliente"].sort_values()
+            st.markdown(f"#### {proyecto} ({len(alumnos)} alumnos)")
+            for alumno in alumnos:
+                st.markdown(f"- {alumno}")
 
-            resumen = alumnos_proyecto.groupby(proyecto_col)["Cliente"].count().reset_index()
-            resumen.columns = ["Proyecto", "Alumnos"]
-
-            for i in range(0, len(resumen), 4):
-                cols = st.columns(4)
-                for j, (_, row) in enumerate(resumen.iloc[i:i+4].iterrows()):
-                    cols[j].markdown(
-                        render_import_card(row["Proyecto"], row["Alumnos"], "#fff3e0"),
-                        unsafe_allow_html=True
-                    )
-
-            with st.expander("📋 Ver alumnos por proyecto"):
-                for proyecto in resumen["Proyecto"]:
-                    alumnos = alumnos_proyecto[alumnos_proyecto[proyecto_col] == proyecto]["Cliente"].sort_values()
-                    st.markdown(f"#### {proyecto} ({len(alumnos)} alumnos)")
-                    for alumno in alumnos:
-                        st.markdown(f"- {alumno}")
-        else:
-            st.info("ℹ️ No se encontró la columna 'Proyecto' en el archivo.")
