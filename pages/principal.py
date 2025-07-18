@@ -276,12 +276,13 @@ def principal_page():
             count_pais = df_ext['País'].value_counts().reset_index()
             count_pais.columns = ['Entidad', 'Alumnos']
 
-            # Usar columna 'PROYECTO' si existe para calcular el total
+            # Calcular el total real: alumnos únicos con proyecto asignado
             proyecto_col = next((col for col in df_mapa.columns if col.strip().upper() == "PROYECTO"), None)
             if proyecto_col:
-                total_alumnos = df_mapa[proyecto_col].dropna().nunique()
+                df_total = df_mapa.dropna(subset=["Cliente", proyecto_col]).drop_duplicates(subset=["Cliente", proyecto_col])
+                total_alumnos = df_total["Cliente"].nunique()
             else:
-                total_alumnos = count_prov['Alumnos'].sum() + count_pais['Alumnos'].sum()
+                total_alumnos = 0
 
             st.markdown(f"""
                 <div style='display: flex; align-items: center; justify-content: space-between;'>
@@ -328,7 +329,7 @@ def principal_page():
                 st.markdown("### 📁 Alumnos por Proyecto")
                 alumnos_proyecto = (
                     df_mapa[["Cliente", proyecto_col]]
-                    .dropna(subset=[proyecto_col])
+                    .dropna(subset=["Cliente", proyecto_col])
                     .drop_duplicates()
                     .sort_values(by=proyecto_col)
                 )
