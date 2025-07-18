@@ -1,4 +1,4 @@
-import pandas as pd
+import pandas as pd 
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
@@ -101,7 +101,7 @@ def render(df=None):
             line=dict(color='black', width=1.5)
         ),
         text=y_data,
-        textposition='none'  # No texto automático, lo haremos manual
+        textposition='none'
     ))
 
     for x, y in zip(x_data, y_data):
@@ -147,7 +147,7 @@ def render(df=None):
     hoy = pd.to_datetime("today")
 
     df_resultado = df_ge_activos[
-        (df_ge_activos['DIF_MESES'] == 3) &
+        (df_ge_activos['DIF_MESES'] == 3) & 
         (df_ge_activos['FIN CONV'] <= hoy)
     ].copy()
 
@@ -190,7 +190,11 @@ def render(df=None):
         st.plotly_chart(fig_pie, use_container_width=True)
 
     with colpie2:
-        conteo_consultor = df_filtrado['CONSULTOR EIP'].value_counts().reset_index()
+        # 🔥 Aquí filtramos explícitamente para eliminar NO ENCONTRADO
+        df_filtrado_consultores = df_filtrado[
+            df_filtrado['CONSULTOR EIP'].str.upper() != 'NO ENCONTRADO'
+        ]
+        conteo_consultor = df_filtrado_consultores['CONSULTOR EIP'].value_counts().reset_index()
         conteo_consultor.columns = ["Consultor", "Cantidad"]
         fig_pie_consultor = px.pie(
             conteo_consultor,
@@ -200,4 +204,4 @@ def render(df=None):
         fig_pie_consultor.update_traces(textposition='inside', textinfo='label+percent+value')
         fig_pie_consultor.update_layout(height=500)
         st.subheader("Alumnado por Consultor")
-        st.plotly_chart(fig_pie_consultor, use_container_width=True) 
+        st.plotly_chart(fig_pie_consultor, use_container_width=True)
