@@ -4,6 +4,8 @@ import plotly.graph_objects as go
 import streamlit as st
 import os
 from datetime import datetime
+import msal
+import requests
 
 UPLOAD_FOLDER = "uploaded_admisiones"
 ARCHIVO_DESARROLLO = os.path.join(UPLOAD_FOLDER, "desarrollo_profesional.xlsx")
@@ -17,6 +19,71 @@ def clean_headers(df):
         st.warning("⚠️ Se encontraron columnas duplicadas. Se eliminarán automáticamente.")
         df = df.loc[:, ~df.columns.duplicated()]
     return df
+
+def listar_estructura_convenios():
+    config = st.secrets["academica"]
+    app = msal.ConfidentialClientApplication(
+        config["client_id"],
+        authority=f"https://login.microsoftonline.com/{config['tenant_id']}",
+        client_credential=config["client_secret"]
+    )
+
+    token_result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
+    if "access_token" not in token_result:
+        st.error("❌ No se pudo obtener token de acceso.")
+        return None
+
+    token = token_result["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    site_resp = requests.get(
+        f"https://graph.microsoft.com/v1.0/sites/{config['domain']}:/sites/{config['site_name']}",
+        headers=headers
+    )
+    if site_resp.status_code != 200:
+        st.error("❌ No se pudo obtener el sitio.")
+        return None
+
+    site_id = site_resp.json()["id"]
+
+    base_path = "/FORMACIÓN Y EMPLEO SHAREPPOINT/EMPLEO/_PRÁCTICAS/Convenios firmados"
+    carpeta_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:{base_path}"
+    carpeta_resp = requests.get(carpeta_url, headers=headers)
+    if carpeta_resp.status_code != 200:
+        st.error("❌ No se pudo acceder a la carpeta raíz.")
+        st.write(carpeta_resp.text)
+        return None
+
+    carpeta_id = carpeta_resp.json()["id"]
+
+    hijos_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/items/{carpeta_id}/children"
+    hijos_resp = requests.get(hijos_url, headers=headers)
+    if hijos_resp.status_code != 200:
+        st.error("❌ No se pudieron listar carpetas hijas.")
+        return None
+
+    resultado = []
+    nivel_1_folders = [item for item in hijos_resp.json().get("value", []) if "folder" in item]
+
+    for folder1 in nivel_1_folders:
+        nombre1 = folder1["name"]
+        id1 = folder1["id"]
+
+        sub_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/items/{id1}/children"
+        sub_resp = requests.get(sub_url, headers=headers)
+        if sub_resp.status_code != 200:
+            resultado.append({"Carpeta Nivel 1": nombre1, "Subcarpeta Nivel 2": "⚠️ Error de acceso"})
+            continue
+
+        sub_folders = [item for item in sub_resp.json().get("value", []) if "folder" in item]
+
+        if not sub_folders:
+            resultado.append({"Carpeta Nivel 1": nombre1, "Subcarpeta Nivel 2": "—"})
+        else:
+            for sub in sub_folders:
+                resultado.append({"Carpeta Nivel 1": nombre1, "Subcarpeta Nivel 2": sub["name"]})
+
+    return pd.DataFrame(resultado)
 
 def render(df=None):
     st.title("📊 Principal - Área de Empleo")
@@ -190,7 +257,6 @@ def render(df=None):
         st.plotly_chart(fig_pie, use_container_width=True)
 
     with colpie2:
-        # 🔥 Aquí filtramos explícitamente para eliminar NO ENCONTRADO
         df_filtrado_consultores = df_filtrado[
             df_filtrado['CONSULTOR EIP'].str.upper() != 'NO ENCONTRADO'
         ]
@@ -205,3 +271,13 @@ def render(df=None):
         fig_pie_consultor.update_layout(height=500)
         st.subheader("Alumnado por Consultor")
         st.plotly_chart(fig_pie_consultor, use_container_width=True)
+
+    # 🔽 NUEVA SECCIÓN: Mostrar estructura de carpetas
+    st.markdown("---")
+    st.subheader("📁 Estructura de carpetas: Convenios firmados (SharePoint)")
+
+    df_estructura = listar_estructura_convenios()
+    if df_estructura is not None:
+        st.dataframe(df_estructura)
+    else:
+        st.info("No se pudo obtener la estructura de carpetas.")
