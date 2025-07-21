@@ -21,7 +21,7 @@ def clean_headers(df):
     return df
 
 def listar_estructura_convenios():
-    config = st.secrets["empleo"]  # ← Usamos la sección correcta del secrets.toml
+    config = st.secrets["empleo"]
 
     app = msal.ConfidentialClientApplication(
         config["client_id"],
@@ -271,10 +271,9 @@ def render(df=None):
         st.subheader("Alumnado por Consultor")
         st.plotly_chart(fig_pie_consultor, use_container_width=True)
 
-    # 🔻 NUEVA SECCIÓN SharePoint
+    # 🔻 NUEVA SECCIÓN DE CARPETAS
     st.markdown("---")
     st.subheader("📁 Estructura de carpetas: Convenios firmados (SharePoint)")
-
     df_estructura = listar_estructura_convenios()
     if df_estructura is not None:
         st.dataframe(df_estructura)
