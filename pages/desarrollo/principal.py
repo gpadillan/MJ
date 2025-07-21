@@ -21,7 +21,8 @@ def clean_headers(df):
     return df
 
 def listar_estructura_convenios():
-    config = st.secrets["academica"]
+    config = st.secrets["empleo"]  # ← Usamos la sección correcta del secrets.toml
+
     app = msal.ConfidentialClientApplication(
         config["client_id"],
         authority=f"https://login.microsoftonline.com/{config['tenant_id']}",
@@ -46,7 +47,7 @@ def listar_estructura_convenios():
 
     site_id = site_resp.json()["id"]
 
-    base_path = "/FORMACIÓN Y EMPLEO SHAREPPOINT/EMPLEO/_PRÁCTICAS/Convenios firmados"
+    base_path = "/Documentos compartidos/FORMACIÓN Y EMPLEO SHAREPPOINT/EMPLEO/_PRÁCTICAS/Convenios firmados"
     carpeta_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:{base_path}"
     carpeta_resp = requests.get(carpeta_url, headers=headers)
     if carpeta_resp.status_code != 200:
@@ -55,7 +56,6 @@ def listar_estructura_convenios():
         return None
 
     carpeta_id = carpeta_resp.json()["id"]
-
     hijos_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/items/{carpeta_id}/children"
     hijos_resp = requests.get(hijos_url, headers=headers)
     if hijos_resp.status_code != 200:
@@ -158,7 +158,6 @@ def render(df=None):
     y_data = conteo_area["Cantidad"]
 
     fig_bar = go.Figure()
-
     fig_bar.add_trace(go.Bar(
         x=x_data,
         y=y_data,
@@ -272,7 +271,7 @@ def render(df=None):
         st.subheader("Alumnado por Consultor")
         st.plotly_chart(fig_pie_consultor, use_container_width=True)
 
-    # 🔽 NUEVA SECCIÓN: Mostrar estructura de carpetas
+    # 🔻 NUEVA SECCIÓN SharePoint
     st.markdown("---")
     st.subheader("📁 Estructura de carpetas: Convenios firmados (SharePoint)")
 
