@@ -64,74 +64,48 @@ def app():
     st.markdown(f"### {mes_seleccionado}")
 
     if 'nombre' in df_ventas.columns and 'propietario' in df_ventas.columns:
+        resumen = df_ventas.groupby(['nombre', 'propietario']).size().reset_index(name='Total Matrículas')
+        totales_propietario = resumen.groupby('propietario')['Total Matrículas'].sum().reset_index()
+        totales_propietario['propietario_display'] = totales_propietario.apply(
+            lambda row: f"{row['propietario']} ({row['Total Matrículas']})", axis=1)
+        resumen = resumen.merge(totales_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
+
+        orden_propietarios = totales_propietario.sort_values(by='Total Matrículas', ascending=False)['propietario_display'].tolist()
+        orden_masters = resumen.groupby('nombre')['Total Matrículas'].sum().sort_values(ascending=False).index.tolist()
+
+        color_palette = px.colors.qualitative.Plotly + px.colors.qualitative.D3 + px.colors.qualitative.Alphabet
+        propietarios_unicos = resumen['propietario_display'].unique()
+        color_map = {prop: color_palette[i % len(color_palette)] for i, prop in enumerate(sorted(propietarios_unicos))}
+
         if mes_seleccionado == "Todos":
             df_bar = df_ventas.groupby(['mes', 'propietario'], dropna=False).size().reset_index(name='Total Matrículas')
-            totales_prop = df_bar.groupby('propietario')['Total Matrículas'].sum().reset_index()
-            totales_prop['propietario_display'] = totales_prop.apply(lambda row: f"{row['propietario']} ({row['Total Matrículas']})", axis=1)
-            df_bar = df_bar.merge(totales_prop[['propietario', 'propietario_display']], on='propietario', how='left')
+            df_bar = df_bar.merge(totales_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
             totales_mes_grafico = df_bar.groupby('mes')['Total Matrículas'].sum().to_dict()
             df_bar['mes_etiqueta'] = df_bar['mes'].apply(lambda m: f"{m} ({totales_mes_grafico[m]})" if pd.notna(m) else m)
             orden_mes_etiqueta = [f"{m} ({totales_mes_grafico[m]})" for m in orden_meses if m in totales_mes_grafico]
 
-            color_palette = px.colors.qualitative.Plotly + px.colors.qualitative.D3 + px.colors.qualitative.Alphabet
-            propietarios_unicos = df_bar['propietario_display'].unique()
-            color_map = {prop: color_palette[i % len(color_palette)] for i, prop in enumerate(sorted(propietarios_unicos))}
-
-            if is_mobile:
-                fig = px.bar(
-                    df_bar,
-                    x='Total Matrículas',
-                    y='propietario_display',
-                    color='mes_etiqueta',
-                    orientation='h',
-                    text='Total Matrículas',
-                    title='Matrículas por Propietario (Vista Móvil)',
-                    width=width,
-                    height=height + 500
-                )
-                fig.update_layout(
-                    margin=dict(l=20, r=20, t=40, b=100),
-                    yaxis_title='Propietario',
-                    xaxis_title='Total Matrículas',
-                    legend_title='Mes',
-                    legend=dict(orientation="h", yanchor="bottom", y=-0.35, xanchor="center", x=0.5)
-                )
-                fig.update_traces(textposition='outside', textfont_size=14)
-            else:
-                fig = px.bar(
-                    df_bar,
-                    x='mes_etiqueta',
-                    y='Total Matrículas',
-                    color='propietario_display',
-                    color_discrete_map=color_map,
-                    barmode='group',
-                    text='Total Matrículas',
-                    title='Distribución Mensual de Matrículas por Propietario',
-                    width=width,
-                    height=height
-                )
-                fig.update_traces(textposition='outside')
-                fig.update_layout(
-                    xaxis_title="Mes",
-                    yaxis_title="Total Matrículas",
-                    margin=dict(l=20, r=20, t=40, b=140),
-                    xaxis=dict(categoryorder='array', categoryarray=orden_mes_etiqueta),
-                    legend=dict(orientation="h", yanchor="bottom", y=-0.5, xanchor="center", x=0.5)
-                )
+            fig = px.bar(
+                df_bar,
+                x='mes_etiqueta',
+                y='Total Matrículas',
+                color='propietario_display',
+                color_discrete_map=color_map,
+                barmode='group',
+                text='Total Matrículas',
+                title='Distribución Mensual de Matrículas por Propietario',
+                width=width,
+                height=height
+            )
+            fig.update_traces(textposition='outside')
+            fig.update_layout(
+                xaxis_title="Mes",
+                yaxis_title="Total Matrículas",
+                margin=dict(l=20, r=20, t=40, b=140),
+                xaxis=dict(categoryorder='array', categoryarray=orden_mes_etiqueta),
+                legend=dict(orientation="h", yanchor="bottom", y=-0.5, xanchor="center", x=0.5)
+            )
             st.plotly_chart(fig)
-
         else:
-            resumen = df_ventas.groupby(['nombre', 'propietario']).size().reset_index(name='Total Matrículas')
-            totales_propietario = resumen.groupby('propietario')['Total Matrículas'].sum().reset_index()
-            totales_propietario['propietario_display'] = totales_propietario.apply(lambda row: f"{row['propietario']} ({row['Total Matrículas']})", axis=1)
-            resumen = resumen.merge(totales_propietario[['propietario', 'propietario_display']], on='propietario', how='left')
-            orden_propietarios = totales_propietario.sort_values(by='Total Matrículas', ascending=False)['propietario_display'].tolist()
-            orden_masters = resumen.groupby('nombre')['Total Matrículas'].sum().sort_values(ascending=False).index.tolist()
-
-            color_palette = px.colors.qualitative.Pastel + px.colors.qualitative.Set3 + px.colors.qualitative.Safe
-            propietarios_unicos = resumen['propietario_display'].unique()
-            color_map = {prop: color_palette[i % len(color_palette)] for i, prop in enumerate(sorted(propietarios_unicos))}
-
             fig = px.scatter(
                 resumen,
                 x='nombre',
@@ -199,6 +173,35 @@ def app():
                             <p style='font-size: 1.3rem; font-weight: bold; margin: 0;'>{row['Total Matrículas']}</p>
                         </div>
                     """, unsafe_allow_html=True)
+
+        # Importe total por propietario (en todos los casos)
+        if 'importe' in df_ventas.columns:
+            st.markdown(f"### Importe Total por Propietario ({mes_seleccionado})")
+
+            importe_por_propietario = df_ventas.groupby('propietario')['importe'].sum().reset_index()
+            importe_por_propietario = importe_por_propietario.merge(
+                df_ventas.groupby('propietario').size().reset_index(name='Total Matrículas'),
+                on='propietario',
+                how='left'
+            )
+            importe_por_propietario['propietario_display'] = importe_por_propietario.apply(
+                lambda row: f"{row['propietario']} ({row['Total Matrículas']})", axis=1
+            )
+            importe_por_propietario = importe_por_propietario.sort_values('importe', ascending=False)
+
+            for i in range(0, len(importe_por_propietario), 3):
+                cols = st.columns(3)
+                for j in range(3):
+                    if i + j < len(importe_por_propietario):
+                        row = importe_por_propietario.iloc[i + j]
+                        color = color_map.get(row['propietario_display'], "#1f77b4")
+                        cols[j].markdown(f"""
+                            <div style='padding: 1rem; background-color: #f1f3f6;
+                                        border-left: 5px solid {color}; border-radius: 8px;'>
+                                <h5 style='margin: 0;'>{row['propietario_display']}</h5>
+                                <p style='font-size: 1.3rem; font-weight: bold; margin: 0;'>{row['importe']:,.2f} €</p>
+                            </div>
+                        """, unsafe_allow_html=True)
 
     else:
         st.warning("❌ El archivo de ventas debe tener columnas 'nombre' y 'propietario'.")
