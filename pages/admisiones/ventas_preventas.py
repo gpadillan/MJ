@@ -174,7 +174,6 @@ def app():
                         </div>
                     """, unsafe_allow_html=True)
 
-        # Importe total por propietario (en todos los casos)
         if 'importe' in df_ventas.columns:
             st.markdown(f"### Importe Total por Propietario ({mes_seleccionado})")
 
@@ -195,11 +194,12 @@ def app():
                     if i + j < len(importe_por_propietario):
                         row = importe_por_propietario.iloc[i + j]
                         color = color_map.get(row['propietario_display'], "#1f77b4")
+                        text_color = "#ffffff"
                         cols[j].markdown(f"""
-                            <div style='padding: 1rem; background-color: #f1f3f6;
-                                        border-left: 5px solid {color}; border-radius: 8px;'>
-                                <h5 style='margin: 0;'>{row['propietario_display']}</h5>
-                                <p style='font-size: 1.3rem; font-weight: bold; margin: 0;'>{row['importe']:,.2f} €</p>
+                            <div style='padding: 0.6rem; background-color: {color}; border-radius: 6px;
+                                        box-shadow: 1px 1px 5px rgba(0,0,0,0.1); margin-bottom: 0.5rem;'>
+                                <h5 style='margin: 0; color: {text_color}; font-size: 1rem;'>{row['propietario_display']}</h5>
+                                <p style='font-size: 1.2rem; font-weight: bold; margin: 0; color: {text_color};'>{row['importe']:,.2f} €</p>
                             </div>
                         """, unsafe_allow_html=True)
 
