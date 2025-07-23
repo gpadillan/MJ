@@ -357,3 +357,44 @@ def principal_page():
             for alumno in alumnos:
                 st.markdown(f"- {alumno}")
 
+
+    # === CLIENTES EN ESPAÑA CON LOCALIDAD O PROVINCIA INCOMPLETA ===
+    st.markdown("---")
+    st.markdown("## 🧾 Clientes únicos en España con Provincia o Localidad vacías")
+
+    required_cols_check = ['Cliente', 'Provincia', 'Localidad', 'Nacionalidad', 'País', 'Comercial']
+    missing_cols = [col for col in required_cols_check if col not in df_mapa.columns]
+
+    if missing_cols:
+        st.warning(f"⚠️ Faltan las siguientes columnas en el archivo para mostrar la tabla: {', '.join(missing_cols)}")
+    else:
+        df_filtrado = df_mapa[
+            df_mapa['País'].astype(str).str.strip().str.upper() == "ESPAÑA"
+        ].copy()
+
+        df_incompletos = df_filtrado[
+            df_filtrado['Provincia'].isna() | (df_filtrado['Provincia'].astype(str).str.strip() == '') |
+            df_filtrado['Localidad'].isna() | (df_filtrado['Localidad'].astype(str).str.strip() == '')
+        ][['Cliente', 'Provincia', 'Localidad', 'Nacionalidad', 'País', 'Comercial']]
+
+        df_incompletos = df_incompletos.drop_duplicates(subset=["Cliente"]).sort_values(by="Cliente").reset_index(drop=True)
+
+        if df_incompletos.empty:
+            st.success("✅ No hay registros en España con Provincia o Localidad vacías.")
+        else:
+            st.dataframe(df_incompletos, use_container_width=True)
+
+            # Botón de descarga
+            from io import BytesIO
+            import base64
+
+            def to_excel_bytes(df):
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                    df.to_excel(writer, index=False, sheet_name='Incompletos')
+                return output.getvalue()
+
+            excel_data = to_excel_bytes(df_incompletos)
+            b64 = base64.b64encode(excel_data).decode()
+            href = f'<a href="data:application/octet-stream;base64,{b64}" download="clientes_incompletos.xlsx">📥 Descargar Excel</a>'
+            st.markdown(href, unsafe_allow_html=True)
