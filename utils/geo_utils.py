@@ -21,7 +21,8 @@ PROVINCIAS_COORDS = {
     "Segovia": (40.9481, -4.1184), "Sevilla": (37.3886, -5.9823), "Soria": (41.7666, -2.4799),
     "Tarragona": (41.1189, 1.2445), "Teruel": (40.3456, -1.1065), "Toledo": (39.8628, -4.0273),
     "Valencia": (39.4699, -0.3763), "Valladolid": (41.6523, -4.7245), "Zamora": (41.5033, -5.7446),
-    "Zaragoza": (41.6488, -0.8891)
+    "Zaragoza": (41.6488, -0.8891), "Ceuta": (35.8894, -5.3213), "Melilla": (35.2923, -2.9381),
+    "Illes Balears": (39.6953, 3.0176)
 }
 
 PAISES_COORDS = {
@@ -47,8 +48,16 @@ def geolocalizar_pais(pais):
 def normalize_text(text):
     if pd.isna(text):
         return ""
-    text = str(text).strip().title()
-    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("utf-8")
-    return {
-        "Espana": "España", "Cordoba": "Córdoba", "Guipuzcoa": "Guipúzcoa", "Alava": "Álava"
-    }.get(text, text)
+    original = str(text).strip().title()
+    sin_tildes = unicodedata.normalize("NFKD", original).encode("ascii", "ignore").decode("utf-8")
+
+    correcciones = {
+        "Espana": "España", "Cordoba": "Córdoba", "Guipuzcoa": "Guipúzcoa", "Alava": "Álava",
+        "Malaga": "Málaga", "Avila": "Ávila", "Leon": "León", "Caceres": "Cáceres", "Cadiz": "Cádiz",
+        "La Coruna": "A Coruña", "Coruna": "A Coruña", "A Coruna": "A Coruña",
+        "Iles Balears": "Illes Balears", "Islas Baleares": "Illes Balears", "Baleares": "Illes Balears",
+        "Girona": "Girona", "Gerona": "Girona", "Lerida": "Lleida", "Orense": "Ourense",
+        "Vizcaya": "Bizkaia", "Melilola": "Melilla", "Madridi": "Madrid", "Ceuta": "Ceuta", "Melilla": "Melilla"
+    }
+
+    return correcciones.get(sin_tildes, original)

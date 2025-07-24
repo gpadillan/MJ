@@ -63,6 +63,9 @@ def render(df):
 
     # 🔴 Devolución GE
     df_devolucion = df[df['DEVOLUCIÓN GE'].astype(str).str.lower().str.strip() == 'true'].copy()
+    df_devolucion['FIN CONV'] = pd.to_datetime(df_devolucion['FIN CONV'], errors='coerce')
+    df_devolucion['AÑO'] = df_devolucion['FIN CONV'].dt.year
+
     df_devolucion['RIESGO ECONÓMICO'] = (
         df_devolucion['RIESGO ECONÓMICO']
         .astype(str)
@@ -119,7 +122,7 @@ def render(df):
 
         # Tabla devoluciones
         st.markdown("### 🔴 Detalle de alumnos con DEVOLUCIÓN GE")
-        columnas_devolucion = ['NOMBRE', 'APELLIDOS', 'AREA', 'RIESGO ECONÓMICO']
+        columnas_devolucion = ['NOMBRE', 'APELLIDOS', 'AREA', 'AÑO', 'RIESGO ECONÓMICO']
         df_devolucion_vista = df_devolucion[columnas_devolucion].copy()
         df_devolucion_vista['RIESGO ECONÓMICO'] = df_devolucion_vista['RIESGO ECONÓMICO'].apply(
             lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
