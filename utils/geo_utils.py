@@ -1,8 +1,8 @@
-# utils/geo_utils.py
 import unicodedata
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 import pandas as pd
+import pycountry
 
 PROVINCIAS_COORDS = {
     "A Coruña": (43.3623, -8.4115), "Álava": (42.8466, -2.6727), "Albacete": (38.9943, -1.8585),
@@ -29,7 +29,8 @@ PAISES_COORDS = {
     "España": (40.4637, -3.7492), "Argentina": (-38.4161, -63.6167), "Colombia": (4.5709, -74.2973),
     "México": (23.6345, -102.5528), "Chile": (-35.6751, -71.5430), "Ecuador": (-1.8312, -78.1834),
     "Perú": (-9.1899, -75.0152), "Bolivia": (-16.2902, -63.5887), "Uruguay": (-32.5228, -55.7658),
-    "Venezuela": (6.4238, -66.5897), "Estados Unidos": (37.0902, -95.7129), "Francia": (46.6034, 1.8883)
+    "Venezuela": (6.4238, -66.5897), "Estados Unidos": (37.0902, -95.7129), "Francia": (46.6034, 1.8883),
+    "Gibraltar": (36.1408, -5.3536)
 }
 
 def get_geolocator():
@@ -52,12 +53,54 @@ def normalize_text(text):
     sin_tildes = unicodedata.normalize("NFKD", original).encode("ascii", "ignore").decode("utf-8")
 
     correcciones = {
+        # Países comunes escritos como provincias
+        "Argentina": "Argentina", "Mexico": "México", "Cundinamarca": "Colombia",
+        "Bulgaria": "Bulgaria", "Suiza": "Suiza", "Eeuu": "Estados Unidos", "Ee.Uu.": "Estados Unidos",
+        "Reino Unido": "Reino Unido", "Uk": "Reino Unido", "Gibraltar": "Gibraltar","GIBRALTAR": "Gibraltar",
+
+        # Provincias mal escritas
         "Espana": "España", "Cordoba": "Córdoba", "Guipuzcoa": "Guipúzcoa", "Alava": "Álava",
         "Malaga": "Málaga", "Avila": "Ávila", "Leon": "León", "Caceres": "Cáceres", "Cadiz": "Cádiz",
-        "La Coruna": "A Coruña", "Coruna": "A Coruña", "A Coruna": "A Coruña",
-        "Iles Balears": "Illes Balears", "Islas Baleares": "Illes Balears", "Baleares": "Illes Balears",
-        "Girona": "Girona", "Gerona": "Girona", "Lerida": "Lleida", "Orense": "Ourense",
-        "Vizcaya": "Bizkaia", "Melilola": "Melilla", "Madridi": "Madrid", "Ceuta": "Ceuta", "Melilla": "Melilla"
+        "La Coruna": "A Coruña", "Coruna": "A Coruña", "Gerona": "Girona", "Lerida": "Lleida",
+        "Orense": "Ourense", "Vizcaya": "Bizkaia", "Baleares": "Illes Balears",
+
+        # Errores tipográficos
+        "Melilola": "Melilla", "Madridi": "Madrid", "Jaen": "Jaén", "Cordobaa": "Córdoba",
+        "Salamnca": "Salamanca", "Tarrangona": "Tarragona", "Guadalajar": "Guadalajara",
+        "Huesa": "Huesca", "Zaragora": "Zaragoza"
     }
 
     return correcciones.get(sin_tildes, original)
+
+def get_country_code(pais_nombre):
+    if not pais_nombre:
+        return None
+
+    nombre = normalize_text(pais_nombre).title()
+
+    reemplazos = {
+        "EEUU": "United States",
+        "EE.UU.": "United States",
+        "Estados Unidos": "United States",
+        "UK": "United Kingdom",
+        "Reino Unido": "United Kingdom",
+        "Corea Del Sur": "South Korea",
+        "Corea Del Norte": "North Korea",
+        "Rusia": "Russia",
+        "República Checa": "Czechia",
+        "Vaticano": "Holy See",
+        "Congo": "Congo",
+        "República Democrática Del Congo": "Congo, The Democratic Republic of the",
+        "Siria": "Syrian Arab Republic",
+        "Palestina": "Palestine, State of",
+        "Taiwan": "Taiwan, Province of China",
+        "Gibraltar": "Gibraltar"
+    }
+
+    nombre_ingles = reemplazos.get(nombre, nombre)
+
+    try:
+        country = pycountry.countries.lookup(nombre_ingles)
+        return country.alpha_2.lower()
+    except LookupError:
+        return None

@@ -264,11 +264,22 @@ def principal_page():
                 st.session_state["coords_cache"] = {}
 
             df_u = df_mapa.drop_duplicates(subset=['Cliente', 'Provincia', 'País']).copy()
-            df_u['Provincia'] = df_u['Provincia'].apply(normalize_text)
-            df_u['País'] = df_u['País'].apply(normalize_text)
 
-            df_esp = df_u[df_u['Provincia'].isin(PROVINCIAS_COORDS)]
-            df_ext = df_u[~df_u['Provincia'].isin(PROVINCIAS_COORDS)]
+            # ✅ Normalización estricta
+            df_u['Provincia'] = df_u['Provincia'].apply(normalize_text).str.title().str.strip()
+            df_u['País'] = df_u['País'].apply(normalize_text).str.title().str.strip()
+
+            # Provincias válidas de España
+            df_esp = df_u[
+                (df_u['País'].str.upper() == 'ESPAÑA') &
+                (df_u['Provincia'].isin(PROVINCIAS_COORDS))
+            ]
+
+            # Países (incluye Gibraltar y España solo si tiene provincia inválida)
+            df_ext = df_u[
+                (df_u['Provincia'].isna()) |
+                (~df_u['Provincia'].isin(PROVINCIAS_COORDS))
+            ]
 
             count_prov = df_esp['Provincia'].value_counts().reset_index()
             count_prov.columns = ['Entidad', 'Alumnos']
@@ -290,6 +301,7 @@ def principal_page():
 
             mapa = folium.Map(location=[25, 0], zoom_start=2, width="100%", height="700px", max_bounds=True)
 
+            # 🔵 Provincias españolas en azul
             for _, row in count_prov.iterrows():
                 entidad, alumnos = row['Entidad'], row['Alumnos']
                 coords = PROVINCIAS_COORDS.get(entidad)
@@ -301,61 +313,51 @@ def principal_page():
                         icon=folium.Icon(color="blue", icon="user", prefix="fa")
                     ).add_to(mapa)
 
+            # 🔴 Marcador central "España (provincias)" - desplazado para no solapar Madrid
+            total_espana = count_prov['Alumnos'].sum()
+            coords_espana = [40.4268, -3.7138]  # Ligeramente al noroeste de Madrid
+            folium.Marker(
+                location=coords_espana,
+                popup=f"<b>España (provincias)</b><br>Total alumnos: {total_espana}",
+                tooltip=f"España (provincias) ({total_espana})",
+                icon=folium.Icon(color="red", icon="flag", prefix="fa")
+            ).add_to(mapa)
+
+            # 🌍 Banderas por país
+            def get_flag_emoji(pais_nombre):
+                FLAGS = {
+                    "Francia": "🇫🇷", "Portugal": "🇵🇹", "Italia": "🇮🇹",
+                    "Alemania": "🇩🇪", "Reino Unido": "🇬🇧", "Marruecos": "🇲🇦",
+                    "Argentina": "🇦🇷", "México": "🇲🇽", "Colombia": "🇨🇴",
+                    "Chile": "🇨🇱", "Brasil": "🇧🇷", "Perú": "🇵🇪",
+                    "Uruguay": "🇺🇾", "Venezuela": "🇻🇪", "Ecuador": "🇪🇨",
+                    "Gibraltar": "🇬🇮"
+                }
+                return FLAGS.get(pais_nombre.title(), "🌍")
+
+            # 🔴 Países extranjeros en rojo con globo + bandera
             for _, row in count_pais.iterrows():
                 entidad, alumnos = row['Entidad'], row['Alumnos']
+
+                if entidad.upper() == "ESPAÑA":
+                    continue  # ❌ Evitar marcador duplicado para España como país
+
                 coords = PAISES_COORDS.get(entidad) or st.session_state["coords_cache"].get(entidad)
                 if not coords:
                     coords = geolocalizar_pais(entidad)
                     if coords:
                         st.session_state["coords_cache"][entidad] = coords
+
                 if coords:
+                    bandera = get_flag_emoji(entidad)
                     folium.Marker(
                         location=coords,
-                        popup=f"<b>{entidad}</b><br>Alumnos: {alumnos}",
-                        tooltip=f"{entidad} ({alumnos})",
+                        popup=f"<b>{bandera} {entidad}</b><br>Alumnos: {alumnos}",
+                        tooltip=f"{bandera} {entidad} ({alumnos})",
                         icon=folium.Icon(color="red", icon="globe", prefix="fa")
                     ).add_to(mapa)
 
             folium_static(mapa)
-
-
-    # === RESUMEN POR PROYECTO ===
-    proyecto_col = next((col for col in df_mapa.columns if col.strip().upper() == "PROYECTO"), None)
-    if proyecto_col:
-        st.markdown("### 📁 Alumnos por Proyecto")
-    
-    alumnos_proyecto = (
-        df_mapa[["Cliente", proyecto_col]]
-        .dropna(subset=["Cliente", proyecto_col])
-        .drop_duplicates()
-        .sort_values(by=proyecto_col)
-    )
-    
-    resumen = alumnos_proyecto.groupby(proyecto_col)["Cliente"].count().reset_index()
-    resumen.columns = ["Proyecto", "Alumnos"]
-    
-    for i in range(0, len(resumen), 4):
-        cols = st.columns(4)
-        for j, (_, row) in enumerate(resumen.iloc[i:i+4].iterrows()):
-            cols[j].markdown(
-                render_import_card(row["Proyecto"], row["Alumnos"], "#fff3e0"),
-                unsafe_allow_html=True
-            )
-    
-    # ✅ Total global de alumnos con proyecto (una sola vez)
-    total_alumnos_proyecto = resumen["Alumnos"].sum()
-    st.markdown(
-        render_import_card("👥 Total Alumnos con Proyecto", total_alumnos_proyecto, "#c8e6c9"),
-        unsafe_allow_html=True
-    )
-    
-    # Lista detallada por proyecto
-    with st.expander("📋 Ver alumnos por proyecto"):
-        for proyecto in resumen["Proyecto"]:
-            alumnos = alumnos_proyecto[alumnos_proyecto[proyecto_col] == proyecto]["Cliente"].sort_values()
-            st.markdown(f"#### {proyecto} ({len(alumnos)} alumnos)")
-            for alumno in alumnos:
-                st.markdown(f"- {alumno}")
 
 
     # === CLIENTES EN ESPAÑA CON LOCALIDAD O PROVINCIA INCOMPLETA ===
