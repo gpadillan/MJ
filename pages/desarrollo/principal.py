@@ -30,7 +30,7 @@ def parse_bool(value):
 def limpiar_riesgo(valor):
     if pd.isna(valor):
         return 0.0
-    valor = re.sub(r"[^\d,\.]", "", str(valor))  # elimina € y espacios
+    valor = re.sub(r"[^\d,\.]", "", str(valor))
     valor = valor.replace(".", "").replace(",", ".")
     try:
         return float(valor)
@@ -51,19 +51,19 @@ def listar_estructura_convenios():
 
         token_result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
         if "access_token" not in token_result:
-            st.error("❌ No se pudo obtener token de acceso. Verifica client_id y permisos en Azure.")
+            st.error("❌ No se pudo obtener token de acceso.")
             return None
 
         token = token_result["access_token"]
         headers = {"Authorization": f"Bearer {token}"}
 
-        # ✅ RUTA corregida según SharePoint real
         site_url = f"https://graph.microsoft.com/v1.0/sites/{config['domain']}:/sites/{config['site_name']}"
         site_resp = requests.get(site_url, headers=headers)
         site_resp.raise_for_status()
         site_id = site_resp.json()["id"]
 
-        base_path = "/Documentos compartidos/EMPLEO/_PRÁCTICAS/Convenios firmados"
+        # ✅ Ruta corregida para Graph API
+        base_path = "/Shared Documents/EMPLEO/_PRÁCTICAS/Convenios firmados"
         root_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:{base_path}"
         carpeta_resp = requests.get(root_url, headers=headers)
         carpeta_resp.raise_for_status()
@@ -275,7 +275,7 @@ def render(df=None):
         st.subheader("Alumnado por Consultor")
         st.plotly_chart(fig_pie_consultor, use_container_width=True)
 
-    # 📁 SECCIÓN DE SHAREPOINT
+    # 📁 SharePoint Folder Section
     st.markdown("---")
     st.subheader("📁 Estructura de carpetas: Convenios firmados (SharePoint)")
     df_estructura = listar_estructura_convenios()
