@@ -16,3 +16,4 @@ pygsheets
 pytz
 streamlit-folium
 geopy
+pycountry
