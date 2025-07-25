@@ -1,4 +1,4 @@
-import pandas as pd 
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
@@ -6,9 +6,11 @@ import os
 from datetime import datetime
 import msal
 import requests
+import re
 
 UPLOAD_FOLDER = "uploaded_admisiones"
 ARCHIVO_DESARROLLO = os.path.join(UPLOAD_FOLDER, "desarrollo_profesional.xlsx")
+
 
 def clean_headers(df):
     df.columns = [
@@ -20,70 +22,88 @@ def clean_headers(df):
         df = df.loc[:, ~df.columns.duplicated()]
     return df
 
+
+def parse_bool(value):
+    return str(value).strip().lower() in ['true', 'verdadero', 'sí', 'si', '1']
+
+
+def limpiar_riesgo(valor):
+    if pd.isna(valor):
+        return 0.0
+    valor = re.sub(r"[^\d,\.]", "", str(valor))  # elimina € y espacios
+    valor = valor.replace(".", "").replace(",", ".")
+    try:
+        return float(valor)
+    except:
+        return 0.0
+
+
+@st.cache_data(ttl=600)
 def listar_estructura_convenios():
-    config = st.secrets["empleo"]
+    try:
+        config = st.secrets["empleo"]
 
-    app = msal.ConfidentialClientApplication(
-        config["client_id"],
-        authority=f"https://login.microsoftonline.com/{config['tenant_id']}",
-        client_credential=config["client_secret"]
-    )
+        app = msal.ConfidentialClientApplication(
+            config["client_id"],
+            authority=f"https://login.microsoftonline.com/{config['tenant_id']}",
+            client_credential=config["client_secret"]
+        )
 
-    token_result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
-    if "access_token" not in token_result:
-        st.error("❌ No se pudo obtener token de acceso.")
+        token_result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
+        if "access_token" not in token_result:
+            st.error("❌ No se pudo obtener token de acceso. Verifica client_id y permisos en Azure.")
+            return None
+
+        token = token_result["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        site_url = f"https://graph.microsoft.com/v1.0/sites/{config['domain']}:/sites/{config['site_name']}"
+        site_resp = requests.get(site_url, headers=headers)
+        site_resp.raise_for_status()
+        site_id = site_resp.json()["id"]
+
+        base_path = "/Documentos compartidos/FORMACIÓN Y EMPLEO SHAREPPOINT/EMPLEO/_PRÁCTICAS/Convenios firmados"
+        root_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:{base_path}"
+        carpeta_resp = requests.get(root_url, headers=headers)
+        carpeta_resp.raise_for_status()
+        carpeta_id = carpeta_resp.json()["id"]
+
+        hijos_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/items/{carpeta_id}/children"
+        hijos_resp = requests.get(hijos_url, headers=headers)
+        hijos_resp.raise_for_status()
+
+        resultado = []
+        nivel_1_folders = [item for item in hijos_resp.json().get("value", []) if "folder" in item]
+
+        for folder1 in nivel_1_folders:
+            nombre1 = folder1["name"]
+            id1 = folder1["id"]
+
+            try:
+                sub_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/items/{id1}/children"
+                sub_resp = requests.get(sub_url, headers=headers)
+                sub_resp.raise_for_status()
+
+                sub_folders = [item for item in sub_resp.json().get("value", []) if "folder" in item]
+                if not sub_folders:
+                    resultado.append({"Carpeta Nivel 1": nombre1, "Subcarpeta Nivel 2": "—"})
+                else:
+                    for sub in sub_folders:
+                        resultado.append({"Carpeta Nivel 1": nombre1, "Subcarpeta Nivel 2": sub["name"]})
+
+            except requests.exceptions.RequestException as e:
+                resultado.append({"Carpeta Nivel 1": nombre1, "Subcarpeta Nivel 2": "⚠️ Error de acceso"})
+                st.warning(f"⚠️ No se pudo acceder a subcarpetas de: {nombre1} — {str(e)}")
+
+        return pd.DataFrame(resultado)
+
+    except requests.exceptions.RequestException as e:
+        st.error(f"❌ Error de red o autenticación: {e}")
+        return None
+    except Exception as e:
+        st.error(f"❌ Error inesperado al consultar SharePoint: {e}")
         return None
 
-    token = token_result["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
-
-    site_resp = requests.get(
-        f"https://graph.microsoft.com/v1.0/sites/{config['domain']}:/sites/{config['site_name']}",
-        headers=headers
-    )
-    if site_resp.status_code != 200:
-        st.error("❌ No se pudo obtener el sitio.")
-        return None
-
-    site_id = site_resp.json()["id"]
-
-    base_path = "/Documentos compartidos/FORMACIÓN Y EMPLEO SHAREPPOINT/EMPLEO/_PRÁCTICAS/Convenios firmados"
-    carpeta_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:{base_path}"
-    carpeta_resp = requests.get(carpeta_url, headers=headers)
-    if carpeta_resp.status_code != 200:
-        st.error("❌ No se pudo acceder a la carpeta raíz.")
-        st.write(carpeta_resp.text)
-        return None
-
-    carpeta_id = carpeta_resp.json()["id"]
-    hijos_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/items/{carpeta_id}/children"
-    hijos_resp = requests.get(hijos_url, headers=headers)
-    if hijos_resp.status_code != 200:
-        st.error("❌ No se pudieron listar carpetas hijas.")
-        return None
-
-    resultado = []
-    nivel_1_folders = [item for item in hijos_resp.json().get("value", []) if "folder" in item]
-
-    for folder1 in nivel_1_folders:
-        nombre1 = folder1["name"]
-        id1 = folder1["id"]
-
-        sub_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/items/{id1}/children"
-        sub_resp = requests.get(sub_url, headers=headers)
-        if sub_resp.status_code != 200:
-            resultado.append({"Carpeta Nivel 1": nombre1, "Subcarpeta Nivel 2": "⚠️ Error de acceso"})
-            continue
-
-        sub_folders = [item for item in sub_resp.json().get("value", []) if "folder" in item]
-
-        if not sub_folders:
-            resultado.append({"Carpeta Nivel 1": nombre1, "Subcarpeta Nivel 2": "—"})
-        else:
-            for sub in sub_folders:
-                resultado.append({"Carpeta Nivel 1": nombre1, "Subcarpeta Nivel 2": sub["name"]})
-
-    return pd.DataFrame(resultado)
 
 def render(df=None):
     st.title("📊 Principal - Área de Empleo")
@@ -101,7 +121,6 @@ def render(df=None):
         'AREA', 'PRÁCTCAS/GE', 'CONSULTOR EIP', 'RIESGO ECONÓMICO',
         'MES 3M', 'FIN CONV'
     ]
-
     columnas_faltantes = [col for col in columnas_necesarias if col not in df.columns]
     if columnas_faltantes:
         st.error(f"❌ Faltan columnas necesarias: {', '.join(columnas_faltantes)}")
@@ -111,7 +130,7 @@ def render(df=None):
         st.write(df.columns.tolist())
 
     for col in ['CONSECUCIÓN GE', 'DEVOLUCIÓN GE', 'INAPLICACIÓN GE']:
-        df[col] = df[col].map(lambda x: str(x).strip().lower() in ['true', 'verdadero', 'sí', 'si', '1'])
+        df[col] = df[col].map(parse_bool)
 
     df['PRÁCTCAS/GE'] = df['PRÁCTCAS/GE'].astype(str).str.strip().str.upper()
     df['CONSULTOR EIP'] = df['CONSULTOR EIP'].astype(str).str.strip().str.upper()
@@ -130,13 +149,11 @@ def render(df=None):
         (df['DEVOLUCIÓN GE'] == False) &
         (df['INAPLICACIÓN GE'] == False)
     ]
-
     df_filtrado = df_filtrado[
         df_filtrado['AREA'].notna() &
         (df_filtrado['AREA'].str.strip() != "") &
         (df_filtrado['AREA'].str.strip().str.upper() != "NO ENCONTRADO")
     ]
-
     df_filtrado = df_filtrado[
         df_filtrado['PRÁCTCAS/GE'].isin(seleccion_practicas) &
         df_filtrado['CONSULTOR EIP'].isin(seleccion_consultores)
@@ -148,12 +165,6 @@ def render(df=None):
 
     conteo_area = df_filtrado['AREA'].value_counts().reset_index()
     conteo_area.columns = ["Área", "Cantidad"]
-
-    conteo_practicas = df_filtrado['PRÁCTCAS/GE'].value_counts().reset_index()
-    conteo_practicas.columns = ["Tipo", "Cantidad"]
-
-    st.subheader("Número de Alumnos por Área")
-
     x_data = conteo_area["Área"]
     y_data = conteo_area["Cantidad"]
 
@@ -219,16 +230,7 @@ def render(df=None):
 
     total_ge_indicador = len(df_resultado)
 
-    df_resultado['RIESGO ECONÓMICO'] = (
-        df_resultado['RIESGO ECONÓMICO']
-        .astype(str)
-        .str.replace("€", "", regex=False)
-        .str.replace(" ", "", regex=False)
-        .str.replace(".", "", regex=False)
-        .str.replace(",", ".", regex=False)
-        .astype(float)
-        .fillna(0)
-    )
+    df_resultado['RIESGO ECONÓMICO'] = df_resultado['RIESGO ECONÓMICO'].map(limpiar_riesgo)
     suma_riesgo_eco = df_resultado['RIESGO ECONÓMICO'].sum()
     suma_riesgo_formateada = f"{suma_riesgo_eco:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
 
@@ -241,11 +243,12 @@ def render(df=None):
         st.metric(label="💰 RIESGO ECONOMICO", value=suma_riesgo_formateada)
 
     st.markdown("---")
-
     st.subheader("Distribución")
     colpie1, colpie2 = st.columns(2)
 
     with colpie1:
+        conteo_practicas = df_filtrado['PRÁCTCAS/GE'].value_counts().reset_index()
+        conteo_practicas.columns = ["Tipo", "Cantidad"]
         fig_pie = px.pie(
             conteo_practicas,
             names="Tipo",

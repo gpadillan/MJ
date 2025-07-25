@@ -278,7 +278,8 @@ def principal_page():
             # Países (incluye Gibraltar y España solo si tiene provincia inválida)
             df_ext = df_u[
                 (df_u['Provincia'].isna()) |
-                (~df_u['Provincia'].isin(PROVINCIAS_COORDS))
+                (~df_u['Provincia'].isin(PROVINCIAS_COORDS)) |
+                (df_u['País'] == "Gibraltar")
             ]
 
             count_prov = df_esp['Provincia'].value_counts().reset_index()
