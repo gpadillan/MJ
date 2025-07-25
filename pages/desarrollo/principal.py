@@ -62,7 +62,6 @@ def listar_estructura_convenios():
         site_resp.raise_for_status()
         site_id = site_resp.json()["id"]
 
-        # ✅ Ruta corregida para Graph API
         base_path = "/Shared Documents/EMPLEO/_PRÁCTICAS/Convenios firmados"
         root_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:{base_path}"
         carpeta_resp = requests.get(root_url, headers=headers)
@@ -275,11 +274,62 @@ def render(df=None):
         st.subheader("Alumnado por Consultor")
         st.plotly_chart(fig_pie_consultor, use_container_width=True)
 
-    # 📁 SharePoint Folder Section
+    # 📁 Estructura SharePoint
     st.markdown("---")
     st.subheader("📁 Estructura de carpetas: Convenios firmados (SharePoint)")
+
+    with st.expander("🧪 Explorar rutas manualmente"):
+        explorar_ruta("empleo", "")
+        explorar_ruta("empleo", "/EMPLEO")
+        explorar_ruta("empleo", "/EMPLEO/_PRÁCTICAS")
+        explorar_ruta("empleo", "/EMPLEO/_PRÁCTICAS/Convenios firmados")
+
     df_estructura = listar_estructura_convenios()
     if df_estructura is not None:
         st.dataframe(df_estructura)
     else:
         st.info("No se pudo obtener la estructura de carpetas.")
+
+
+# 🔍 Función de depuración para explorar rutas SharePoint
+def explorar_ruta(sharepoint_section, ruta_relativa):
+    config = st.secrets[sharepoint_section]
+
+    app = msal.ConfidentialClientApplication(
+        config["client_id"],
+        authority=f"https://login.microsoftonline.com/{config['tenant_id']}",
+        client_credential=config["client_secret"]
+    )
+
+    token_result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
+    if "access_token" not in token_result:
+        st.error("No se pudo obtener token.")
+        return
+
+    token = token_result["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    site_url = f"https://graph.microsoft.com/v1.0/sites/{config['domain']}:/sites/{config['site_name']}"
+    site_resp = requests.get(site_url, headers=headers)
+    if site_resp.status_code != 200:
+        st.error("Error al obtener el sitio.")
+        st.text(site_resp.text)
+        return
+
+    site_id = site_resp.json()["id"]
+
+    full_path = f"/Shared Documents{ruta_relativa}"
+    st.write("🔍 Explorando:", full_path)
+
+    target_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:{full_path}:/children"
+    resp = requests.get(target_url, headers=headers)
+
+    if resp.status_code != 200:
+        st.error("❌ No se pudo acceder a la ruta.")
+        st.text(resp.text)
+        return
+
+    items = resp.json().get("value", [])
+    for item in items:
+        tipo = "📁 Carpeta" if "folder" in item else "📄 Archivo"
+        st.write(f"{tipo}: {item['name']}")
