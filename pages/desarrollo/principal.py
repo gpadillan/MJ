@@ -57,12 +57,13 @@ def listar_estructura_convenios():
         token = token_result["access_token"]
         headers = {"Authorization": f"Bearer {token}"}
 
+        # ✅ RUTA corregida según SharePoint real
         site_url = f"https://graph.microsoft.com/v1.0/sites/{config['domain']}:/sites/{config['site_name']}"
         site_resp = requests.get(site_url, headers=headers)
         site_resp.raise_for_status()
         site_id = site_resp.json()["id"]
 
-        base_path = "/Documentos compartidos/FORMACIÓN Y EMPLEO SHAREPPOINT/EMPLEO/_PRÁCTICAS/Convenios firmados"
+        base_path = "/Documentos compartidos/EMPLEO/_PRÁCTICAS/Convenios firmados"
         root_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:{base_path}"
         carpeta_resp = requests.get(root_url, headers=headers)
         carpeta_resp.raise_for_status()
@@ -274,7 +275,7 @@ def render(df=None):
         st.subheader("Alumnado por Consultor")
         st.plotly_chart(fig_pie_consultor, use_container_width=True)
 
-    # 🔻 NUEVA SECCIÓN DE CARPETAS
+    # 📁 SECCIÓN DE SHAREPOINT
     st.markdown("---")
     st.subheader("📁 Estructura de carpetas: Convenios firmados (SharePoint)")
     df_estructura = listar_estructura_convenios()
