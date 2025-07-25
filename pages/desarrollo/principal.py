@@ -64,7 +64,7 @@ def listar_estructura_convenios():
         site_id = site_resp.json()["id"]
 
         # ✅ Ruta final correcta
-        base_path = "/Documentos/EMPLEO/_PRÁCTICAS/Convenios firmados"
+        base_path = "/Shared Documents/EMPLEO/_PRÁCTICAS/Convenios firmados"
         root_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:{base_path}"
         carpeta_resp = requests.get(root_url, headers=headers)
         carpeta_resp.raise_for_status()
