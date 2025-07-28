@@ -5,12 +5,13 @@ import plotly.express as px
 def render(df):
     st.title("💰 Riesgo Económico")
 
+    # Limpieza de columnas
     df.columns = df.columns.str.strip().str.upper()
 
     columnas_requeridas = [
         'NOMBRE', 'APELLIDOS', 'PRÁCTCAS/GE', 'CONSULTOR EIP',
         'CONSECUCIÓN GE', 'DEVOLUCIÓN GE', 'INAPLICACIÓN GE',
-        'FIN CONV', 'MES 3M', 'RIESGO ECONÓMICO', 'EJECUCIÓN GARANTÍA', 'AREA'
+        'FIN CONV', 'MES 3M', 'RIESGO ECONÓMICO', 'EJECUCIÓN GARANTÍA', 'AREA', 'AÑO'
     ]
     for col in columnas_requeridas:
         if col not in df.columns:
@@ -64,7 +65,6 @@ def render(df):
     # 🔴 Devolución GE
     df_devolucion = df[df['DEVOLUCIÓN GE'].astype(str).str.lower().str.strip() == 'true'].copy()
     df_devolucion['FIN CONV'] = pd.to_datetime(df_devolucion['FIN CONV'], errors='coerce')
-    df_devolucion['AÑO'] = df_devolucion['FIN CONV'].dt.year
 
     df_devolucion['RIESGO ECONÓMICO'] = (
         df_devolucion['RIESGO ECONÓMICO']
@@ -76,6 +76,7 @@ def render(df):
         .astype(float)
         .fillna(0)
     )
+
     total_devoluciones = df_devolucion.shape[0]
     total_riesgo_devolucion = df_devolucion['RIESGO ECONÓMICO'].sum()
     riesgo_devolucion_str = f"{total_riesgo_devolucion:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
@@ -122,7 +123,7 @@ def render(df):
 
         # Tabla devoluciones
         st.markdown("### 🔴 Detalle de alumnos con DEVOLUCIÓN GE")
-        columnas_devolucion = ['NOMBRE', 'APELLIDOS', 'AREA', 'RIESGO ECONÓMICO','AÑO']
+        columnas_devolucion = ['NOMBRE', 'APELLIDOS', 'AREA', 'RIESGO ECONÓMICO', 'AÑO']
         df_devolucion_vista = df_devolucion[columnas_devolucion].copy()
         df_devolucion_vista['RIESGO ECONÓMICO'] = df_devolucion_vista['RIESGO ECONÓMICO'].apply(
             lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
