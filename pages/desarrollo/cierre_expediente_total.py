@@ -57,7 +57,16 @@ def render(df):
     total_consecucion = df_filtrado['CONSECUCIÓN_BOOL'].sum()
     total_inaplicacion = df_filtrado['INAPLICACIÓN_BOOL'].sum()
     total_empresa_ge = df_filtrado['EMPRESA GE'][~df_filtrado['EMPRESA GE'].isin(['', 'NO ENCONTRADO'])].shape[0]
-    total_empresa_pract = df_filtrado['EMPRESA PRÁCT.'][~df_filtrado['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])].shape[0]
+
+    if "Cierre Expediente Año 2025" in opcion:
+        total_empresa_pract = df_filtrado[
+            (df_filtrado['CONSECUCIÓN_BOOL'] == False) &
+            (df_filtrado['DEVOLUCIÓN_BOOL'] == False) &
+            (df_filtrado['INAPLICACIÓN_BOOL'] == False) &
+            (~df_filtrado['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO']))
+        ].shape[0]
+    else:
+        total_empresa_pract = df_filtrado['EMPRESA PRÁCT.'][~df_filtrado['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])].shape[0]
 
     with st.container():
         if "Total" in opcion:
