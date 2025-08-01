@@ -34,9 +34,7 @@ def render(df):
     df = df[df['CONSULTOR EIP'].str.upper() != 'NO ENCONTRADO']
 
     df['FECHA CIERRE'] = pd.to_datetime(df['FECHA CIERRE'], errors='coerce')
-    fecha_referencia = pd.to_datetime("2000-01-01")
     df['AÑO_CIERRE'] = df['FECHA CIERRE'].dt.year
-    df.loc[df['FECHA CIERRE'] == fecha_referencia, 'AÑO_CIERRE'] = 2025
 
     df['CONSECUCIÓN_BOOL'] = df['CONSECUCIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
     df['INAPLICACIÓN_BOOL'] = df['INAPLICACIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
@@ -76,6 +74,7 @@ def render(df):
 
             en_curso_2025 = 0
             if anio == '2025':
+                fecha_referencia = pd.to_datetime("2000-01-01")
                 en_curso_2025 = df_filtrado[df_filtrado['FECHA CIERRE'] == fecha_referencia].shape[0]
                 col1, col2, col3, col4 = st.columns(4)
                 col1.markdown(render_card(f"CONSECUCIÓN {anio}", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
@@ -177,4 +176,4 @@ def render(df):
     col_obj1.markdown(render_card("Inserción laboral Empleo", f"{porcentaje_empleo}%", "#c8e6c9"), unsafe_allow_html=True)
     col_obj2.markdown(render_card("Cierre de expediente Desarrollo Profesional", f"{porcentaje_cierre_dp}%", "#b2dfdb"), unsafe_allow_html=True)
     col_obj3.markdown(render_card("Inserción Laboral Prácticas", f"{porcentaje_practicas}%", "#ffe082"), unsafe_allow_html=True)
-    col_obj4.markdown(render_card("Conversión prácticas a empresa", f"{porcentaje_conversion}%", "#f8bbd0"), unsafe_allow_html=True)
+    col_obj4.markdown(render_card("Conversión prácticas a empresa", f"{porcentaje_conversion}%", "#f8bbd0"), unsafe_allow_html=True)    
