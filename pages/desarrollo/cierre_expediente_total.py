@@ -18,7 +18,7 @@ def render(df):
 
     columnas_requeridas = ['CONSECUCIÓN GE', 'DEVOLUCIÓN GE', 'INAPLICACIÓN GE',
                            'MODALIDAD PRÁCTICAS', 'CONSULTOR EIP', 'PRÁCTCAS/GE',
-                           'EMPRESA PRÁCT.', 'EMPRESA GE', 'AREA', 'AÑO', 'NOMBRE', 'APELLIDOS']
+                           'EMPRESA PRÁCT.', 'EMPRESA GE', 'AREA', 'AÑO', 'NOMBRE', 'APELLIDOS', 'FECHA CIERRE']
     if not all(col in df.columns for col in columnas_requeridas):
         st.error("Faltan columnas requeridas en el DataFrame.")
         return
@@ -33,6 +33,8 @@ def render(df):
     df['CONSULTOR EIP'] = df['CONSULTOR EIP'].astype(str).str.strip().replace('', 'Otros').fillna('Otros')
     df = df[df['CONSULTOR EIP'].str.upper() != 'NO ENCONTRADO']
 
+    df['FECHA CIERRE'] = pd.to_datetime(df['FECHA CIERRE'], errors='coerce', dayfirst=True)
+
     df['CONSECUCIÓN_BOOL'] = df['CONSECUCIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
     df['INAPLICACIÓN_BOOL'] = df['INAPLICACIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
     df['DEVOLUCIÓN_BOOL'] = df['DEVOLUCIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
@@ -46,40 +48,36 @@ def render(df):
     seleccion_consultores = st.multiselect("Filtrar por Consultor:", options=consultores_unicos, default=consultores_unicos)
     df_filtrado = df_base[df_base['CONSULTOR EIP'].isin(seleccion_consultores)]
 
-    df_filtrado['PRACTICAS_BOOL'] = (
-        (df_filtrado['PRÁCTCAS/GE'] == 'GE') &
-        (~df_filtrado['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])) &
-        (df_filtrado['CONSECUCIÓN GE'].astype(str).str.strip().str.upper() == 'FALSE') &
-        (df_filtrado['DEVOLUCIÓN GE'].astype(str).str.strip().str.upper() == 'FALSE') &
-        (df_filtrado['INAPLICACIÓN GE'].astype(str).str.strip().str.upper() == 'FALSE')
-    )
+    cond_empresa_valida = ~df_filtrado['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])
+    cond_fecha_cierre_valida = df_filtrado['FECHA CIERRE'] == pd.Timestamp("2000-01-01")
+
+    if "Cierre Expediente Año 2025" in opcion:
+        cond_fecha_año = df_filtrado['AÑO'] == 2025
+    elif "Cierre Expediente Año 2024" in opcion:
+        cond_fecha_año = df_filtrado['AÑO'] < 2025
+    else:
+        cond_fecha_año = df_filtrado['AÑO'].notna()
+
+    total_empresa_pract = df_filtrado[
+        cond_empresa_valida & cond_fecha_cierre_valida & cond_fecha_año
+    ].shape[0]
 
     total_consecucion = df_filtrado['CONSECUCIÓN_BOOL'].sum()
     total_inaplicacion = df_filtrado['INAPLICACIÓN_BOOL'].sum()
     total_empresa_ge = df_filtrado['EMPRESA GE'][~df_filtrado['EMPRESA GE'].isin(['', 'NO ENCONTRADO'])].shape[0]
-
-    if "Cierre Expediente Año 2025" in opcion:
-        total_empresa_pract = df_filtrado[
-            (df_filtrado['CONSECUCIÓN_BOOL'] == False) &
-            (df_filtrado['DEVOLUCIÓN_BOOL'] == False) &
-            (df_filtrado['INAPLICACIÓN_BOOL'] == False) &
-            (~df_filtrado['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO']))
-        ].shape[0]
-    else:
-        total_empresa_pract = df_filtrado['EMPRESA PRÁCT.'][~df_filtrado['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])].shape[0]
 
     with st.container():
         if "Total" in opcion:
             col1, col2, col3 = st.columns(3)
             col1.markdown(render_card("CONSECUCIÓN", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
             col2.markdown(render_card("INAPLICACIÓN", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
-            col3.markdown(render_card("Alumnado total en PRÁCTICAS", total_empresa_ge, "#ede7f6"), unsafe_allow_html=True)
+            col3.markdown(render_card("Alumnado total en PRÁCTICAS", total_empresa_pract, "#ede7f6"), unsafe_allow_html=True)
         else:
             anio = opcion.split()[-1]
             col1, col2, col3 = st.columns(3)
             col1.markdown(render_card(f"CONSECUCIÓN {anio}", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
             col2.markdown(render_card(f"INAPLICACIÓN {anio}", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
-            col3.markdown(render_card("Alumnado PRÁCTICAS", total_empresa_pract, "#f3e5f5"), unsafe_allow_html=True)
+            col3.markdown(render_card(f"PRÁCTICAS {anio}", total_empresa_pract, "#f3e5f5"), unsafe_allow_html=True)
 
     st.markdown("### Cierres gestionados por Consultor")
     df_cierre = pd.concat([
@@ -99,31 +97,31 @@ def render(df):
 
     st.markdown("### Resumen por ÁREA")
     df_valid_area = df_empresas[df_empresas['AREA'] != '']
-    df_valid_area_pract = df_valid_area.copy()
-
     resumen_area = pd.DataFrame()
     resumen_area['TOTAL CONSECUCIÓN'] = df_valid_area[df_valid_area['CONSECUCIÓN_BOOL']].groupby('AREA').size()
     resumen_area['TOTAL INAPLICACIÓN'] = df_valid_area[df_valid_area['INAPLICACIÓN_BOOL']].groupby('AREA').size()
-    if "Total" in opcion:
-        resumen_area['TOTAL PRÁCTICAS'] = df_valid_area_pract[df_valid_area_pract['PRACTICAS_BOOL']].groupby('AREA').size()
+
+    practicas_filtradas = df_valid_area[
+        ~df_valid_area['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO']) &
+        (df_valid_area['FECHA CIERRE'] == pd.Timestamp("2000-01-01")) &
+        cond_fecha_año
+    ]
+    resumen_area['TOTAL PRÁCTICAS'] = practicas_filtradas.groupby('AREA').size()
 
     resumen_area = resumen_area.fillna(0).astype(int).sort_values(by='TOTAL CONSECUCIÓN', ascending=False).reset_index()
 
     total_row = {
         'AREA': 'Total',
         'TOTAL CONSECUCIÓN': resumen_area['TOTAL CONSECUCIÓN'].sum(),
-        'TOTAL INAPLICACIÓN': resumen_area['TOTAL INAPLICACIÓN'].sum()
+        'TOTAL INAPLICACIÓN': resumen_area['TOTAL INAPLICACIÓN'].sum(),
+        'TOTAL PRÁCTICAS': resumen_area['TOTAL PRÁCTICAS'].sum()
     }
-    if 'TOTAL PRÁCTICAS' in resumen_area.columns:
-        total_row['TOTAL PRÁCTICAS'] = resumen_area['TOTAL PRÁCTICAS'].sum()
-
     resumen_area = pd.concat([resumen_area, pd.DataFrame([total_row])], ignore_index=True)
 
     styled_area = resumen_area.style \
         .background_gradient(subset=['TOTAL CONSECUCIÓN'], cmap='Greens') \
-        .background_gradient(subset=['TOTAL INAPLICACIÓN'], cmap='Reds')
-    if 'TOTAL PRÁCTICAS' in resumen_area.columns:
-        styled_area = styled_area.background_gradient(subset=['TOTAL PRÁCTICAS'], cmap='Blues')
+        .background_gradient(subset=['TOTAL INAPLICACIÓN'], cmap='Reds') \
+        .background_gradient(subset=['TOTAL PRÁCTICAS'], cmap='Blues')
 
     st.dataframe(styled_area, use_container_width=True)
 
