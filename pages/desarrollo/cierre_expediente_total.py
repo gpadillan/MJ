@@ -18,11 +18,12 @@ def render(df):
 
     columnas_requeridas = ['CONSECUCIÓN GE', 'DEVOLUCIÓN GE', 'INAPLICACIÓN GE',
                            'MODALIDAD PRÁCTICAS', 'CONSULTOR EIP', 'PRÁCTCAS/GE',
-                           'EMPRESA PRÁCT.', 'EMPRESA GE', 'AREA', 'AÑO', 'NOMBRE', 'APELLIDOS']
+                           'EMPRESA PRÁCT.', 'EMPRESA GE', 'AREA', 'AÑO', 'NOMBRE', 'APELLIDOS', 'FECHA CIERRE']
     if not all(col in df.columns for col in columnas_requeridas):
         st.error("Faltan columnas requeridas en el DataFrame.")
         return
 
+    # Limpieza básica
     df['PRÁCTCAS/GE'] = df['PRÁCTCAS/GE'].astype(str).str.strip().str.upper()
     df['EMPRESA PRÁCT.'] = df['EMPRESA PRÁCT.'].astype(str).str.strip().str.upper()
     df['EMPRESA GE'] = df['EMPRESA GE'].astype(str).str.strip().str.upper()
@@ -33,15 +34,22 @@ def render(df):
     df['CONSULTOR EIP'] = df['CONSULTOR EIP'].astype(str).str.strip().replace('', 'Otros').fillna('Otros')
     df = df[df['CONSULTOR EIP'].str.upper() != 'NO ENCONTRADO']
 
+    # CAMBIO IMPORTANTE: Usamos FECHA CIERRE para obtener el año real del cierre
+    df['FECHA CIERRE'] = pd.to_datetime(df['FECHA CIERRE'], errors='coerce')
+    df['AÑO_CIERRE'] = df['FECHA CIERRE'].dt.year
+
     df['CONSECUCIÓN_BOOL'] = df['CONSECUCIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
     df['INAPLICACIÓN_BOOL'] = df['INAPLICACIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
     df['DEVOLUCIÓN_BOOL'] = df['DEVOLUCIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
 
-    anios_disponibles = sorted(df['AÑO'].dropna().unique().astype(int))
+    # CAMBIO: años extraídos de FECHA CIERRE
+    anios_disponibles = sorted(df['AÑO_CIERRE'].dropna().unique().astype(int))
     opciones_informe = [f"Cierre Expediente Año {a}" for a in anios_disponibles] + ["Cierre Expediente Total"]
     opcion = st.selectbox("Selecciona el tipo de informe:", opciones_informe)
 
-    df_base = df.copy() if "Total" in opcion else df[df['AÑO'] == int(opcion.split()[-1])].copy()
+    # CAMBIO: filtrado por año de FECHA CIERRE
+    df_base = df.copy() if "Total" in opcion else df[df['AÑO_CIERRE'] == int(opcion.split()[-1])].copy()
+
     consultores_unicos = sorted(df_base['CONSULTOR EIP'].dropna().unique())
     seleccion_consultores = st.multiselect("Filtrar por Consultor:", options=consultores_unicos, default=consultores_unicos)
     df_filtrado = df_base[df_base['CONSULTOR EIP'].isin(seleccion_consultores)]
