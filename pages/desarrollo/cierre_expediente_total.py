@@ -23,7 +23,6 @@ def render(df):
         st.error("Faltan columnas requeridas en el DataFrame.")
         return
 
-    # Limpieza básica
     df['PRÁCTCAS/GE'] = df['PRÁCTCAS/GE'].astype(str).str.strip().str.upper()
     df['EMPRESA PRÁCT.'] = df['EMPRESA PRÁCT.'].astype(str).str.strip().str.upper()
     df['EMPRESA GE'] = df['EMPRESA GE'].astype(str).str.strip().str.upper()
@@ -34,7 +33,6 @@ def render(df):
     df['CONSULTOR EIP'] = df['CONSULTOR EIP'].astype(str).str.strip().replace('', 'Otros').fillna('Otros')
     df = df[df['CONSULTOR EIP'].str.upper() != 'NO ENCONTRADO']
 
-    # CAMBIO IMPORTANTE: Usamos FECHA CIERRE para obtener el año real del cierre
     df['FECHA CIERRE'] = pd.to_datetime(df['FECHA CIERRE'], errors='coerce')
     df['AÑO_CIERRE'] = df['FECHA CIERRE'].dt.year
 
@@ -42,12 +40,10 @@ def render(df):
     df['INAPLICACIÓN_BOOL'] = df['INAPLICACIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
     df['DEVOLUCIÓN_BOOL'] = df['DEVOLUCIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
 
-    # CAMBIO: años extraídos de FECHA CIERRE
     anios_disponibles = sorted(df['AÑO_CIERRE'].dropna().unique().astype(int))
     opciones_informe = [f"Cierre Expediente Año {a}" for a in anios_disponibles] + ["Cierre Expediente Total"]
     opcion = st.selectbox("Selecciona el tipo de informe:", opciones_informe)
 
-    # CAMBIO: filtrado por año de FECHA CIERRE
     df_base = df.copy() if "Total" in opcion else df[df['AÑO_CIERRE'] == int(opcion.split()[-1])].copy()
 
     consultores_unicos = sorted(df_base['CONSULTOR EIP'].dropna().unique())
@@ -75,10 +71,21 @@ def render(df):
             col3.markdown(render_card("Alumnado total en PRÁCTICAS", total_empresa_ge, "#ede7f6"), unsafe_allow_html=True)
         else:
             anio = opcion.split()[-1]
-            col1, col2, col3 = st.columns(3)
-            col1.markdown(render_card(f"CONSECUCIÓN {anio}", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
-            col2.markdown(render_card(f"INAPLICACIÓN {anio}", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
-            col3.markdown(render_card(f"Prácticas {anio}", total_empresa_pract, "#f3e5f5"), unsafe_allow_html=True)
+
+            en_curso_2025 = 0
+            if anio == '2025':
+                fecha_referencia = pd.to_datetime("2000-01-01")
+                en_curso_2025 = df_filtrado[df_filtrado['FECHA CIERRE'] == fecha_referencia].shape[0]
+                col1, col2, col3, col4 = st.columns(4)
+                col1.markdown(render_card(f"CONSECUCIÓN {anio}", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
+                col2.markdown(render_card(f"INAPLICACIÓN {anio}", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
+                col3.markdown(render_card(f"Prácticas {anio}", total_empresa_pract, "#f3e5f5"), unsafe_allow_html=True)
+                col4.markdown(render_card("Prácticas en curso 2025", en_curso_2025, "#fff3e0"), unsafe_allow_html=True)
+            else:
+                col1, col2, col3 = st.columns(3)
+                col1.markdown(render_card(f"CONSECUCIÓN {anio}", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
+                col2.markdown(render_card(f"INAPLICACIÓN {anio}", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
+                col3.markdown(render_card(f"Prácticas {anio}", total_empresa_pract, "#f3e5f5"), unsafe_allow_html=True)
 
     st.markdown("### Cierres gestionados por Consultor")
     df_cierre = pd.concat([
