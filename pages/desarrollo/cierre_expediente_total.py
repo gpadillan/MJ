@@ -34,7 +34,10 @@ def render(df):
     df = df[df['CONSULTOR EIP'].str.upper() != 'NO ENCONTRADO']
 
     df['FECHA CIERRE'] = pd.to_datetime(df['FECHA CIERRE'], errors='coerce')
+
+    # 👇 Cambio agregado aquí
     df['AÑO_CIERRE'] = df['FECHA CIERRE'].dt.year
+    df.loc[df['FECHA CIERRE'] == pd.to_datetime("2000-01-01"), 'AÑO_CIERRE'] = 2025
 
     df['CONSECUCIÓN_BOOL'] = df['CONSECUCIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
     df['INAPLICACIÓN_BOOL'] = df['INAPLICACIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
