@@ -40,11 +40,24 @@ def render(df):
     df['INAPLICACIÓN_BOOL'] = df['INAPLICACIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
     df['DEVOLUCIÓN_BOOL'] = df['DEVOLUCIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
 
+    # Modificar los años disponibles en el selector
     anios_disponibles = sorted(df['AÑO_CIERRE'].dropna().unique().astype(int))
+    if 2000 in anios_disponibles:
+        anios_disponibles.remove(2000)
+    if 2025 not in anios_disponibles:
+        anios_disponibles.append(2025)
+
     opciones_informe = [f"Cierre Expediente Año {a}" for a in anios_disponibles] + ["Cierre Expediente Total"]
     opcion = st.selectbox("Selecciona el tipo de informe:", opciones_informe)
 
-    df_base = df.copy() if "Total" in opcion else df[df['AÑO_CIERRE'] == int(opcion.split()[-1])].copy()
+    # Filtrado especial para 2025 incluyendo los casos con fecha 01/01/2000
+    if "Total" in opcion:
+        df_base = df.copy()
+    elif "2025" in opcion:
+        fecha_en_curso = pd.to_datetime("2000-01-01")
+        df_base = df[(df['AÑO_CIERRE'] == 2025) | (df['FECHA CIERRE'] == fecha_en_curso)].copy()
+    else:
+        df_base = df[df['AÑO_CIERRE'] == int(opcion.split()[-1])].copy()
 
     consultores_unicos = sorted(df_base['CONSULTOR EIP'].dropna().unique())
     seleccion_consultores = st.multiselect("Filtrar por Consultor:", options=consultores_unicos, default=consultores_unicos)
@@ -176,4 +189,4 @@ def render(df):
     col_obj1.markdown(render_card("Inserción laboral Empleo", f"{porcentaje_empleo}%", "#c8e6c9"), unsafe_allow_html=True)
     col_obj2.markdown(render_card("Cierre de expediente Desarrollo Profesional", f"{porcentaje_cierre_dp}%", "#b2dfdb"), unsafe_allow_html=True)
     col_obj3.markdown(render_card("Inserción Laboral Prácticas", f"{porcentaje_practicas}%", "#ffe082"), unsafe_allow_html=True)
-    col_obj4.markdown(render_card("Conversión prácticas a empresa", f"{porcentaje_conversion}%", "#f8bbd0"), unsafe_allow_html=True)   
+    col_obj4.markdown(render_card("Conversión prácticas a empresa", f"{porcentaje_conversion}%", "#f8bbd0"), unsafe_allow_html=True)
