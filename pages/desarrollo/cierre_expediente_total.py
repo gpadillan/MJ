@@ -40,21 +40,11 @@ def render(df):
     df['INAPLICACIÓN_BOOL'] = df['INAPLICACIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
     df['DEVOLUCIÓN_BOOL'] = df['DEVOLUCIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
 
-    # ---------- NUEVO: flag global para prácticas en curso ----------
-    df['PRACTICAS_BOOL_GLOBAL'] = (
-        (df['PRÁCTCAS/GE'] == 'GE') &
-        (~df['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])) &
-        (~df['CONSECUCIÓN_BOOL']) &
-        (~df['DEVOLUCIÓN_BOOL']) &
-        (~df['INAPLICACIÓN_BOOL'])
-    )
-    # ----------------------------------------------------------------
-
-    # ---------- PARCHE 1: ocultar 2000 del selector ----------
+    # ---------- Ocultar 2000 del selector ----------
     anios_disponibles = sorted(df['AÑO_CIERRE'].dropna().unique().astype(int))
     anios_visibles = [a for a in anios_disponibles if a != 2000]
     opciones_informe = [f"Cierre Expediente Año {a}" for a in anios_visibles] + ["Cierre Expediente Total"]
-    # ----------------------------------------------------------
+    # ------------------------------------------------
 
     opcion = st.selectbox("Selecciona el tipo de informe:", opciones_informe)
 
@@ -88,15 +78,12 @@ def render(df):
 
             en_curso_2025 = 0
             if anio == '2025':
-                fecha_referencia = pd.to_datetime("2000-01-01")
-
-                # ---------- PARCHE 2: contar SOLO prácticas en curso desde 2000 ----------
+                # Contar SOLO filas del año 2000 con empresa de prácticas informada (aplicando filtro de consultores)
                 df_consultores = df[df['CONSULTOR EIP'].isin(seleccion_consultores)]
                 en_curso_2025 = df_consultores[
                     (df_consultores['AÑO_CIERRE'] == 2000) &
-                    (df_consultores['PRACTICAS_BOOL_GLOBAL'])
+                    (~df_consultores['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO']))
                 ].shape[0]
-                # ------------------------------------------------------------------------
 
                 col1, col2, col3, col4 = st.columns(4)
                 col1.markdown(render_card(f"CONSECUCIÓN {anio}", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
