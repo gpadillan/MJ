@@ -96,26 +96,29 @@ def render(df):
                 col3.markdown(render_card(f"Prácticas {anio}", total_empresa_pract, "#f3e5f5"), unsafe_allow_html=True)
 
     st.markdown("### Cierres gestionados por Consultor")
+
+    # Construcción del DataFrame usado por el gráfico (solo cierres)
     df_cierre = pd.concat([
-        df_filtrado[df_filtrado['CONSECUCIÓN_BOOL']][['CONSULTOR EIP']].assign(CIERRE='CONSECUCIÓN'),
-        df_filtrado[df_filtrado['INAPLICACIÓN_BOOL']][['CONSULTOR EIP']].assign(CIERRE='INAPLICACIÓN')
-    ])
+        df_filtrado[df_filtrado['CONSECUCIÓN_BOOL']][['CONSULTOR EIP','NOMBRE','APELLIDOS']].assign(CIERRE='CONSECUCIÓN'),
+        df_filtrado[df_filtrado['INAPLICACIÓN_BOOL']][['CONSULTOR EIP','NOMBRE','APELLIDOS']].assign(CIERRE='INAPLICACIÓN')
+    ], ignore_index=True)
+
     resumen_total_cierres = df_cierre.groupby('CONSULTOR EIP').size().reset_index(name='TOTAL_CIERRES')
     fig_pie = px.pie(resumen_total_cierres, names='CONSULTOR EIP', values='TOTAL_CIERRES',
                      title=f'Distribución de cierres por Consultor ({opcion})', hole=0)
     fig_pie.update_traces(textinfo='label+value')
     st.plotly_chart(fig_pie, use_container_width=True)
 
-    # === NUEVO: listado de NOMBRE y APELLIDOS para el grupo "Otros" ===
-    if "Otros" in df_filtrado['CONSULTOR EIP'].values:
-        st.markdown("#### 📋 Alumnado asignado a 'Otros'")
+    # === Detalle coherente con el gráfico (solo cierres) ===
+    if (df_cierre['CONSULTOR EIP'] == 'Otros').any():
+        st.markdown("#### 📋 Alumnado asignado a 'Otros' (solo cierres del gráfico)")
         df_otros = (
-            df_filtrado[df_filtrado['CONSULTOR EIP'] == 'Otros'][['NOMBRE', 'APELLIDOS']]
+            df_cierre[df_cierre['CONSULTOR EIP'] == 'Otros'][['NOMBRE','APELLIDOS']]
             .drop_duplicates()
-            .sort_values(['APELLIDOS', 'NOMBRE'])
+            .sort_values(['APELLIDOS','NOMBRE'])
         )
         st.dataframe(df_otros, use_container_width=True)
-    # ===================================================================
+    # =======================================================
 
     st.markdown("### Empresas por ÁREA")
     areas_disponibles = ['TODAS'] + sorted(df_filtrado['AREA'].dropna().unique())
