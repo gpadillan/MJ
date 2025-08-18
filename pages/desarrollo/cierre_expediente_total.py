@@ -40,8 +40,12 @@ def render(df):
     df['INAPLICACIÓN_BOOL'] = df['INAPLICACIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
     df['DEVOLUCIÓN_BOOL'] = df['DEVOLUCIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
 
+    # ---------- PARCHE 1: ocultar 2000 del selector ----------
     anios_disponibles = sorted(df['AÑO_CIERRE'].dropna().unique().astype(int))
-    opciones_informe = [f"Cierre Expediente Año {a}" for a in anios_disponibles] + ["Cierre Expediente Total"]
+    anios_visibles = [a for a in anios_disponibles if a != 2000]
+    opciones_informe = [f"Cierre Expediente Año {a}" for a in anios_visibles] + ["Cierre Expediente Total"]
+    # ----------------------------------------------------------
+
     opcion = st.selectbox("Selecciona el tipo de informe:", opciones_informe)
 
     df_base = df.copy() if "Total" in opcion else df[df['AÑO_CIERRE'] == int(opcion.split()[-1])].copy()
@@ -75,7 +79,13 @@ def render(df):
             en_curso_2025 = 0
             if anio == '2025':
                 fecha_referencia = pd.to_datetime("2000-01-01")
-                en_curso_2025 = df_filtrado[df_filtrado['FECHA CIERRE'] == fecha_referencia].shape[0]
+                # ---------- PARCHE 2: contar “en curso” desde el año 2000 aplicando el filtro de consultores ----------
+                df_consultores = df[df['CONSULTOR EIP'].isin(seleccion_consultores)]
+                # opción por año sentinel:
+                en_curso_2025 = df_consultores[df_consultores['AÑO_CIERRE'] == 2000].shape[0]
+                # si prefieres por fecha exacta en lugar de año:
+                # en_curso_2025 = df_consultores[df_consultores['FECHA CIERRE'] == fecha_referencia].shape[0]
+                # -----------------------------------------------------------------------------------------------------
                 col1, col2, col3, col4 = st.columns(4)
                 col1.markdown(render_card(f"CONSECUCIÓN {anio}", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
                 col2.markdown(render_card(f"INAPLICACIÓN {anio}", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
@@ -154,26 +164,24 @@ def render(df):
     st.markdown("## 🎯 OBJETIVOS %")
 
     insercion_empleo = df_validos[df_validos['CONSECUCIÓN GE'] == 'TRUE']
-    porcentaje_empleo = round((insercion_empleo[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0] / total_alumnado_objetivo) * 100, 2)
+    porcentaje_empleo = round((insercion_empleo[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0] / total_alumnado_objetivo) * 100, 2) if total_alumnado_objetivo else 0.0
 
     cond_cierre_dp = (
         (df_validos['CONSECUCIÓN GE'] == 'TRUE') |
         (df_validos['DEVOLUCIÓN GE'] == 'TRUE') |
         (df_validos['INAPLICACIÓN GE'] == 'TRUE')
     )
-    porcentaje_cierre_dp = round((df_validos[cond_cierre_dp][['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0] / total_alumnado_objetivo) * 100, 2)
+    porcentaje_cierre_dp = round((df_validos[cond_cierre_dp][['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0] / total_alumnado_objetivo) * 100, 2) if total_alumnado_objetivo else 0.0
 
     practicas_realizadas = df_validos[~df_validos['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])]
-    porcentaje_practicas = round((practicas_realizadas[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0] / total_alumnado_objetivo) * 100, 2)
+    porcentaje_practicas = round((practicas_realizadas[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0] / total_alumnado_objetivo) * 100, 2) if total_alumnado_objetivo else 0.0
 
     conversion_realizada = practicas_realizadas[practicas_realizadas['EMPRESA PRÁCT.'] == practicas_realizadas['EMPRESA GE']]
-    if not practicas_realizadas.empty:
-        porcentaje_conversion = round((conversion_realizada[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0] / practicas_realizadas[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0]) * 100, 2)
-    else:
-        porcentaje_conversion = 0.0
+    denom = practicas_realizadas[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0]
+    porcentaje_conversion = round((conversion_realizada[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0] / denom) * 100, 2) if denom else 0.0
 
     col_obj1, col_obj2, col_obj3, col_obj4 = st.columns(4)
     col_obj1.markdown(render_card("Inserción laboral Empleo", f"{porcentaje_empleo}%", "#c8e6c9"), unsafe_allow_html=True)
     col_obj2.markdown(render_card("Cierre de expediente Desarrollo Profesional", f"{porcentaje_cierre_dp}%", "#b2dfdb"), unsafe_allow_html=True)
     col_obj3.markdown(render_card("Inserción Laboral Prácticas", f"{porcentaje_practicas}%", "#ffe082"), unsafe_allow_html=True)
-    col_obj4.markdown(render_card("Conversión prácticas a empresa", f"{porcentaje_conversion}%", "#f8bbd0"), unsafe_allow_html=True)    
+    col_obj4.markdown(render_card("Conversión prácticas a empresa", f"{porcentaje_conversion}%", "#f8bbd0"), unsafe_allow_html=True)
