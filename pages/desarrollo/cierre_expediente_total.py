@@ -40,11 +40,10 @@ def render(df):
     df['INAPLICACIÓN_BOOL'] = df['INAPLICACIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
     df['DEVOLUCIÓN_BOOL'] = df['DEVOLUCIÓN GE'].astype(str).str.strip().str.upper() == 'TRUE'
 
-    # ---------- Ocultar 2000 del selector ----------
+    # Ocultar 2000 del selector
     anios_disponibles = sorted(df['AÑO_CIERRE'].dropna().unique().astype(int))
     anios_visibles = [a for a in anios_disponibles if a != 2000]
     opciones_informe = [f"Cierre Expediente Año {a}" for a in anios_visibles] + ["Cierre Expediente Total"]
-    # ------------------------------------------------
 
     opcion = st.selectbox("Selecciona el tipo de informe:", opciones_informe)
 
@@ -106,6 +105,17 @@ def render(df):
                      title=f'Distribución de cierres por Consultor ({opcion})', hole=0)
     fig_pie.update_traces(textinfo='label+value')
     st.plotly_chart(fig_pie, use_container_width=True)
+
+    # === NUEVO: listado de NOMBRE y APELLIDOS para el grupo "Otros" ===
+    if "Otros" in df_filtrado['CONSULTOR EIP'].values:
+        st.markdown("#### 📋 Alumnado asignado a 'Otros'")
+        df_otros = (
+            df_filtrado[df_filtrado['CONSULTOR EIP'] == 'Otros'][['NOMBRE', 'APELLIDOS']]
+            .drop_duplicates()
+            .sort_values(['APELLIDOS', 'NOMBRE'])
+        )
+        st.dataframe(df_otros, use_container_width=True)
+    # ===================================================================
 
     st.markdown("### Empresas por ÁREA")
     areas_disponibles = ['TODAS'] + sorted(df_filtrado['AREA'].dropna().unique())
