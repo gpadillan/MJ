@@ -36,17 +36,36 @@ def app():
     df["propietario"] = df["propietario"].astype(str).str.strip()
     df = df.replace("nan", pd.NA).dropna(subset=["Programa", "propietario"])
 
+    # === CLASIFICACIÓN DE PROGRAMAS POR NOMBRE EXACTO ===
+    programa_mapping = {
+        "Certificado oficial SAP S/4HANA Finance": "CERTIFICACIÓN SAP S/4HANA",
+        "Consultoría SAP S4HANA Ventas": "CERTIFICACIÓN SAP S/4HANA",
+        "Master en Auditoría de Protección de Datos, Gestión de Riesgos y Cyber Compliance": "MÁSTER DPO",
+        "Máster Profesional en Auditoría de Protección de Datos, Gestión de Riesgos y Cyber Compliance": "MÁSTER DPO",
+        "Máster en Dirección de Compliance & Protección de Datos": "MÁSTER DPO",
+        "Master en Dirección de Ciberseguridad, Hacking Ético y Seguridad Ofensiva": "MÁSTER CIBERSEGURIDAD",
+        "Máster en Dirección de Ciberseguridad, Hacking Ético y Seguridad Ofensiva": "MÁSTER CIBERSEGURIDAD",
+        "Master en Gestión Eficiente de Energías Renovables": "MÁSTER EERR",
+        "Máster en Gestión Eficiente de las Energías Renovables": "MÁSTER EERR",
+        "Programa Movilidad California": "PROGRAMA CALIFORNIA",
+        "Máster en RRHH: Dirección de Personas, Desarrollo de Talento y Gestión Laboral": "MÁSTER RRHH",
+        "Master en RRHH, dirección de personas, desarrollo de talento y gestión laboral": "MÁSTER RRHH",
+        "Máster en Inteligencia Artificial": "MÁSTER IA"
+    }
+
+    df["programa_categoria"] = df["Programa"].map(programa_mapping).fillna(df["Programa"])
+
     st.subheader("Selecciona un programa")
-    programas_unicos = sorted(df["Programa"].unique())
+    programas_unicos = sorted(df["programa_categoria"].unique())
     programa_seleccionado = st.selectbox("Programa", ["Todos"] + programas_unicos)
 
-    df_filtrado = df if programa_seleccionado == "Todos" else df[df["Programa"] == programa_seleccionado]
+    df_filtrado = df if programa_seleccionado == "Todos" else df[df["programa_categoria"] == programa_seleccionado]
 
     col1, col2 = st.columns(2)
 
     with col1:
         st.subheader("Matrículas por programa")
-        conteo_programa = df["Programa"].value_counts().reset_index()
+        conteo_programa = df["programa_categoria"].value_counts().reset_index()
         conteo_programa.columns = ["programa", "cantidad"]
 
         colores = px.colors.qualitative.Plotly
@@ -92,7 +111,7 @@ def app():
             st.metric(label="Total alumnos V2", value=df_filtrado.shape[0])
         else:
             tabla_programas = (
-                df_filtrado.groupby("Programa").size().reset_index(name="Cantidad")
+                df_filtrado.groupby("programa_categoria").size().reset_index(name="Cantidad")
                 .sort_values("Cantidad", ascending=False)
             )
             if not tabla_programas.empty:
