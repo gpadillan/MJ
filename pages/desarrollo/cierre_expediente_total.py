@@ -109,16 +109,7 @@ def render(df):
     fig_pie.update_traces(textinfo='label+value')
     st.plotly_chart(fig_pie, use_container_width=True)
 
-    # === Detalle coherente con el gráfico (solo cierres) ===
-    if (df_cierre['CONSULTOR EIP'] == 'Otros').any():
-        st.markdown("#### 📋 Alumnado asignado a 'Otros' (solo cierres del gráfico)")
-        df_otros = (
-            df_cierre[df_cierre['CONSULTOR EIP'] == 'Otros'][['NOMBRE','APELLIDOS']]
-            .drop_duplicates()
-            .sort_values(['APELLIDOS','NOMBRE'])
-        )
-        st.dataframe(df_otros, use_container_width=True)
-    # =======================================================
+    # === 👆 Aquí ya no está el bloque de 'Otros' ===
 
     st.markdown("### Empresas por ÁREA")
     areas_disponibles = ['TODAS'] + sorted(df_filtrado['AREA'].dropna().unique())

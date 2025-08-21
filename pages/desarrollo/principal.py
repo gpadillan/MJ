@@ -5,8 +5,6 @@ import plotly.graph_objects as go
 import streamlit as st
 import os
 from datetime import datetime
-import msal
-import requests
 import re
 
 UPLOAD_FOLDER = "uploaded_admisiones"
@@ -37,74 +35,6 @@ def limpiar_riesgo(valor):
         return float(valor)
     except:
         return 0.0
-
-
-@st.cache_data(ttl=600)
-def listar_estructura_convenios():
-    try:
-        config = st.secrets["empleo"]
-
-        app = msal.ConfidentialClientApplication(
-            config["client_id"],
-            authority=f"https://login.microsoftonline.com/{config['tenant_id']}",
-            client_credential=config["client_secret"]
-        )
-
-        token_result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
-        if "access_token" not in token_result:
-            st.error("❌ No se pudo obtener token de acceso.")
-            return None
-
-        token = token_result["access_token"]
-        headers = {"Authorization": f"Bearer {token}"}
-
-        site_url = f"https://graph.microsoft.com/v1.0/sites/{config['domain']}:/sites/{config['site_name']}"
-        site_resp = requests.get(site_url, headers=headers)
-        site_resp.raise_for_status()
-        site_id = site_resp.json()["id"]
-
-        # ✅ Ruta final correcta
-        base_path = "/Shared Documents/EMPLEO/_PRÁCTICAS/Convenios firmados"
-        root_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:{base_path}"
-        carpeta_resp = requests.get(root_url, headers=headers)
-        carpeta_resp.raise_for_status()
-        carpeta_id = carpeta_resp.json()["id"]
-
-        hijos_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/items/{carpeta_id}/children"
-        hijos_resp = requests.get(hijos_url, headers=headers)
-        hijos_resp.raise_for_status()
-
-        resultado = []
-        nivel_1_folders = [item for item in hijos_resp.json().get("value", []) if "folder" in item]
-
-        for folder1 in nivel_1_folders:
-            nombre1 = folder1["name"]
-            id1 = folder1["id"]
-
-            try:
-                sub_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/items/{id1}/children"
-                sub_resp = requests.get(sub_url, headers=headers)
-                sub_resp.raise_for_status()
-
-                sub_folders = [item for item in sub_resp.json().get("value", []) if "folder" in item]
-                if not sub_folders:
-                    resultado.append({"Carpeta Nivel 1": nombre1, "Subcarpeta Nivel 2": "—"})
-                else:
-                    for sub in sub_folders:
-                        resultado.append({"Carpeta Nivel 1": nombre1, "Subcarpeta Nivel 2": sub["name"]})
-
-            except requests.exceptions.RequestException as e:
-                resultado.append({"Carpeta Nivel 1": nombre1, "Subcarpeta Nivel 2": "⚠️ Error de acceso"})
-                st.warning(f"⚠️ No se pudo acceder a subcarpetas de: {nombre1} — {str(e)}")
-
-        return pd.DataFrame(resultado)
-
-    except requests.exceptions.RequestException as e:
-        st.error(f"❌ Error de red o autenticación: {e}")
-        return None
-    except Exception as e:
-        st.error(f"❌ Error inesperado al consultar SharePoint: {e}")
-        return None
 
 
 def render(df=None):
@@ -275,11 +205,3 @@ def render(df=None):
         fig_pie_consultor.update_layout(height=500)
         st.subheader("Alumnado por Consultor")
         st.plotly_chart(fig_pie_consultor, use_container_width=True)
-
-    st.markdown("---")
-    st.subheader("📁 Estructura de carpetas: Convenios firmados (SharePoint)")
-    df_estructura = listar_estructura_convenios()
-    if df_estructura is not None:
-        st.dataframe(df_estructura)
-    else:
-        st.info("No se pudo obtener la estructura de carpetas.")
