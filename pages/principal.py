@@ -11,7 +11,7 @@ from streamlit_folium import folium_static
 import folium
 from utils.geo_utils import normalize_text, PROVINCIAS_COORDS, PAISES_COORDS, geolocalizar_pais
 
-# ===================== UTILS =====================
+# ===================== UTILS GENERALES =====================
 
 def format_euro(value: float) -> str:
     return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -37,7 +37,8 @@ def render_import_card(title, value, color="#ede7f6"):
         </div>
     """
 
-# --------- Cache Google Sheet ----------
+# ===================== CARGA DE DATOS =====================
+
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_key):
     creds = st.secrets["google_service_account"]
@@ -50,7 +51,6 @@ def load_google_sheet(sheet_key):
     df.columns = df.columns.str.strip().str.upper()
     return df
 
-# --------- SharePoint académico ----------
 def load_academica_data():
     if "academica_excel_data" not in st.session_state:
         try:
@@ -64,8 +64,10 @@ def load_academica_data():
             st.warning("⚠️ No se pudo cargar datos académicos automáticamente.")
             st.exception(e)
 
-# --------- Helpers Empleo (fechas, booleanos, limpieza) ----------
+# ===================== HELPERS EMPLEO (IGUAL QUE INFORME) =====================
+
 def convertir_fecha_excel(valor):
+    """Serial Excel o texto dd/mm/aaaa -> datetime; si falla, NaT."""
     try:
         if pd.isna(valor):
             return pd.NaT
@@ -86,12 +88,68 @@ def emp_pract_valida(series: pd.Series) -> pd.Series:
     invalid = {"", "NO ENCONTRADO", "NAN", "NULL", "NONE"}
     return (~s.str.upper().isin(invalid)) & series.notna()
 
+def normalizar_df_empleo(df_raw: pd.DataFrame) -> pd.DataFrame:
+    """Normaliza EXACTAMENTE como el Informe de Cierre."""
+    df = df_raw.copy()
+    df.columns = df.columns.str.strip().str.upper()
+
+    # Aliases más comunes
+    alias = {}
+    if "PRÁCTCAS/GE" in df.columns and "PRÁCTICAS/GE" not in df.columns:
+        alias["PRÁCTCAS/GE"] = "PRÁCTICAS/GE"
+    if "EMPRESA PRÁCTICAS" in df.columns and "EMPRESA PRÁCT." not in df.columns:
+        alias["EMPRESA PRÁCTICAS"] = "EMPRESA PRÁCT."
+    if alias:
+        df = df.rename(columns=alias)
+
+    # Limpiar consultor (igual que informe)
+    if "CONSULTOR EIP" in df.columns:
+        df["CONSULTOR EIP"] = df["CONSULTOR EIP"].astype(str).str.strip().replace("", "Otros")
+        df = df[df["CONSULTOR EIP"].str.upper() != "NO ENCONTRADO"]
+
+    # FECHA CIERRE + AÑO_CIERRE con misma regla de años inválidos
+    if "FECHA CIERRE" in df.columns:
+        df["FECHA CIERRE"] = df["FECHA CIERRE"].apply(convertir_fecha_excel)
+        anio_fc = df["FECHA CIERRE"].dt.year
+        mask_invalida = (
+            anio_fc.isin([1899, 1970]) |
+            ((anio_fc < 2015) & (anio_fc != 2000)) |
+            (anio_fc > 2035)
+        )
+        df.loc[mask_invalida, "FECHA CIERRE"] = pd.NaT
+        df["AÑO_CIERRE"] = df["FECHA CIERRE"].dt.year
+    else:
+        df["FECHA CIERRE"] = pd.NaT
+        df["AÑO_CIERRE"] = pd.NA
+
+    # Booleanos de estado
+    df["CONSECUCIÓN_BOOL"]  = df.get("CONSECUCIÓN GE", pd.Series([False]*len(df))).apply(to_bool)
+    df["INAPLICACIÓN_BOOL"] = df.get("INAPLICACIÓN GE", pd.Series([False]*len(df))).apply(to_bool)
+
+    return df
+
+def kpis_informe_like(df_dev: pd.DataFrame, anio_obj: int):
+    """Devuelve (consecución, inaplicación, prácticas, prácticas_en_curso) como en el informe."""
+    df = normalizar_df_empleo(df_dev)
+
+    # Año seleccionado (mismo criterio)
+    df_anio = df[df["AÑO_CIERRE"] == anio_obj].copy()
+
+    total_consecucion   = int(df_anio["CONSECUCIÓN_BOOL"].sum())
+    total_inaplicacion  = int(df_anio["INAPLICACIÓN_BOOL"].sum())
+    total_practicas_anio = int(emp_pract_valida(df_anio["EMPRESA PRÁCT."]).sum())
+
+    # En curso: FECHA CIERRE NaT + EMPRESA PRÁCT. válida (en todo el dataset; así lo hace el informe para 2025)
+    total_practicas_en_curso = int((df["FECHA CIERRE"].isna() & emp_pract_valida(df["EMPRESA PRÁCT."])).sum())
+
+    return total_consecucion, total_inaplicacion, total_practicas_anio, total_practicas_en_curso
+
 # ===================== PÁGINA PRINCIPAL =====================
 
 def principal_page():
     st.title("📊 Panel Principal")
 
-    # 🔄 Recarga total: limpia session_state y también las cachés de Streamlit
+    # 🔄 Recarga total
     if st.button("🔄 Recargar datos manualmente"):
         for key in ["academica_excel_data", "excel_data", "df_ventas", "df_preventas", "df_gestion"]:
             if key in st.session_state:
@@ -102,7 +160,7 @@ def principal_page():
 
     load_academica_data()
 
-    # --- Ficheros locales (ventas / preventas / gestión) ---
+    # --- Ficheros locales ---
     UPLOAD_FOLDER = "uploaded_admisiones"
     GESTION_FOLDER = "uploaded"
     VENTAS_FILE = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
@@ -252,50 +310,18 @@ def principal_page():
                 st.warning("⚠️ Error al procesar los indicadores académicos.")
                 st.exception(e)
 
-    # ===================== DESARROLLO PROFESIONAL =====================
+    # ===================== DESARROLLO PROFESIONAL (MISMOS NÚMEROS QUE INFORME) =====================
     st.markdown("---")
     st.markdown("## 🔧 Indicadores de Empleo")
     try:
-        df = df_dev.copy()
-        df.columns = df.columns.str.strip().str.upper()
-        # alias
-        if "PRÁCTCAS/GE" in df.columns and "PRÁCTICAS/GE" not in df.columns:
-            df = df.rename(columns={"PRÁCTCAS/GE": "PRÁCTICAS/GE"})
-
-        # Limpieza de consultor: igual que en el informe
-        if "CONSULTOR EIP" in df.columns:
-            df["CONSULTOR EIP"] = df["CONSULTOR EIP"].astype(str).str.strip()
-            df = df[df["CONSULTOR EIP"].str.upper() != "NO ENCONTRADO"]
-
-        # Fechas y año de cierre
-        if "FECHA CIERRE" in df.columns:
-            df["FECHA CIERRE"] = df["FECHA CIERRE"].apply(convertir_fecha_excel)
-            df["AÑO_CIERRE"] = df["FECHA CIERRE"].dt.year
-        else:
-            df["FECHA CIERRE"] = pd.NaT
-            df["AÑO_CIERRE"] = pd.NA
-
         anio_obj = datetime.now().year
-
-        # ========== métricas por año (mismo criterio que Informe) ==========
-        df_anio = df[df["AÑO_CIERRE"] == anio_obj].copy()
-
-        df_anio["CONSECUCIÓN_BOOL"]  = df_anio["CONSECUCIÓN GE"].apply(to_bool)
-        df_anio["INAPLICACIÓN_BOOL"] = df_anio["INAPLICACIÓN GE"].apply(to_bool)
-
-        total_consecucion = int(df_anio["CONSECUCIÓN_BOOL"].sum())
-        total_inaplicacion = int(df_anio["INAPLICACIÓN_BOOL"].sum())
-        total_practicas_anio = int(emp_pract_valida(df_anio["EMPRESA PRÁCT."]).sum())
-
-        # ========== prácticas en curso (global): FECHA CIERRE NaT + empresa prácticas válida ==========
-        en_curso_mask = df["FECHA CIERRE"].isna() & emp_pract_valida(df["EMPRESA PRÁCT."])
-        total_practicas_en_curso = int(en_curso_mask.sum())
+        cons, inap, pract, pract_curso = kpis_informe_like(df_dev, anio_obj)
 
         cols = st.columns(4)
-        cols[0].markdown(render_import_card(f"✅ Consecución {anio_obj}", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
-        cols[1].markdown(render_import_card(f"🚫 Inaplicación {anio_obj}", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
-        cols[2].markdown(render_import_card(f"🎓 Prácticas {anio_obj}", total_practicas_anio, "#ede7f6"), unsafe_allow_html=True)
-        cols[3].markdown(render_import_card(f"🛠️ Prácticas en curso {anio_obj}", total_practicas_en_curso, "#fff3e0"), unsafe_allow_html=True)
+        cols[0].markdown(render_import_card(f"✅ Consecución {anio_obj}", cons, "#e3f2fd"), unsafe_allow_html=True)
+        cols[1].markdown(render_import_card(f"🚫 Inaplicación {anio_obj}", inap, "#fce4ec"), unsafe_allow_html=True)
+        cols[2].markdown(render_import_card(f"🎓 Prácticas {anio_obj}", pract, "#ede7f6"), unsafe_allow_html=True)
+        cols[3].markdown(render_import_card(f"🛠️ Prácticas en curso {anio_obj}", pract_curso, "#fff3e0"), unsafe_allow_html=True)
 
     except Exception as e:
         st.warning("⚠️ No se pudieron cargar los indicadores de Desarrollo Profesional.")
@@ -425,7 +451,7 @@ def principal_page():
     missing_cols = [col for col in required_cols_check if col not in df_mapa.columns]
 
     if missing_cols:
-        st.warning(f"⚠️ Faltan las siguientes columnas en el archivo para mostrar la tabla: {', '.join(missing_cols)}")
+        st.warning(f"⚠️ Faltan las siguientes columnas: {', '.join(missing_cols)}")
     else:
         df_filtrado = df_mapa[df_mapa['País'].astype(str).str.strip().str.upper() == "ESPAÑA"].copy()
         df_incompletos = df_filtrado[
