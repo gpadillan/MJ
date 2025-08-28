@@ -8,6 +8,8 @@ from pages.academica.sharepoint_utils import get_access_token, get_site_id, down
 from streamlit_folium import folium_static
 import folium
 from utils.geo_utils import normalize_text, PROVINCIAS_COORDS, PAISES_COORDS, geolocalizar_pais
+import unicodedata
+import re
 
 # ===================== UTILS GENERALES =====================
 
@@ -53,9 +55,8 @@ def load_academica_data():
 
 def load_empleo_df():
     """
-    1) Si la página 'Informe de Cierre de Expedientes' ya normalizó el DF, úsalo (idéntico).
+    1) Si el 'Informe de Cierre de Expedientes' guardó el DF normalizado, úsalo (idéntico).
     2) Si no, descarga el Excel de Empleo desde SharePoint y devuelve su hoja (por defecto 'GENERAL').
-       Ajusta st.secrets['empleo'] y sheet_name si procede.
     """
     if "df_empleo_informe" in st.session_state:
         return st.session_state["df_empleo_informe"].copy()
@@ -75,6 +76,51 @@ def load_empleo_df():
         return pd.DataFrame()
 
 # ===================== HELPERS EMPLEO (MISMA LÓGICA QUE EL INFORME) =====================
+
+def _strip_accents(s: str) -> str:
+    if s is None:
+        return ""
+    return ''.join(c for c in unicodedata.normalize('NFD', str(s)) if unicodedata.category(c) != 'Mn')
+
+def _norm_key(s: str) -> str:
+    """Normaliza nombre de columna: quita acentos, puntuación y espacios repetidos, en mayúsculas."""
+    s = str(s).replace("\u00A0", " ")
+    s = _strip_accents(s).upper()
+    s = re.sub(r'[\.\-_/]', ' ', s)
+    s = re.sub(r'\s+', ' ', s).strip()
+    s = re.sub(r'[^A-Z0-9 ]', '', s)
+    return s
+
+def _alias_colmap(cols):
+    """
+    Mapea columnas reales -> nombres canónicos del informe (tolerante a acentos y variantes).
+    """
+    # Diccionario de alias (normalizados) -> nombre canónico exacto (con acento como en el informe)
+    CANON = {
+        "CONSECUCION GE": "CONSECUCIÓN GE",
+        "INAPLICACION GE": "INAPLICACIÓN GE",
+        "DEVOLUCION GE": "DEVOLUCIÓN GE",
+        "PRACTICAS GE": "PRÁCTICAS/GE",
+        "PRACTICAS/GE": "PRÁCTICAS/GE",
+        "PRACTCAS/GE": "PRÁCTICAS/GE",
+        "EMPRESA PRACT": "EMPRESA PRÁCT.",
+        "EMPRESA PRACT.": "EMPRESA PRÁCT.",
+        "EMPRESA PRACTICAS": "EMPRESA PRÁCT.",
+        "EMPRESA PRACTICA": "EMPRESA PRÁCT.",
+        "EMPRESA GE": "EMPRESA GE",
+        "AREA": "AREA",
+        "CONSULTOR EIP": "CONSULTOR EIP",
+        "FECHA CIERRE": "FECHA CIERRE",
+        "NOMBRE": "NOMBRE",
+        "APELLIDOS": "APELLIDOS",
+    }
+    norm_lookup = { _norm_key(c): c for c in cols }
+    mapping = {}
+    for norm, canon in CANON.items():
+        for k, real in norm_lookup.items():
+            if norm == k:
+                mapping[real] = canon
+    return mapping
 
 def convertir_fecha_excel(valor):
     """Serial Excel o texto dd/mm/aaaa -> datetime; si falla, NaT."""
@@ -99,13 +145,15 @@ def emp_pract_valida(series: pd.Series) -> pd.Series:
     return (~s.str.upper().isin(invalid)) & series.notna()
 
 def normalizar_df_empleo(df_raw: pd.DataFrame) -> pd.DataFrame:
-    """Normaliza EXACTAMENTE como el Informe de Cierre."""
+    """Normaliza EXACTAMENTE como el Informe de Cierre (ahora robusto a acentos)."""
     df = df_raw.copy()
-    df.columns = df.columns.str.strip().str.upper()
 
-    # Aliases comunes
-    if "PRÁCTCAS/GE" in df.columns and "PRÁCTICAS/GE" not in df.columns:
-        df = df.rename(columns={"PRÁCTCAS/GE": "PRÁCTICAS/GE"})
+    # Renombra a canónicos usando alias tolerantes a acentos
+    colmap = _alias_colmap(df.columns)
+    if colmap:
+        df = df.rename(columns=colmap)
+    # Después, fuerza mayúsculas y espacios limpios (sin tocar tildes de los canónicos)
+    df.columns = df.columns.str.strip()
 
     # Limpiar consultor como en el informe
     if "CONSULTOR EIP" in df.columns:
@@ -127,9 +175,32 @@ def normalizar_df_empleo(df_raw: pd.DataFrame) -> pd.DataFrame:
         df["FECHA CIERRE"] = pd.NaT
         df["AÑO_CIERRE"] = pd.NA
 
-    # Booleanos
-    df["CONSECUCIÓN_BOOL"]  = df.get("CONSECUCIÓN GE", pd.Series([False]*len(df))).apply(to_bool)
-    df["INAPLICACIÓN_BOOL"] = df.get("INAPLICACIÓN GE", pd.Series([False]*len(df))).apply(to_bool)
+    # Booleanos (si las columnas no existen, crea False para evitar fallos)
+    if "CONSECUCIÓN GE" in df.columns:
+        df["CONSECUCIÓN_BOOL"] = df["CONSECUCIÓN GE"].apply(to_bool)
+    elif "CONSECUCION GE" in df.columns:
+        df["CONSECUCIÓN_BOOL"] = df["CONSECUCION GE"].apply(to_bool)
+    else:
+        df["CONSECUCIÓN_BOOL"] = False
+
+    if "INAPLICACIÓN GE" in df.columns:
+        df["INAPLICACIÓN_BOOL"] = df["INAPLICACIÓN GE"].apply(to_bool)
+    elif "INAPLICACION GE" in df.columns:
+        df["INAPLICACIÓN_BOOL"] = df["INAPLICACION GE"].apply(to_bool)
+    else:
+        df["INAPLICACIÓN_BOOL"] = False
+
+    # Asegura presencia de EMPRESA PRÁCT. y PRÁCTICAS/GE si vinieran con variantes
+    if "EMPRESA PRÁCT." not in df.columns:
+        for cand in ["EMPRESA PRACT.", "EMPRESA PRACT", "EMPRESA PRACTICAS", "EMPRESA PRACTICA"]:
+            if cand in df.columns:
+                df = df.rename(columns={cand: "EMPRESA PRÁCT."})
+                break
+    if "PRÁCTICAS/GE" not in df.columns:
+        for cand in ["PRACTICAS/GE", "PRACTICAS GE", "PRACTCAS/GE"]:
+            if cand in df.columns:
+                df = df.rename(columns={cand: "PRÁCTICAS/GE"})
+                break
 
     return df
 
@@ -148,12 +219,12 @@ def kpis_informe_like(df_src: pd.DataFrame, anio_obj: int,
 
     total_consecucion    = int(df_anio["CONSECUCIÓN_BOOL"].sum())
     total_inaplicacion   = int(df_anio["INAPLICACIÓN_BOOL"].sum())
-    total_practicas_anio = int(emp_pract_valida(df_anio["EMPRESA PRÁCT."]).sum())
+    total_practicas_anio = int(emp_pract_valida(df_anio.get("EMPRESA PRÁCT.", pd.Series(index=df_anio.index))).sum())
 
     if practicas_en_curso_por_fecha_cierre:
-        total_en_curso = int((df["FECHA CIERRE"].isna() & emp_pract_valida(df["EMPRESA PRÁCT."])).sum())
+        total_en_curso = int((df["FECHA CIERRE"].isna() & emp_pract_valida(df.get("EMPRESA PRÁCT.", pd.Series(index=df.index)))).sum())
     else:
-        total_en_curso = int(((df["AÑO_CIERRE"] == 2000) & emp_pract_valida(df["EMPRESA PRÁCT."])).sum())
+        total_en_curso = int(((df["AÑO_CIERRE"] == 2000) & emp_pract_valida(df.get("EMPRESA PRÁCT.", pd.Series(index=df.index)))).sum())
 
     return total_consecucion, total_inaplicacion, total_practicas_anio, total_en_curso
 
@@ -328,7 +399,8 @@ def principal_page():
         if df_empleo_src.empty:
             st.info("Sin datos de empleo para mostrar.")
         else:
-            # Si tu informe usa FECHA CIERRE vacía para 'en curso', deja True. Si usa AÑO_CIERRE==2000, pon False.
+            # Si tu informe usa FECHA CIERRE vacía para 'en curso', deja True.
+            # Si usa AÑO_CIERRE==2000, pon False.
             cons, inap, pract, pract_curso = kpis_informe_like(
                 df_empleo_src,
                 anio_obj,
