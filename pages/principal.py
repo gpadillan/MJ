@@ -1,12 +1,10 @@
 # principal.py
 
-import streamlit as st
-import pandas as pd
 import os
+import pandas as pd
+import streamlit as st
 from datetime import datetime
 from pages.academica.sharepoint_utils import get_access_token, get_site_id, download_excel
-from google.oauth2 import service_account
-import gspread
 from streamlit_folium import folium_static
 import folium
 from utils.geo_utils import normalize_text, PROVINCIAS_COORDS, PAISES_COORDS, geolocalizar_pais
@@ -39,19 +37,8 @@ def render_import_card(title, value, color="#ede7f6"):
 
 # ===================== CARGA DE DATOS =====================
 
-@st.cache_data(show_spinner=False)
-def load_google_sheet(sheet_key):
-    creds = st.secrets["google_service_account"]
-    credentials = service_account.Credentials.from_service_account_info(
-        creds, scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
-    )
-    client = gspread.authorize(credentials)
-    worksheet = client.open_by_key(sheet_key).get_worksheet(0)
-    df = pd.DataFrame(worksheet.get_all_records())
-    df.columns = df.columns.str.strip().str.upper()
-    return df
-
 def load_academica_data():
+    """Carga el Excel académico desde SharePoint y lo deja en session_state."""
     if "academica_excel_data" not in st.session_state:
         try:
             config = st.secrets["academica"]
@@ -64,7 +51,30 @@ def load_academica_data():
             st.warning("⚠️ No se pudo cargar datos académicos automáticamente.")
             st.exception(e)
 
-# ===================== HELPERS EMPLEO (IGUAL QUE INFORME) =====================
+def load_empleo_df():
+    """
+    1) Si la página 'Informe de Cierre de Expedientes' ya normalizó el DF, úsalo (idéntico).
+    2) Si no, descarga el Excel de Empleo desde SharePoint y devuelve su hoja (por defecto 'GENERAL').
+       Ajusta st.secrets['empleo'] y sheet_name si procede.
+    """
+    if "df_empleo_informe" in st.session_state:
+        return st.session_state["df_empleo_informe"].copy()
+
+    # === SharePoint Empleo ===
+    try:
+        config = st.secrets["empleo"]  # <-- Asegúrate de tener esta sección en secrets.toml
+        token = get_access_token(config)
+        site_id = get_site_id(config, token)
+        file = download_excel(config, token, site_id)
+        # Cambia 'GENERAL' si tu libro de Empleo usa otro nombre de hoja
+        df_empleo = pd.read_excel(file, sheet_name="GENERAL")
+        return df_empleo
+    except Exception as e:
+        st.error("❌ No pude cargar Empleo desde SharePoint ni desde session_state.\nAbre antes la página del Informe o revisa st.secrets['empleo'].")
+        st.exception(e)
+        return pd.DataFrame()
+
+# ===================== HELPERS EMPLEO (MISMA LÓGICA QUE EL INFORME) =====================
 
 def convertir_fecha_excel(valor):
     """Serial Excel o texto dd/mm/aaaa -> datetime; si falla, NaT."""
@@ -93,21 +103,16 @@ def normalizar_df_empleo(df_raw: pd.DataFrame) -> pd.DataFrame:
     df = df_raw.copy()
     df.columns = df.columns.str.strip().str.upper()
 
-    # Aliases más comunes
-    alias = {}
+    # Aliases comunes
     if "PRÁCTCAS/GE" in df.columns and "PRÁCTICAS/GE" not in df.columns:
-        alias["PRÁCTCAS/GE"] = "PRÁCTICAS/GE"
-    if "EMPRESA PRÁCTICAS" in df.columns and "EMPRESA PRÁCT." not in df.columns:
-        alias["EMPRESA PRÁCTICAS"] = "EMPRESA PRÁCT."
-    if alias:
-        df = df.rename(columns=alias)
+        df = df.rename(columns={"PRÁCTCAS/GE": "PRÁCTICAS/GE"})
 
-    # Limpiar consultor (igual que informe)
+    # Limpiar consultor como en el informe
     if "CONSULTOR EIP" in df.columns:
         df["CONSULTOR EIP"] = df["CONSULTOR EIP"].astype(str).str.strip().replace("", "Otros")
         df = df[df["CONSULTOR EIP"].str.upper() != "NO ENCONTRADO"]
 
-    # FECHA CIERRE + AÑO_CIERRE con misma regla de años inválidos
+    # FECHA CIERRE + AÑO_CIERRE (misma regla de años inválidos)
     if "FECHA CIERRE" in df.columns:
         df["FECHA CIERRE"] = df["FECHA CIERRE"].apply(convertir_fecha_excel)
         anio_fc = df["FECHA CIERRE"].dt.year
@@ -122,36 +127,44 @@ def normalizar_df_empleo(df_raw: pd.DataFrame) -> pd.DataFrame:
         df["FECHA CIERRE"] = pd.NaT
         df["AÑO_CIERRE"] = pd.NA
 
-    # Booleanos de estado
+    # Booleanos
     df["CONSECUCIÓN_BOOL"]  = df.get("CONSECUCIÓN GE", pd.Series([False]*len(df))).apply(to_bool)
     df["INAPLICACIÓN_BOOL"] = df.get("INAPLICACIÓN GE", pd.Series([False]*len(df))).apply(to_bool)
 
     return df
 
-def kpis_informe_like(df_dev: pd.DataFrame, anio_obj: int):
-    """Devuelve (consecución, inaplicación, prácticas, prácticas_en_curso) como en el informe."""
-    df = normalizar_df_empleo(df_dev)
+def kpis_informe_like(df_src: pd.DataFrame, anio_obj: int,
+                      practicas_en_curso_por_fecha_cierre: bool = True) -> tuple[int, int, int, int]:
+    """
+    Devuelve (consecución, inaplicación, prácticas, prácticas_en_curso)
+    igual que el informe para 'Cierre Expediente Año {anio_obj}'.
 
-    # Año seleccionado (mismo criterio)
+    - Si practicas_en_curso_por_fecha_cierre=True: cuenta FECHA CIERRE NaT + EMPRESA PRÁCT. válida (regla actual).
+    - Si False: usa AÑO_CIERRE==2000 + EMPRESA PRÁCT. válida (regla anterior).
+    """
+    df = normalizar_df_empleo(df_src)
+
     df_anio = df[df["AÑO_CIERRE"] == anio_obj].copy()
 
-    total_consecucion   = int(df_anio["CONSECUCIÓN_BOOL"].sum())
-    total_inaplicacion  = int(df_anio["INAPLICACIÓN_BOOL"].sum())
+    total_consecucion    = int(df_anio["CONSECUCIÓN_BOOL"].sum())
+    total_inaplicacion   = int(df_anio["INAPLICACIÓN_BOOL"].sum())
     total_practicas_anio = int(emp_pract_valida(df_anio["EMPRESA PRÁCT."]).sum())
 
-    # En curso: FECHA CIERRE NaT + EMPRESA PRÁCT. válida (en todo el dataset; así lo hace el informe para 2025)
-    total_practicas_en_curso = int((df["FECHA CIERRE"].isna() & emp_pract_valida(df["EMPRESA PRÁCT."])).sum())
+    if practicas_en_curso_por_fecha_cierre:
+        total_en_curso = int((df["FECHA CIERRE"].isna() & emp_pract_valida(df["EMPRESA PRÁCT."])).sum())
+    else:
+        total_en_curso = int(((df["AÑO_CIERRE"] == 2000) & emp_pract_valida(df["EMPRESA PRÁCT."])).sum())
 
-    return total_consecucion, total_inaplicacion, total_practicas_anio, total_practicas_en_curso
+    return total_consecucion, total_inaplicacion, total_practicas_anio, total_en_curso
 
 # ===================== PÁGINA PRINCIPAL =====================
 
 def principal_page():
     st.title("📊 Panel Principal")
 
-    # 🔄 Recarga total
+    # 🔄 Recarga total: limpia session_state y cachés de Streamlit
     if st.button("🔄 Recargar datos manualmente"):
-        for key in ["academica_excel_data", "excel_data", "df_ventas", "df_preventas", "df_gestion"]:
+        for key in ["academica_excel_data", "excel_data", "df_ventas", "df_preventas", "df_gestion", "df_empleo_informe"]:
             if key in st.session_state:
                 del st.session_state[key]
         st.cache_data.clear()
@@ -160,16 +173,12 @@ def principal_page():
 
     load_academica_data()
 
-    # --- Ficheros locales ---
+    # --- Ficheros locales (ventas / preventas / gestión) ---
     UPLOAD_FOLDER = "uploaded_admisiones"
     GESTION_FOLDER = "uploaded"
     VENTAS_FILE = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
     PREVENTAS_FILE = os.path.join(UPLOAD_FOLDER, "preventas.xlsx")
     GESTION_FILE = os.path.join(GESTION_FOLDER, "archivo_cargado.xlsx")
-
-    # --- Google Sheet Desarrollo Profesional ---
-    SHEET_KEY = "1CPhL56knpvaYZznGF-YgIuHWWCWPtWGpkSgbf88GJFQ"
-    df_dev = load_google_sheet(SHEET_KEY)
 
     traduccion_meses = {
         1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
@@ -310,18 +319,27 @@ def principal_page():
                 st.warning("⚠️ Error al procesar los indicadores académicos.")
                 st.exception(e)
 
-    # ===================== DESARROLLO PROFESIONAL (MISMOS NÚMEROS QUE INFORME) =====================
+    # ===================== DESARROLLO PROFESIONAL (MISMOS NÚMEROS QUE EL INFORME) =====================
     st.markdown("---")
     st.markdown("## 🔧 Indicadores de Empleo")
     try:
         anio_obj = datetime.now().year
-        cons, inap, pract, pract_curso = kpis_informe_like(df_dev, anio_obj)
+        df_empleo_src = load_empleo_df()
+        if df_empleo_src.empty:
+            st.info("Sin datos de empleo para mostrar.")
+        else:
+            # Si tu informe usa FECHA CIERRE vacía para 'en curso', deja True. Si usa AÑO_CIERRE==2000, pon False.
+            cons, inap, pract, pract_curso = kpis_informe_like(
+                df_empleo_src,
+                anio_obj,
+                practicas_en_curso_por_fecha_cierre=True
+            )
 
-        cols = st.columns(4)
-        cols[0].markdown(render_import_card(f"✅ Consecución {anio_obj}", cons, "#e3f2fd"), unsafe_allow_html=True)
-        cols[1].markdown(render_import_card(f"🚫 Inaplicación {anio_obj}", inap, "#fce4ec"), unsafe_allow_html=True)
-        cols[2].markdown(render_import_card(f"🎓 Prácticas {anio_obj}", pract, "#ede7f6"), unsafe_allow_html=True)
-        cols[3].markdown(render_import_card(f"🛠️ Prácticas en curso {anio_obj}", pract_curso, "#fff3e0"), unsafe_allow_html=True)
+            cols = st.columns(4)
+            cols[0].markdown(render_import_card(f"✅ Consecución {anio_obj}", cons, "#e3f2fd"), unsafe_allow_html=True)
+            cols[1].markdown(render_import_card(f"🚫 Inaplicación {anio_obj}", inap, "#fce4ec"), unsafe_allow_html=True)
+            cols[2].markdown(render_import_card(f"🎓 Prácticas {anio_obj}", pract, "#ede7f6"), unsafe_allow_html=True)
+            cols[3].markdown(render_import_card(f"🛠️ Prácticas en curso {anio_obj}", pract_curso, "#fff3e0"), unsafe_allow_html=True)
 
     except Exception as e:
         st.warning("⚠️ No se pudieron cargar los indicadores de Desarrollo Profesional.")
@@ -395,7 +413,7 @@ def principal_page():
                         icon=folium.Icon(color="blue", icon="user", prefix="fa")
                     ).add_to(mapa)
 
-            # 🔴 Marcador central "España (provincias)"
+            # 🔴 Marcador central "España (provincias)" - desplazado para no solapar Madrid
             total_espana = count_prov['Alumnos'].sum()
             coords_espana = [40.4268, -3.7138]
             folium.Marker(
@@ -417,11 +435,11 @@ def principal_page():
                 }
                 return FLAGS.get(pais_nombre.title(), "🌍")
 
-            # 🔴 Países extranjeros
+            # 🔴 Países extranjeros en rojo
             for _, row in count_pais.iterrows():
                 entidad, alumnos = row['Entidad'], row['Alumnos']
                 if entidad.upper() == "ESPAÑA":
-                    continue
+                    continue  # Evita duplicados
                 coords = PAISES_COORDS.get(entidad) or st.session_state["coords_cache"].get(entidad)
                 if not coords:
                     coords = geolocalizar_pais(entidad)
@@ -451,7 +469,7 @@ def principal_page():
     missing_cols = [col for col in required_cols_check if col not in df_mapa.columns]
 
     if missing_cols:
-        st.warning(f"⚠️ Faltan las siguientes columnas: {', '.join(missing_cols)}")
+        st.warning(f"⚠️ Faltan las siguientes columnas en el archivo para mostrar la tabla: {', '.join(missing_cols)}")
     else:
         df_filtrado = df_mapa[df_mapa['País'].astype(str).str.strip().str.upper() == "ESPAÑA"].copy()
         df_incompletos = df_filtrado[
@@ -468,11 +486,13 @@ def principal_page():
 
             from io import BytesIO
             import base64
+
             def to_excel_bytes(df_):
                 output = BytesIO()
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                     df_.to_excel(writer, index=False, sheet_name='Incompletos')
                 return output.getvalue()
+
             excel_data = to_excel_bytes(df_incompletos)
             b64 = base64.b64encode(excel_data).decode()
             href = f'<a href="data:application/octet-stream;base64,{b64}" download="clientes_incompletos.xlsx">📥 Descargar Excel</a>'
