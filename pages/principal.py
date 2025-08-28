@@ -1,3 +1,5 @@
+# principal.py
+
 import streamlit as st
 import pandas as pd
 import os
@@ -9,8 +11,9 @@ from streamlit_folium import folium_static
 import folium
 from utils.geo_utils import normalize_text, PROVINCIAS_COORDS, PAISES_COORDS, geolocalizar_pais
 
-# === UTILS ===
-def format_euro(value):
+# ===================== UTILS =====================
+
+def format_euro(value: float) -> str:
     return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 def render_info_card(title, value1, value2, color="#e3f2fd"):
@@ -34,6 +37,7 @@ def render_import_card(title, value, color="#ede7f6"):
         </div>
     """
 
+# --------- Cache Google Sheet ----------
 @st.cache_data(show_spinner=False)
 def load_google_sheet(sheet_key):
     creds = st.secrets["google_service_account"]
@@ -46,6 +50,7 @@ def load_google_sheet(sheet_key):
     df.columns = df.columns.str.strip().str.upper()
     return df
 
+# --------- SharePoint académico ----------
 def load_academica_data():
     if "academica_excel_data" not in st.session_state:
         try:
@@ -59,21 +64,52 @@ def load_academica_data():
             st.warning("⚠️ No se pudo cargar datos académicos automáticamente.")
             st.exception(e)
 
+# --------- Helpers Empleo (fechas, booleanos, limpieza) ----------
+def convertir_fecha_excel(valor):
+    try:
+        if pd.isna(valor):
+            return pd.NaT
+        if isinstance(valor, (int, float)):
+            return pd.to_datetime("1899-12-30") + pd.to_timedelta(int(valor), unit="D")
+        return pd.to_datetime(valor, errors="coerce", dayfirst=True)
+    except Exception:
+        return pd.NaT
+
+def to_bool(x):
+    if isinstance(x, bool):
+        return x
+    s = str(x).strip().lower()
+    return s in ("true", "sí", "si", "1", "x", "verdadero")
+
+def emp_pract_valida(series: pd.Series) -> pd.Series:
+    s = series.astype(str).str.strip()
+    invalid = {"", "NO ENCONTRADO", "NAN", "NULL", "NONE"}
+    return (~s.str.upper().isin(invalid)) & series.notna()
+
+# ===================== PÁGINA PRINCIPAL =====================
+
 def principal_page():
     st.title("📊 Panel Principal")
 
+    # 🔄 Recarga total: limpia session_state y también las cachés de Streamlit
     if st.button("🔄 Recargar datos manualmente"):
-        for key in ["academica_excel_data", "df_ventas", "df_preventas", "df_gestion"]:
+        for key in ["academica_excel_data", "excel_data", "df_ventas", "df_preventas", "df_gestion"]:
             if key in st.session_state:
                 del st.session_state[key]
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        st.success("Caché limpiada y datos recargados.")
 
     load_academica_data()
 
+    # --- Ficheros locales (ventas / preventas / gestión) ---
     UPLOAD_FOLDER = "uploaded_admisiones"
     GESTION_FOLDER = "uploaded"
     VENTAS_FILE = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
     PREVENTAS_FILE = os.path.join(UPLOAD_FOLDER, "preventas.xlsx")
     GESTION_FILE = os.path.join(GESTION_FOLDER, "archivo_cargado.xlsx")
+
+    # --- Google Sheet Desarrollo Profesional ---
     SHEET_KEY = "1CPhL56knpvaYZznGF-YgIuHWWCWPtWGpkSgbf88GJFQ"
     df_dev = load_google_sheet(SHEET_KEY)
 
@@ -91,7 +127,7 @@ def principal_page():
     importes_por_mes = {}
     estados = {}
 
-    # === VENTAS ===
+    # ===================== VENTAS =====================
     if os.path.exists(VENTAS_FILE):
         df_ventas = pd.read_excel(VENTAS_FILE)
         df_ventas.columns = df_ventas.columns.str.strip().str.lower()
@@ -114,7 +150,7 @@ def principal_page():
                 matriculas_por_mes[m] = len(df_mes)
                 importes_por_mes[m] = df_mes['importe'].sum()
 
-    # === PREVENTAS ===
+    # ===================== PREVENTAS =====================
     if os.path.exists(PREVENTAS_FILE):
         df_preventas = pd.read_excel(PREVENTAS_FILE)
         df_preventas.columns = df_preventas.columns.str.strip().str.lower()
@@ -124,7 +160,7 @@ def principal_page():
         if columnas_importe:
             total_preventas_importe = df_preventas[columnas_importe].sum(numeric_only=True).sum()
 
-    # === GESTIÓN DE COBRO ===
+    # ===================== GESTIÓN DE COBRO =====================
     if os.path.exists(GESTION_FILE):
         df_gestion = pd.read_excel(GESTION_FILE)
 
@@ -147,7 +183,7 @@ def principal_page():
                 df_estado_totales["Total"] = df_estado_totales.sum(axis=1)
                 estados = df_estado_totales["Total"].to_dict()
 
-    # === ADMISIONES ===
+    # ===================== ADMISIONES =====================
     st.markdown("## 📥 Admisiones")
     st.markdown(f"### 📅 Matrículas por Mes ({anio_actual})")
 
@@ -167,7 +203,7 @@ def principal_page():
     col1.markdown(render_info_card("Matrículas Totales", total_matriculas, format_euro(sum(importes_por_mes.values())), "#c8e6c9"), unsafe_allow_html=True)
     col2.markdown(render_info_card("Preventas", total_preventas, format_euro(total_preventas_importe), "#ffe0b2"), unsafe_allow_html=True)
 
-    # === COBRO ===
+    # ===================== COBRO =====================
     if estados:
         st.markdown("---")
         st.markdown("## 💼 Gestión de Cobro")
@@ -181,7 +217,7 @@ def principal_page():
                     unsafe_allow_html=True
                 )
 
-    # === ACADÉMICA ===
+    # ===================== ACADÉMICA =====================
     if "academica_excel_data" in st.session_state:
         data = st.session_state["academica_excel_data"]
         hoja = "CONSOLIDADO ACADÉMICO"
@@ -216,37 +252,50 @@ def principal_page():
                 st.warning("⚠️ Error al procesar los indicadores académicos.")
                 st.exception(e)
 
-    # === DESARROLLO PROFESIONAL ===
+    # ===================== DESARROLLO PROFESIONAL =====================
     st.markdown("---")
     st.markdown("## 🔧 Indicadores de Empleo")
     try:
-        df = df_dev
-        df['CONSECUCIÓN_BOOL'] = df['CONSECUCIÓN GE'].astype(str).str.upper() == 'TRUE'
-        df['INAPLICACIÓN_BOOL'] = df['INAPLICACIÓN GE'].astype(str).str.upper() == 'TRUE'
-        df['PRACTICAS_BOOL'] = (
-            (df['PRÁCTCAS/GE'].astype(str).str.upper() == 'GE') &
-            (~df['EMPRESA PRÁCT.'].astype(str).isin(['', 'NO ENCONTRADO'])) &
-            (df['CONSECUCIÓN GE'].astype(str).str.upper() == 'FALSE') &
-            (df['DEVOLUCIÓN GE'].astype(str).str.upper() == 'FALSE') &
-            (df['INAPLICACIÓN GE'].astype(str).str.upper() == 'FALSE')
-        )
+        df = df_dev.copy()
+        df.columns = df.columns.str.strip().str.upper()
+        if "PRÁCTCAS/GE" in df.columns and "PRÁCTICAS/GE" not in df.columns:
+            df = df.rename(columns={"PRÁCTCAS/GE": "PRÁCTICAS/GE"})
 
-        total_consecucion = df['CONSECUCIÓN_BOOL'].sum()
-        total_inaplicacion = df['INAPLICACIÓN_BOOL'].sum()
-        total_alumnos_practicas = df[~df['EMPRESA PRÁCT.'].astype(str).isin(['', 'NO ENCONTRADO'])].shape[0]
-        total_practicas_actuales = df['PRACTICAS_BOOL'].sum()
+        # Fechas y año de cierre
+        if "FECHA CIERRE" in df.columns:
+            df["FECHA CIERRE"] = df["FECHA CIERRE"].apply(convertir_fecha_excel)
+            df["AÑO_CIERRE"] = df["FECHA CIERRE"].dt.year
+        else:
+            df["FECHA CIERRE"] = pd.NaT
+            df["AÑO_CIERRE"] = pd.NA
+
+        anio_obj = datetime.now().year
+
+        # Filtro por año de cierre (consecución / inaplicación / prácticas del año)
+        df_anio = df[df["AÑO_CIERRE"] == anio_obj].copy()
+
+        df_anio["CONSECUCIÓN_BOOL"]  = df_anio["CONSECUCIÓN GE"].apply(to_bool)
+        df_anio["INAPLICACIÓN_BOOL"] = df_anio["INAPLICACIÓN GE"].apply(to_bool)
+
+        total_consecucion = int(df_anio["CONSECUCIÓN_BOOL"].sum())
+        total_inaplicacion = int(df_anio["INAPLICACIÓN_BOOL"].sum())
+        total_practicas_anio = int(emp_pract_valida(df_anio["EMPRESA PRÁCT."]).sum())
+
+        # Prácticas en curso: FECHA CIERRE NaT + empresa prácticas informada (en todo el dataset)
+        en_curso_mask = df["FECHA CIERRE"].isna() & emp_pract_valida(df["EMPRESA PRÁCT."])
+        total_practicas_en_curso = int(en_curso_mask.sum())
 
         cols = st.columns(4)
-        cols[0].markdown(render_import_card("✅ Consecución", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
-        cols[1].markdown(render_import_card("🚫 Inaplicación", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
-        cols[2].markdown(render_import_card("🎓 Alumnos en PRÁCTICAS", total_alumnos_practicas, "#ede7f6"), unsafe_allow_html=True)
-        cols[3].markdown(render_import_card("🛠️ Prácticas actuales", total_practicas_actuales, "#e8f5e9"), unsafe_allow_html=True)
+        cols[0].markdown(render_import_card(f"✅ Consecución {anio_obj}", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
+        cols[1].markdown(render_import_card(f"🚫 Inaplicación {anio_obj}", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
+        cols[2].markdown(render_import_card(f"🎓 Prácticas {anio_obj}", total_practicas_anio, "#ede7f6"), unsafe_allow_html=True)
+        cols[3].markdown(render_import_card(f"🛠️ Prácticas en curso {anio_obj}", total_practicas_en_curso, "#fff3e0"), unsafe_allow_html=True)
 
     except Exception as e:
         st.warning("⚠️ No se pudieron cargar los indicadores de Desarrollo Profesional.")
         st.exception(e)
 
-    # === MAPA ===
+    # ===================== MAPA =====================
     st.markdown("---")
 
     if 'excel_data' not in st.session_state or st.session_state['excel_data'] is None:
@@ -265,7 +314,7 @@ def principal_page():
 
             df_u = df_mapa.drop_duplicates(subset=['Cliente', 'Provincia', 'País']).copy()
 
-            # ✅ Normalización estricta
+            # Normalización estricta
             df_u['Provincia'] = df_u['Provincia'].apply(normalize_text).str.title().str.strip()
             df_u['País'] = df_u['País'].apply(normalize_text).str.title().str.strip()
 
@@ -316,7 +365,7 @@ def principal_page():
 
             # 🔴 Marcador central "España (provincias)" - desplazado para no solapar Madrid
             total_espana = count_prov['Alumnos'].sum()
-            coords_espana = [40.4268, -3.7138]  # Ligeramente al noroeste de Madrid
+            coords_espana = [40.4268, -3.7138]
             folium.Marker(
                 location=coords_espana,
                 popup=f"<b>España (provincias)</b><br>Total alumnos: {total_espana}",
@@ -341,7 +390,7 @@ def principal_page():
                 entidad, alumnos = row['Entidad'], row['Alumnos']
 
                 if entidad.upper() == "ESPAÑA":
-                    continue  # ❌ Evitar marcador duplicado para España como país
+                    continue  # Evita duplicado para España como país
 
                 coords = PAISES_COORDS.get(entidad) or st.session_state["coords_cache"].get(entidad)
                 if not coords:
@@ -360,21 +409,22 @@ def principal_page():
 
             folium_static(mapa)
 
-
-    # === CLIENTES EN ESPAÑA CON LOCALIDAD O PROVINCIA INCOMPLETA ===
+    # ===================== CLIENTES EN ESPAÑA INCOMPLETOS =====================
     st.markdown("---")
     st.markdown("## 🧾 Clientes únicos en España con Provincia o Localidad vacías")
 
+    if 'excel_data' not in st.session_state or st.session_state['excel_data'] is None:
+        st.warning("⚠️ No hay archivo cargado para revisar clientes incompletos.")
+        return
+
+    df_mapa = st.session_state['excel_data']
     required_cols_check = ['Cliente', 'Provincia', 'Localidad', 'Nacionalidad', 'País', 'Comercial']
     missing_cols = [col for col in required_cols_check if col not in df_mapa.columns]
 
     if missing_cols:
         st.warning(f"⚠️ Faltan las siguientes columnas en el archivo para mostrar la tabla: {', '.join(missing_cols)}")
     else:
-        df_filtrado = df_mapa[
-            df_mapa['País'].astype(str).str.strip().str.upper() == "ESPAÑA"
-        ].copy()
-
+        df_filtrado = df_mapa[df_mapa['País'].astype(str).str.strip().str.upper() == "ESPAÑA"].copy()
         df_incompletos = df_filtrado[
             df_filtrado['Provincia'].isna() | (df_filtrado['Provincia'].astype(str).str.strip() == '') |
             df_filtrado['Localidad'].isna() | (df_filtrado['Localidad'].astype(str).str.strip() == '')
@@ -391,10 +441,10 @@ def principal_page():
             from io import BytesIO
             import base64
 
-            def to_excel_bytes(df):
+            def to_excel_bytes(df_):
                 output = BytesIO()
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    df.to_excel(writer, index=False, sheet_name='Incompletos')
+                    df_.to_excel(writer, index=False, sheet_name='Incompletos')
                 return output.getvalue()
 
             excel_data = to_excel_bytes(df_incompletos)
