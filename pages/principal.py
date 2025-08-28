@@ -55,7 +55,7 @@ def load_academica_data():
 
 def load_empleo_df_raw():
     """
-    1) Si el 'Informe de Cierre' guardó el DF normalizado, úsalo (idéntico).
+    1) Si el 'Informe de Cierre' guardó el DF normalizado, úsalo.
     2) Si no, descarga el Excel de Empleo desde SharePoint (hoja 'GENERAL').
     """
     if "df_empleo_informe" in st.session_state:
@@ -89,19 +89,24 @@ def _norm_key(s: str) -> str:
 
 def _find_column_contains(cols, targets_norm):
     """
-    Busca una columna cuyo nombre normalizado contenga alguna de las dianas.
-    targets_norm: lista de substrings normalizados (p.ej. ["CONSECUCION", "CONSECUCION GE"])
+    Busca una columna cuyo nombre normalizado contenga alguna diana.
+    targets_norm: lista de substrings normalizados (p.ej. ["CONSECUCION GE","CONSECUCION"])
+    Preferimos la coincidencia más larga (más específica).
     """
     norm_map = { _norm_key(c): c for c in cols }
-    # coincidencia exacta primero
+    # 1) exacta
     for t in targets_norm:
         if t in norm_map:
             return norm_map[t]
-    # si no, por 'contiene'
+    # 2) contiene -> elegir la de mayor longitud (más específica)
+    candidates = []
     for t in targets_norm:
         for nk, real in norm_map.items():
             if t in nk:
-                return real
+                candidates.append((len(nk), real))
+    if candidates:
+        candidates.sort(reverse=True)  # más larga primero
+        return candidates[0][1]
     return None
 
 def convertir_fecha_excel(valor):
@@ -178,9 +183,20 @@ def normalizar_df_empleo(df_raw: pd.DataFrame) -> pd.DataFrame:
         df["AÑO_CIERRE"] = pd.NA
 
     # Booleanos
-    df["CONSECUCIÓN_BOOL"]  = df.get("CONSECUCIÓN GE", pd.Series(index=df.index)).apply(to_bool) if "CONSECUCIÓN GE" in df.columns else False
-    df["INAPLICACIÓN_BOOL"] = df.get("INAPLICACIÓN GE", pd.Series(index=df.index)).apply(to_bool) if "INAPLICACIÓN GE" in df.columns else False
-    df["DEVOLUCIÓN_BOOL"]   = df.get("DEVOLUCIÓN GE", pd.Series(index=df.index)).apply(to_bool) if "DEVOLUCIÓN GE" in df.columns else False
+    if "CONSECUCIÓN GE" in df.columns:
+        df["CONSECUCIÓN_BOOL"] = df["CONSECUCIÓN GE"].apply(to_bool)
+    else:
+        df["CONSECUCIÓN_BOOL"] = False
+
+    if "INAPLICACIÓN GE" in df.columns:
+        df["INAPLICACIÓN_BOOL"] = df["INAPLICACIÓN GE"].apply(to_bool)
+    else:
+        df["INAPLICACIÓN_BOOL"] = False
+
+    if "DEVOLUCIÓN GE" in df.columns:
+        df["DEVOLUCIÓN_BOOL"] = df["DEVOLUCIÓN GE"].apply(to_bool)
+    else:
+        df["DEVOLUCIÓN_BOOL"] = False
 
     # Asegura columnas de empresas
     if "EMPRESA PRÁCT." not in df.columns: df["EMPRESA PRÁCT."] = pd.NA
@@ -188,29 +204,23 @@ def normalizar_df_empleo(df_raw: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-def kpis_por_anio(df_norm: pd.DataFrame, anio_obj: int, en_curso_por_anio2000: bool = True):
+def kpis_anio_en_curso(df_norm: pd.DataFrame, anio_obj: int):
     """
-    Devuelve (consecución, inaplicación, prácticas, prácticas_en_curso)
-    como el informe para 'Cierre Expediente Año {anio_obj}'.
-    - en_curso_por_anio2000=True -> 'en curso' = AÑO_CIERRE == 2000 (tu informe → 52).
+    KPIs para el año en curso, replicando el informe:
+      - CONSECUCIÓN {año}: suma de CONSECUCIÓN_BOOL en AÑO_CIERRE == año
+      - INAPLICACIÓN {año}: suma de INAPLICACIÓN_BOOL en AÑO_CIERRE == año
+      - Prácticas {año}: EMPRESA PRÁCT. válida en AÑO_CIERRE == año
+      - Prácticas en curso {año}: AÑO_CIERRE == 2000 y EMPRESA PRÁCT. válida (regla sentinela)
     """
-    if anio_obj is None:
-        df_anio = df_norm.copy()
-        suf = "Total"
-    else:
-        df_anio = df_norm[df_norm["AÑO_CIERRE"] == anio_obj].copy()
-        suf = str(anio_obj)
+    df_anio = df_norm[df_norm["AÑO_CIERRE"] == anio_obj].copy()
 
-    total_consecucion    = int(df_anio["CONSECUCIÓN_BOOL"].sum())
-    total_inaplicacion   = int(df_anio["INAPLICACIÓN_BOOL"].sum())
-    total_practicas      = int(emp_pract_valida(df_anio["EMPRESA PRÁCT."]).sum())
+    total_consecucion  = int(df_anio["CONSECUCIÓN_BOOL"].sum())
+    total_inaplicacion = int(df_anio["INAPLICACIÓN_BOOL"].sum())
+    total_practicas    = int(emp_pract_valida(df_anio["EMPRESA PRÁCT."]).sum())
 
-    if en_curso_por_anio2000:
-        total_en_curso = int(((df_norm["AÑO_CIERRE"] == 2000) & emp_pract_valida(df_norm["EMPRESA PRÁCT."])).sum())
-    else:
-        total_en_curso = int((df_norm["FECHA CIERRE"].isna() & emp_pract_valida(df_norm["EMPRESA PRÁCT."])).sum())
+    total_en_curso     = int(((df_norm["AÑO_CIERRE"] == 2000) & emp_pract_valida(df_norm["EMPRESA PRÁCT."])).sum())
 
-    return total_consecucion, total_inaplicacion, total_practicas, total_en_curso, suf
+    return total_consecucion, total_inaplicacion, total_practicas, total_en_curso
 
 # ===================== PÁGINA PRINCIPAL =====================
 
@@ -360,38 +370,25 @@ def principal_page():
                 st.warning("⚠️ Error al procesar los indicadores académicos.")
                 st.exception(e)
 
-    # ===================== DESARROLLO PROFESIONAL (RÉPLICA DEL INFORME) =====================
+    # ===================== DESARROLLO PROFESIONAL (AÑO EN CURSO, SIN SELECTOR) =====================
     st.markdown("---")
     st.markdown("## 🔧 Indicadores de Empleo")
 
-    # ----- Carga y normalización idéntica -----
     df_empleo_raw = load_empleo_df_raw()
     if df_empleo_raw.empty:
         st.info("Sin datos de empleo para mostrar.")
     else:
         df_empleo = normalizar_df_empleo(df_empleo_raw)
 
-        # ===== Selector idéntico al informe =====
-        anios_disponibles = sorted(df_empleo["AÑO_CIERRE"].dropna().unique().astype(int)) if "AÑO_CIERRE" in df_empleo else []
-        anios_visibles = [a for a in anios_disponibles if a != 2000]
-        opciones = [f"Cierre Expediente Año {a}" for a in anios_visibles] + ["Cierre Expediente Total"] if anios_visibles else ["Cierre Expediente Total"]
+        # Año en curso (sin selector)
+        anio_obj = datetime.now().year
+        cons, inap, pract, pract_curso = kpis_anio_en_curso(df_empleo, anio_obj)
 
-        # Por defecto, último año disponible (si no hay, Total)
-        default_idx = (len(opciones)-1) if opciones == ["Cierre Expediente Total"] else max(range(len(opciones)-1), key=lambda i: int(opciones[i].split()[-1]))
-        opcion = st.selectbox("Selecciona el tipo de informe:", opciones, index=default_idx)
-
-        if "Total" in opcion:
-            cons, inap, pract, pract_curso, suf = kpis_por_anio(df_empleo, anio_obj=None, en_curso_por_anio2000=True)
-        else:
-            anio_sel = int(opcion.split()[-1])
-            cons, inap, pract, pract_curso, suf = kpis_por_anio(df_empleo, anio_obj=anio_sel, en_curso_por_anio2000=True)
-
-        # ===== Tarjetas idénticas =====
         cols = st.columns(4)
-        cols[0].markdown(render_import_card(f"✅ CONSECUCIÓN {suf}", cons, "#e3f2fd"), unsafe_allow_html=True)
-        cols[1].markdown(render_import_card(f"🚫 INAPLICACIÓN {suf}", inap, "#fce4ec"), unsafe_allow_html=True)
-        cols[2].markdown(render_import_card(f"🎓 Prácticas {suf}", pract, "#ede7f6"), unsafe_allow_html=True)
-        cols[3].markdown(render_import_card(f"🛠️ Prácticas en curso {suf}", pract_curso, "#fff3e0"), unsafe_allow_html=True)
+        cols[0].markdown(render_import_card(f"✅ CONSECUCIÓN {anio_obj}", cons, "#e3f2fd"), unsafe_allow_html=True)
+        cols[1].markdown(render_import_card(f"🚫 INAPLICACIÓN {anio_obj}", inap, "#fce4ec"), unsafe_allow_html=True)
+        cols[2].markdown(render_import_card(f"🎓 Prácticas {anio_obj}", pract, "#ede7f6"), unsafe_allow_html=True)
+        cols[3].markdown(render_import_card(f"🛠️ Prácticas en curso {anio_obj}", pract_curso, "#fff3e0"), unsafe_allow_html=True)
 
     # ===================== MAPA =====================
     st.markdown("---")
@@ -461,7 +458,7 @@ def principal_page():
                         icon=folium.Icon(color="blue", icon="user", prefix="fa")
                     ).add_to(mapa)
 
-            # 🔴 Marcador central "España (provincias)" - desplazado para no solapar Madrid
+            # 🔴 Marcador central "España (provincias)" - desplazado
             total_espana = count_prov['Alumnos'].sum()
             coords_espana = [40.4268, -3.7138]
             folium.Marker(
@@ -487,7 +484,7 @@ def principal_page():
             for _, row in count_pais.iterrows():
                 entidad, alumnos = row['Entidad'], row['Alumnos']
                 if entidad.upper() == "ESPAÑA":
-                    continue  # Evita duplicados
+                    continue
                 coords = PAISES_COORDS.get(entidad) or st.session_state["coords_cache"].get(entidad)
                 if not coords:
                     coords = geolocalizar_pais(entidad)
