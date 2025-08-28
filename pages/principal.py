@@ -40,6 +40,7 @@ def render_import_card(title, value, color="#ede7f6"):
 # ===================== CARGA DE DATOS =====================
 
 def load_academica_data():
+    """Carga el Excel académico desde SharePoint y lo deja en session_state."""
     if "academica_excel_data" not in st.session_state:
         try:
             config = st.secrets["academica"]
@@ -54,23 +55,27 @@ def load_academica_data():
 
 def load_empleo_df():
     """
-    1) Usa el mismo DF que guarda el Informe en session_state (idéntico).
-    2) Si no está, carga desde SharePoint (st.secrets['empleo']) y devuelve la hoja 'GENERAL' (ajústala si es otra).
+    1) Si el 'Informe de Cierre de Expedientes' guardó el DF normalizado, úsalo (idéntico).
+    2) Si no, descarga el Excel de Empleo desde SharePoint y devuelve su hoja (por defecto 'GENERAL').
     """
     if "df_empleo_informe" in st.session_state:
         return st.session_state["df_empleo_informe"].copy()
+
+    # === SharePoint Empleo ===
     try:
-        config = st.secrets["empleo"]
+        config = st.secrets["empleo"]  # <-- Asegúrate de tener esta sección en secrets.toml
         token = get_access_token(config)
         site_id = get_site_id(config, token)
         file = download_excel(config, token, site_id)
-        return pd.read_excel(file, sheet_name="GENERAL")
+        # Cambia 'GENERAL' si tu libro de Empleo usa otro nombre de hoja
+        df_empleo = pd.read_excel(file, sheet_name="GENERAL")
+        return df_empleo
     except Exception as e:
         st.error("❌ No pude cargar Empleo desde SharePoint ni desde session_state.\nAbre antes la página del Informe o revisa st.secrets['empleo'].")
         st.exception(e)
         return pd.DataFrame()
 
-# ===================== HELPERS EMPLEO (ALINEADOS CON EL INFORME) =====================
+# ===================== HELPERS EMPLEO (MISMA LÓGICA QUE EL INFORME) =====================
 
 def _strip_accents(s: str) -> str:
     if s is None:
@@ -78,31 +83,47 @@ def _strip_accents(s: str) -> str:
     return ''.join(c for c in unicodedata.normalize('NFD', str(s)) if unicodedata.category(c) != 'Mn')
 
 def _norm_key(s: str) -> str:
-    s = str(s).replace("\u00A0", " ")  # NBSP
+    """Normaliza nombre de columna: quita acentos, puntuación y espacios repetidos, en mayúsculas."""
+    s = str(s).replace("\u00A0", " ")
     s = _strip_accents(s).upper()
     s = re.sub(r'[\.\-_/]', ' ', s)
     s = re.sub(r'\s+', ' ', s).strip()
     s = re.sub(r'[^A-Z0-9 ]', '', s)
     return s
 
-def _find_column(cols, targets_norm):
+def _alias_colmap(cols):
     """
-    Dada una lista de columnas reales y una lista de claves normalizadas objetivo,
-    devuelve el nombre real de la primera coincidencia (igual o 'contiene').
+    Mapea columnas reales -> nombres canónicos del informe (tolerante a acentos y variantes).
     """
-    norm_map = { _norm_key(c): c for c in cols }
-    # Igualdad exacta
-    for t in targets_norm:
-        if t in norm_map:
-            return norm_map[t]
-    # Contiene (por si hay espacios raros)
-    for t in targets_norm:
-        for nk, real in norm_map.items():
-            if t in nk:
-                return real
-    return None
+    # Diccionario de alias (normalizados) -> nombre canónico exacto (con acento como en el informe)
+    CANON = {
+        "CONSECUCION GE": "CONSECUCIÓN GE",
+        "INAPLICACION GE": "INAPLICACIÓN GE",
+        "DEVOLUCION GE": "DEVOLUCIÓN GE",
+        "PRACTICAS GE": "PRÁCTICAS/GE",
+        "PRACTICAS/GE": "PRÁCTICAS/GE",
+        "PRACTCAS/GE": "PRÁCTICAS/GE",
+        "EMPRESA PRACT": "EMPRESA PRÁCT.",
+        "EMPRESA PRACT.": "EMPRESA PRÁCT.",
+        "EMPRESA PRACTICAS": "EMPRESA PRÁCT.",
+        "EMPRESA PRACTICA": "EMPRESA PRÁCT.",
+        "EMPRESA GE": "EMPRESA GE",
+        "AREA": "AREA",
+        "CONSULTOR EIP": "CONSULTOR EIP",
+        "FECHA CIERRE": "FECHA CIERRE",
+        "NOMBRE": "NOMBRE",
+        "APELLIDOS": "APELLIDOS",
+    }
+    norm_lookup = { _norm_key(c): c for c in cols }
+    mapping = {}
+    for norm, canon in CANON.items():
+        for k, real in norm_lookup.items():
+            if norm == k:
+                mapping[real] = canon
+    return mapping
 
 def convertir_fecha_excel(valor):
+    """Serial Excel o texto dd/mm/aaaa -> datetime; si falla, NaT."""
     try:
         if pd.isna(valor):
             return pd.NaT
@@ -124,43 +145,22 @@ def emp_pract_valida(series: pd.Series) -> pd.Series:
     return (~s.str.upper().isin(invalid)) & series.notna()
 
 def normalizar_df_empleo(df_raw: pd.DataFrame) -> pd.DataFrame:
+    """Normaliza EXACTAMENTE como el Informe de Cierre (ahora robusto a acentos)."""
     df = df_raw.copy()
 
-    # ===== Mapeo robusto de columnas (insensible a tildes/NBSP/variantes) =====
-    col_consec = _find_column(df.columns, ["CONSECUCION GE"])
-    col_inap   = _find_column(df.columns, ["INAPLICACION GE"])
-    col_devol  = _find_column(df.columns, ["DEVOLUCION GE"])
-    col_pr_ge  = _find_column(df.columns, ["PRACTICAS GE", "PRACTICAS/GE", "PRACTCAS/GE"])
-    col_emp_pr = _find_column(df.columns, ["EMPRESA PRACT", "EMPRESA PRACT.", "EMPRESA PRACTICAS", "EMPRESA PRACTICA"])
-    col_emp_ge = _find_column(df.columns, ["EMPRESA GE"])
-    col_area   = _find_column(df.columns, ["AREA"])
-    col_cons   = _find_column(df.columns, ["CONSULTOR EIP"])
-    col_fc     = _find_column(df.columns, ["FECHA CIERRE"])
-    col_nombre = _find_column(df.columns, ["NOMBRE"])
-    col_apell  = _find_column(df.columns, ["APELLIDOS"])
+    # Renombra a canónicos usando alias tolerantes a acentos
+    colmap = _alias_colmap(df.columns)
+    if colmap:
+        df = df.rename(columns=colmap)
+    # Después, fuerza mayúsculas y espacios limpios (sin tocar tildes de los canónicos)
+    df.columns = df.columns.str.strip()
 
-    ren = {}
-    if col_consec: ren[col_consec] = "CONSECUCIÓN GE"
-    if col_inap:   ren[col_inap]   = "INAPLICACIÓN GE"
-    if col_devol:  ren[col_devol]  = "DEVOLUCIÓN GE"
-    if col_pr_ge:  ren[col_pr_ge]  = "PRÁCTICAS/GE"
-    if col_emp_pr: ren[col_emp_pr] = "EMPRESA PRÁCT."
-    if col_emp_ge: ren[col_emp_ge] = "EMPRESA GE"
-    if col_area:   ren[col_area]   = "AREA"
-    if col_cons:   ren[col_cons]   = "CONSULTOR EIP"
-    if col_fc:     ren[col_fc]     = "FECHA CIERRE"
-    if col_nombre: ren[col_nombre] = "NOMBRE"
-    if col_apell:  ren[col_apell]  = "APELLIDOS"
-
-    if ren:
-        df = df.rename(columns=ren)
-
-    # ===== Limpiezas alineadas con el informe =====
+    # Limpiar consultor como en el informe
     if "CONSULTOR EIP" in df.columns:
         df["CONSULTOR EIP"] = df["CONSULTOR EIP"].astype(str).str.strip().replace("", "Otros")
         df = df[df["CONSULTOR EIP"].str.upper() != "NO ENCONTRADO"]
 
-    # Fecha + Año
+    # FECHA CIERRE + AÑO_CIERRE (misma regla de años inválidos)
     if "FECHA CIERRE" in df.columns:
         df["FECHA CIERRE"] = df["FECHA CIERRE"].apply(convertir_fecha_excel)
         anio_fc = df["FECHA CIERRE"].dt.year
@@ -175,50 +175,56 @@ def normalizar_df_empleo(df_raw: pd.DataFrame) -> pd.DataFrame:
         df["FECHA CIERRE"] = pd.NaT
         df["AÑO_CIERRE"] = pd.NA
 
-    # Booleans (si no existen, crea False)
+    # Booleanos (si las columnas no existen, crea False para evitar fallos)
     if "CONSECUCIÓN GE" in df.columns:
         df["CONSECUCIÓN_BOOL"] = df["CONSECUCIÓN GE"].apply(to_bool)
+    elif "CONSECUCION GE" in df.columns:
+        df["CONSECUCIÓN_BOOL"] = df["CONSECUCION GE"].apply(to_bool)
     else:
         df["CONSECUCIÓN_BOOL"] = False
 
     if "INAPLICACIÓN GE" in df.columns:
         df["INAPLICACIÓN_BOOL"] = df["INAPLICACIÓN GE"].apply(to_bool)
+    elif "INAPLICACION GE" in df.columns:
+        df["INAPLICACIÓN_BOOL"] = df["INAPLICACION GE"].apply(to_bool)
     else:
         df["INAPLICACIÓN_BOOL"] = False
 
-    if "DEVOLUCIÓN GE" in df.columns:
-        df["DEVOLUCIÓN_BOOL"] = df["DEVOLUCIÓN GE"].apply(to_bool)
-    else:
-        df["DEVOLUCIÓN_BOOL"] = False
-
-    # Asegura columnas de empresas por si vienen con otra grafía
+    # Asegura presencia de EMPRESA PRÁCT. y PRÁCTICAS/GE si vinieran con variantes
     if "EMPRESA PRÁCT." not in df.columns:
-        df["EMPRESA PRÁCT."] = pd.NA
+        for cand in ["EMPRESA PRACT.", "EMPRESA PRACT", "EMPRESA PRACTICAS", "EMPRESA PRACTICA"]:
+            if cand in df.columns:
+                df = df.rename(columns={cand: "EMPRESA PRÁCT."})
+                break
     if "PRÁCTICAS/GE" not in df.columns:
-        df["PRÁCTICAS/GE"] = pd.NA
+        for cand in ["PRACTICAS/GE", "PRACTICAS GE", "PRACTCAS/GE"]:
+            if cand in df.columns:
+                df = df.rename(columns={cand: "PRÁCTICAS/GE"})
+                break
 
     return df
 
 def kpis_informe_like(df_src: pd.DataFrame, anio_obj: int,
-                      practicas_en_curso_por_fecha_cierre: bool = False) -> tuple[int, int, int, int]:
+                      practicas_en_curso_por_fecha_cierre: bool = True) -> tuple[int, int, int, int]:
     """
     Devuelve (consecución, inaplicación, prácticas, prácticas_en_curso)
-    exactamente como en el informe para 'Cierre Expediente Año {anio_obj}'.
+    igual que el informe para 'Cierre Expediente Año {anio_obj}'.
 
-    - practicas_en_curso_por_fecha_cierre=False -> usa AÑO_CIERRE==2000 + EMPRESA PRÁCT. (tu informe de 52).
-    - Si en el futuro cambias a FECHA CIERRE NaT para 'en curso', pon True.
+    - Si practicas_en_curso_por_fecha_cierre=True: cuenta FECHA CIERRE NaT + EMPRESA PRÁCT. válida (regla actual).
+    - Si False: usa AÑO_CIERRE==2000 + EMPRESA PRÁCT. válida (regla anterior).
     """
     df = normalizar_df_empleo(df_src)
+
     df_anio = df[df["AÑO_CIERRE"] == anio_obj].copy()
 
     total_consecucion    = int(df_anio["CONSECUCIÓN_BOOL"].sum())
     total_inaplicacion   = int(df_anio["INAPLICACIÓN_BOOL"].sum())
-    total_practicas_anio = int(emp_pract_valida(df_anio["EMPRESA PRÁCT."]).sum())
+    total_practicas_anio = int(emp_pract_valida(df_anio.get("EMPRESA PRÁCT.", pd.Series(index=df_anio.index))).sum())
 
     if practicas_en_curso_por_fecha_cierre:
-        total_en_curso = int((df["FECHA CIERRE"].isna() & emp_pract_valida(df["EMPRESA PRÁCT."])).sum())
+        total_en_curso = int((df["FECHA CIERRE"].isna() & emp_pract_valida(df.get("EMPRESA PRÁCT.", pd.Series(index=df.index)))).sum())
     else:
-        total_en_curso = int(((df["AÑO_CIERRE"] == 2000) & emp_pract_valida(df["EMPRESA PRÁCT."])).sum())
+        total_en_curso = int(((df["AÑO_CIERRE"] == 2000) & emp_pract_valida(df.get("EMPRESA PRÁCT.", pd.Series(index=df.index)))).sum())
 
     return total_consecucion, total_inaplicacion, total_practicas_anio, total_en_curso
 
@@ -227,7 +233,7 @@ def kpis_informe_like(df_src: pd.DataFrame, anio_obj: int,
 def principal_page():
     st.title("📊 Panel Principal")
 
-    # 🔄 Recarga total: limpia session_state y cachés
+    # 🔄 Recarga total: limpia session_state y cachés de Streamlit
     if st.button("🔄 Recargar datos manualmente"):
         for key in ["academica_excel_data", "excel_data", "df_ventas", "df_preventas", "df_gestion", "df_empleo_informe"]:
             if key in st.session_state:
@@ -335,6 +341,20 @@ def principal_page():
     col1.markdown(render_info_card("Matrículas Totales", total_matriculas, format_euro(sum(importes_por_mes.values())), "#c8e6c9"), unsafe_allow_html=True)
     col2.markdown(render_info_card("Preventas", total_preventas, format_euro(total_preventas_importe), "#ffe0b2"), unsafe_allow_html=True)
 
+    # ===================== COBRO =====================
+    if estados:
+        st.markdown("---")
+        st.markdown("## 💼 Gestión de Cobro")
+        st.markdown("### Totales por Estado")
+        estado_items = sorted(estados.items(), key=lambda x: x[1], reverse=True)
+        for i in range(0, len(estado_items), 4):
+            cols = st.columns(4)
+            for j, (estado, total) in enumerate(estado_items[i:i+4]):
+                cols[j].markdown(
+                    render_import_card(f"Estado: {estado}", format_euro(total), "#f3e5f5"),
+                    unsafe_allow_html=True
+                )
+
     # ===================== ACADÉMICA =====================
     if "academica_excel_data" in st.session_state:
         data = st.session_state["academica_excel_data"]
@@ -379,17 +399,18 @@ def principal_page():
         if df_empleo_src.empty:
             st.info("Sin datos de empleo para mostrar.")
         else:
-            # OJO: usamos AÑO_CIERRE==2000 para 'en curso' (como el informe que te da 52)
+            # Si tu informe usa FECHA CIERRE vacía para 'en curso', deja True.
+            # Si usa AÑO_CIERRE==2000, pon False.
             cons, inap, pract, pract_curso = kpis_informe_like(
                 df_empleo_src,
                 anio_obj,
-                practicas_en_curso_por_fecha_cierre=False
+                practicas_en_curso_por_fecha_cierre=True
             )
 
             cols = st.columns(4)
             cols[0].markdown(render_import_card(f"✅ Consecución {anio_obj}", cons, "#e3f2fd"), unsafe_allow_html=True)
             cols[1].markdown(render_import_card(f"🚫 Inaplicación {anio_obj}", inap, "#fce4ec"), unsafe_allow_html=True)
-            cols[2].markdown(render_import_card(f"🎓 Prácticas {anio_obj}", pract, "#ede7f6"), use_container_width=True, unsafe_allow_html=True)
+            cols[2].markdown(render_import_card(f"🎓 Prácticas {anio_obj}", pract, "#ede7f6"), unsafe_allow_html=True)
             cols[3].markdown(render_import_card(f"🛠️ Prácticas en curso {anio_obj}", pract_curso, "#fff3e0"), unsafe_allow_html=True)
 
     except Exception as e:
@@ -415,13 +436,17 @@ def principal_page():
 
             df_u = df_mapa.drop_duplicates(subset=['Cliente', 'Provincia', 'País']).copy()
 
+            # Normalización estricta
             df_u['Provincia'] = df_u['Provincia'].apply(normalize_text).str.title().str.strip()
             df_u['País'] = df_u['País'].apply(normalize_text).str.title().str.strip()
 
+            # Provincias válidas de España
             df_esp = df_u[
                 (df_u['País'].str.upper() == 'ESPAÑA') &
                 (df_u['Provincia'].isin(PROVINCIAS_COORDS))
             ]
+
+            # Países (incluye Gibraltar y España solo si tiene provincia inválida)
             df_ext = df_u[
                 (df_u['Provincia'].isna()) |
                 (~df_u['Provincia'].isin(PROVINCIAS_COORDS)) |
@@ -448,7 +473,7 @@ def principal_page():
 
             mapa = folium.Map(location=[25, 0], zoom_start=2, width="100%", height="700px", max_bounds=True)
 
-            # 🔵 Provincias españolas
+            # 🔵 Provincias españolas en azul
             for _, row in count_prov.iterrows():
                 entidad, alumnos = row['Entidad'], row['Alumnos']
                 coords = PROVINCIAS_COORDS.get(entidad)
@@ -460,7 +485,7 @@ def principal_page():
                         icon=folium.Icon(color="blue", icon="user", prefix="fa")
                     ).add_to(mapa)
 
-            # 🔴 España (provincias)
+            # 🔴 Marcador central "España (provincias)" - desplazado para no solapar Madrid
             total_espana = count_prov['Alumnos'].sum()
             coords_espana = [40.4268, -3.7138]
             folium.Marker(
@@ -470,7 +495,7 @@ def principal_page():
                 icon=folium.Icon(color="red", icon="flag", prefix="fa")
             ).add_to(mapa)
 
-            # 🌍 Países
+            # 🌍 Banderas por país
             def get_flag_emoji(pais_nombre):
                 FLAGS = {
                     "Francia": "🇫🇷", "Portugal": "🇵🇹", "Italia": "🇮🇹",
@@ -482,10 +507,11 @@ def principal_page():
                 }
                 return FLAGS.get(pais_nombre.title(), "🌍")
 
+            # 🔴 Países extranjeros en rojo
             for _, row in count_pais.iterrows():
                 entidad, alumnos = row['Entidad'], row['Alumnos']
                 if entidad.upper() == "ESPAÑA":
-                    continue
+                    continue  # Evita duplicados
                 coords = PAISES_COORDS.get(entidad) or st.session_state["coords_cache"].get(entidad)
                 if not coords:
                     coords = geolocalizar_pais(entidad)
