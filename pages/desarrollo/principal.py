@@ -1,19 +1,24 @@
-# Guardado como: principal.py
+# principal.py
+import os
+import re
+import unicodedata
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-import os
-from datetime import datetime
-import re
 
 UPLOAD_FOLDER = "uploaded_admisiones"
 ARCHIVO_DESARROLLO = os.path.join(UPLOAD_FOLDER, "desarrollo_profesional.xlsx")
 
+NBSP = "\u00A0"
 
-def clean_headers(df):
+def _norm_spaces(text: str) -> str:
+    s = unicodedata.normalize("NFKC", str(text)).replace(NBSP, " ")
+    return " ".join(s.strip().split())
+
+def clean_headers(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = [
-        str(col).strip().upper() if str(col).strip() != '' else f'UNNAMED_{i}'
+        _norm_spaces(col).upper() if _norm_spaces(col) != "" else f'UNNAMED_{i}'
         for i, col in enumerate(df.columns)
     ]
     if len(df.columns) != len(set(df.columns)):
@@ -21,187 +26,172 @@ def clean_headers(df):
         df = df.loc[:, ~df.columns.duplicated()]
     return df
 
+def es_vacio(valor):
+    if pd.isna(valor):
+        return True
+    v = unicodedata.normalize("NFKC", str(valor)).replace(NBSP, " ").strip().upper()
+    return v == ""
 
-def parse_bool(value):
-    return str(value).strip().lower() in ['true', 'verdadero', 'sí', 'si', '1']
-
-
-def limpiar_riesgo(valor):
+def limpiar_riesgo(valor) -> float:
+    if isinstance(valor, (int, float)):
+        return float(valor)
     if pd.isna(valor):
         return 0.0
-    valor = re.sub(r"[^\d,\.]", "", str(valor))
-    valor = valor.replace(".", "").replace(",", ".")
+    v = re.sub(r"[^\d,\.]", "", str(valor))
+    v = v.replace(".", "").replace(",", ".")
     try:
-        return float(valor)
-    except:
+        return float(v)
+    except Exception:
         return 0.0
 
-
-def render(df=None):
+def render(df: pd.DataFrame | None = None):
     st.title("📊 Principal - Área de Empleo")
+
+    # 🔄 Botón para recargar / limpiar caché
+    if st.button("🔄 Recargar / limpiar caché"):
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        st.success("Caché limpiada. Datos recargados.")
 
     if df is None:
         if not os.path.exists(ARCHIVO_DESARROLLO):
-            st.warning("⚠️ No se encontró el archivo de desarrollo profesional.")
+            st.warning("⚠️ No se encontró el archivo.")
             return
-        df = pd.read_excel(ARCHIVO_DESARROLLO)
+        try:
+            df = pd.read_excel(ARCHIVO_DESARROLLO, sheet_name="GENERAL")
+        except Exception:
+            df = pd.read_excel(ARCHIVO_DESARROLLO)
 
     df = clean_headers(df)
 
-    columnas_necesarias = [
-        'CONSECUCIÓN GE', 'DEVOLUCIÓN GE', 'INAPLICACIÓN GE',
-        'AREA', 'PRÁCTCAS/GE', 'CONSULTOR EIP', 'RIESGO ECONÓMICO',
-        'MES 3M', 'FIN CONV'
+    rename_alias = {
+        "PRÁCTCAS/GE": "PRÁCTICAS/GE",
+        "PRACTICAS/GE": "PRÁCTICAS/GE",
+        "CONSULTOR_EIP": "CONSULTOR EIP"
+    }
+    df = df.rename(columns={k: v for k, v in rename_alias.items() if k in df.columns})
+
+    cols_req = [
+        "CONSECUCIÓN GE", "INAPLICACIÓN GE", "DEVOLUCIÓN GE",
+        "AREA", "PRÁCTICAS/GE", "CONSULTOR EIP", "RIESGO ECONÓMICO", "FIN CONV",
+        "NOMBRE", "APELLIDOS"
     ]
-    columnas_faltantes = [col for col in columnas_necesarias if col not in df.columns]
-    if columnas_faltantes:
-        st.error(f"❌ Faltan columnas necesarias: {', '.join(columnas_faltantes)}")
+    faltantes = [c for c in cols_req if c not in df.columns]
+    if faltantes:
+        st.error(f"❌ Faltan columnas: {', '.join(faltantes)}")
         return
 
-    if st.checkbox("🔍 Ver columnas cargadas del Excel"):
-        st.write(df.columns.tolist())
+    # Activo = las 3 columnas de estado vacías
+    df["ES_ACTIVO"] = (
+        df["CONSECUCIÓN GE"].map(es_vacio) &
+        df["INAPLICACIÓN GE"].map(es_vacio) &
+        df["DEVOLUCIÓN GE"].map(es_vacio)
+    )
 
-    for col in ['CONSECUCIÓN GE', 'DEVOLUCIÓN GE', 'INAPLICACIÓN GE']:
-        df[col] = df[col].map(parse_bool)
+    # Normalizaciones de texto
+    for col in ["PRÁCTICAS/GE", "CONSULTOR EIP", "AREA"]:
+        df[col] = df[col].where(df[col].notna(), pd.NA).map(
+            lambda x: _norm_spaces(x) if pd.notna(x) else x
+        ).str.upper()
 
-    df['PRÁCTCAS/GE'] = df['PRÁCTCAS/GE'].astype(str).str.strip().str.upper()
-    df['CONSULTOR EIP'] = df['CONSULTOR EIP'].astype(str).str.strip().str.upper()
+    # Base: activos con área válida
+    df_base = df[df["ES_ACTIVO"]].copy()
+    df_base = df_base[
+        df_base["AREA"].notna() &
+        (~df_base["AREA"].isin(["", "NO ENCONTRADO", "NAN", "<NA>"]))
+    ]
 
-    opciones_practicas = sorted(df['PRÁCTCAS/GE'].dropna().unique())
-    opciones_consultores = sorted(df['CONSULTOR EIP'].dropna().unique())
+    # Filtros UI
+    opciones_practicas = sorted(df_base["PRÁCTICAS/GE"].dropna().unique().tolist())
+    opciones_consultores = sorted(df_base["CONSULTOR EIP"].dropna().unique().tolist())
 
-    col_filtro1, col_filtro2 = st.columns(2)
-    with col_filtro1:
-        seleccion_practicas = st.multiselect("Selecciona PRÁCTCAS/GE:", opciones_practicas, default=opciones_practicas)
-    with col_filtro2:
+    c1, c2 = st.columns(2)
+    with c1:
+        seleccion_practicas = st.multiselect("Selecciona PRÁCTICAS/GE:", opciones_practicas, default=opciones_practicas)
+    with c2:
         seleccion_consultores = st.multiselect("Selecciona CONSULTOR EIP:", opciones_consultores, default=opciones_consultores)
 
-    df_filtrado = df[
-        (df['CONSECUCIÓN GE'] == False) &
-        (df['DEVOLUCIÓN GE'] == False) &
-        (df['INAPLICACIÓN GE'] == False)
-    ]
-    df_filtrado = df_filtrado[
-        df_filtrado['AREA'].notna() &
-        (df_filtrado['AREA'].str.strip() != "") &
-        (df_filtrado['AREA'].str.strip().str.upper() != "NO ENCONTRADO")
-    ]
-    df_filtrado = df_filtrado[
-        df_filtrado['PRÁCTCAS/GE'].isin(seleccion_practicas) &
-        df_filtrado['CONSULTOR EIP'].isin(seleccion_consultores)
-    ]
+    df_filtrado = df_base[
+        df_base["PRÁCTICAS/GE"].isin(seleccion_practicas) &
+        df_base["CONSULTOR EIP"].isin(seleccion_consultores)
+    ].copy()
 
     if df_filtrado.empty:
         st.info("No hay datos disponibles para la selección realizada.")
         return
 
-    conteo_area = df_filtrado['AREA'].value_counts().reset_index()
+    # Gráfico de barras por área
+    conteo_area = df_filtrado["AREA"].value_counts().reset_index()
     conteo_area.columns = ["Área", "Cantidad"]
-    x_data = conteo_area["Área"]
-    y_data = conteo_area["Cantidad"]
 
     fig_bar = go.Figure()
     fig_bar.add_trace(go.Bar(
-        x=x_data,
-        y=y_data,
-        marker=dict(
-            color=y_data,
-            colorscale=[[0, "#ffff00"], [1, "#1f77b4"]],
-            line=dict(color='black', width=1.5)
-        ),
-        text=y_data,
-        textposition='none'
+        x=conteo_area["Área"],
+        y=conteo_area["Cantidad"],
+        marker=dict(color=conteo_area["Cantidad"], colorscale=[[0, "#ffff00"], [1, "#1f77b4"]], line=dict(color="black", width=1.5)),
     ))
-
-    for x, y in zip(x_data, y_data):
+    for x, y in zip(conteo_area["Área"], conteo_area["Cantidad"]):
         fig_bar.add_annotation(
-            x=x,
-            y=y,
-            text=f"<b>{y}</b>",
-            showarrow=False,
-            yshift=5,
-            font=dict(color="white", size=13),
-            align="center",
-            bgcolor="black",
-            borderpad=4
+            x=x, y=y, text=f"<b>{y}</b>", showarrow=False, yshift=5,
+            font=dict(color="white", size=13), align="center",
+            bgcolor="black", borderpad=4
         )
-
     fig_bar.update_layout(
-        height=500,
-        xaxis_title="Área",
-        yaxis_title="Número de Alumnos",
-        yaxis=dict(range=[0, max(y_data) * 1.2]),
-        plot_bgcolor='white'
+        height=500, xaxis_title="Área", yaxis_title="Número de Alumnos",
+        yaxis=dict(range=[0, max(conteo_area["Cantidad"]) * 1.2]),
+        plot_bgcolor="white",
     )
-
     st.plotly_chart(fig_bar, use_container_width=True)
 
-    total_alumnos = conteo_area['Cantidad'].sum()
+    # KPIs
+    total_alumnos = len(df_filtrado)
+    hoy = pd.to_datetime("today").normalize()
 
-    df['FIN CONV'] = pd.to_datetime(df['FIN CONV'], errors='coerce')
-    df['MES 3M'] = pd.to_datetime(df['MES 3M'], errors='coerce')
+    df_ge_activos = df_filtrado[df_filtrado["PRÁCTICAS/GE"] == "GE"].copy()
+    df_ge_activos["FIN CONV"] = pd.to_datetime(df_ge_activos["FIN CONV"], errors="coerce")
+    df_ge_activos["FECHA_RIESGO"] = df_ge_activos["FIN CONV"] + pd.DateOffset(months=3)
 
-    df_ge_activos = df[
-        (df['PRÁCTCAS/GE'] == 'GE') &
-        (df['CONSECUCIÓN GE'] == False) &
-        (df['DEVOLUCIÓN GE'] == False) &
-        (df['INAPLICACIÓN GE'] == False)
-    ].copy()
-
-    df_ge_activos['DIF_MESES'] = (
-        (df_ge_activos['MES 3M'].dt.year - df_ge_activos['FIN CONV'].dt.year) * 12 +
-        (df_ge_activos['MES 3M'].dt.month - df_ge_activos['FIN CONV'].dt.month)
+    mask_riesgo = (
+        df_ge_activos["FECHA_RIESGO"].notna() &
+        (df_ge_activos["FECHA_RIESGO"] <= hoy)
     )
+    df_riesgo = df_ge_activos.loc[mask_riesgo].copy()
+    df_riesgo["RIESGO ECONÓMICO"] = df_riesgo["RIESGO ECONÓMICO"].map(limpiar_riesgo)
 
-    hoy = pd.to_datetime("today")
+    suma_riesgo = df_riesgo["RIESGO ECONÓMICO"].sum()
+    suma_riesgo_fmt = f"{suma_riesgo:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
+    total_ge_indicador = len(df_riesgo)
 
-    df_resultado = df_ge_activos[
-        (df_ge_activos['DIF_MESES'] == 3) & 
-        (df_ge_activos['FIN CONV'] <= hoy)
-    ].copy()
+    k1, k2, k3 = st.columns(3)
+    with k1:
+        st.metric("🎯 Total Alumnos", total_alumnos)
+    with k2:
+        st.metric("📌 ALUMNO RIESGO TRIM", total_ge_indicador)
+    with k3:
+        st.metric("💰 RIESGO ECONOMICO", suma_riesgo_fmt)
 
-    total_ge_indicador = len(df_resultado)
-
-    df_resultado['RIESGO ECONÓMICO'] = df_resultado['RIESGO ECONÓMICO'].map(limpiar_riesgo)
-    suma_riesgo_eco = df_resultado['RIESGO ECONÓMICO'].sum()
-    suma_riesgo_formateada = f"{suma_riesgo_eco:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric(label="🎯 Total Alumnos", value=total_alumnos)
-    with col2:
-        st.metric(label="📌 ALUMNO RIESGO TRIM", value=total_ge_indicador)
-    with col3:
-        st.metric(label="💰 RIESGO ECONOMICO", value=suma_riesgo_formateada)
-
+    # =================== DISTRIBUCIÓN ===================
     st.markdown("---")
-    st.subheader("Distribución")
+    st.subheader("📊 Distribución")
+
     colpie1, colpie2 = st.columns(2)
 
     with colpie1:
-        conteo_practicas = df_filtrado['PRÁCTCAS/GE'].value_counts().reset_index()
+        conteo_practicas = df_filtrado["PRÁCTICAS/GE"].value_counts().reset_index()
         conteo_practicas.columns = ["Tipo", "Cantidad"]
-        fig_pie = px.pie(
-            conteo_practicas,
-            names="Tipo",
-            values="Cantidad"
-        )
-        fig_pie.update_traces(textposition='inside', textinfo='label+percent+value')
-        fig_pie.update_layout(height=500)
+        fig_pie = px.pie(conteo_practicas, names="Tipo", values="Cantidad")
+        fig_pie.update_traces(textposition="inside", textinfo="label+percent+value")
+        fig_pie.update_layout(title="Distribución por Tipo", height=500)
         st.plotly_chart(fig_pie, use_container_width=True)
 
     with colpie2:
         df_filtrado_consultores = df_filtrado[
-            df_filtrado['CONSULTOR EIP'].str.upper() != 'NO ENCONTRADO'
+            df_filtrado["CONSULTOR EIP"].notna() &
+            (df_filtrado["CONSULTOR EIP"].str.upper() != "NO ENCONTRADO")
         ]
-        conteo_consultor = df_filtrado_consultores['CONSULTOR EIP'].value_counts().reset_index()
+        conteo_consultor = df_filtrado_consultores["CONSULTOR EIP"].value_counts().reset_index()
         conteo_consultor.columns = ["Consultor", "Cantidad"]
-        fig_pie_consultor = px.pie(
-            conteo_consultor,
-            names="Consultor",
-            values="Cantidad"
-        )
-        fig_pie_consultor.update_traces(textposition='inside', textinfo='label+percent+value')
-        fig_pie_consultor.update_layout(height=500)
-        st.subheader("Alumnado por Consultor")
+        fig_pie_consultor = px.pie(conteo_consultor, names="Consultor", values="Cantidad")
+        fig_pie_consultor.update_traces(textposition="inside", textinfo="label+percent+value")
+        fig_pie_consultor.update_layout(title="Alumnado por Consultor", height=500)
         st.plotly_chart(fig_pie_consultor, use_container_width=True)

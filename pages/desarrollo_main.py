@@ -1,32 +1,87 @@
 import streamlit as st
 import pandas as pd
-import gspread
-from google.oauth2 import service_account
+import io
+import requests
+import msal
 from datetime import datetime
 
-# ✅ FUNCIÓN PARA CARGAR GOOGLE SHEET CON CACHÉ
-@st.cache_data
-def cargar_google_sheet():
-    try:
-        creds = st.secrets["google_service_account"]
-        credentials = service_account.Credentials.from_service_account_info(
-            creds,
-            scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
-        )
-        client = gspread.authorize(credentials)
-        sheet = client.open_by_key("1CPhL56knpvaYZznGF-YgIuHWWCWPtWGpkSgbf88GJFQ")
-        worksheet = sheet.get_worksheet(0)
-        data = worksheet.get_all_records()
-        return pd.DataFrame(data)
-    except Exception as e:
-        st.error(f"❌ Error al cargar los datos: {e}")
-        return None
+# =========================
+# 🔐 CARGA DESDE SHAREPOINT
+# =========================
+@st.cache_resource
+def _msal_app_empleo():
+    cfg = st.secrets["empleo"]
+    return msal.ConfidentialClientApplication(
+        client_id=cfg["client_id"],
+        client_credential=cfg["client_secret"],
+        authority=f"https://login.microsoftonline.com/{cfg['tenant_id']}",
+    )
 
+def _graph_token_empleo():
+    app = _msal_app_empleo()
+    scopes = ["https://graph.microsoft.com/.default"]
+    result = app.acquire_token_silent(scopes, account=None) or app.acquire_token_for_client(scopes)
+    if "access_token" not in result:
+        raise RuntimeError(result.get("error_description", "No se pudo obtener token de Graph"))
+    return result["access_token"]
+
+@st.cache_data(show_spinner=False)
+def cargar_empleo_sharepoint():
+    """
+    Lee el Excel 'EIP EMPLEO.xlsx' desde SharePoint usando los datos en st.secrets['empleo'].
+    Necesita en secrets:
+      domain = "grupomainjobs.sharepoint.com"
+      site_name = "GrupoMainjobs928"
+      file_path = "/EIP BBDD/EIP EMPLEO.xlsx"
+      worksheet_name = "GENERAL" (o usa worksheet_index)
+    """
+    cfg = st.secrets["empleo"]
+    token = _graph_token_empleo()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 1) Obtener siteId a partir de domain + site_name (slug)
+    #    Ejemplo: https://graph.microsoft.com/v1.0/sites/{domain}:/sites/{site_name}
+    site_url = f"https://graph.microsoft.com/v1.0/sites/{cfg['domain']}:/sites/{cfg['site_name']}"
+    site_resp = requests.get(site_url, headers=headers)
+    site_resp.raise_for_status()
+    site_id = site_resp.json()["id"]
+
+    # 2) Listar drives del site y coger "Documentos" (o "Shared Documents" si tu tenant está en inglés)
+    drives_resp = requests.get(f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives", headers=headers)
+    drives_resp.raise_for_status()
+    drives = drives_resp.json().get("value", [])
+    drive = next((d for d in drives if d["name"].lower() in ("documentos", "shared documents")), None)
+    if not drive:
+        raise RuntimeError("No se encontró la biblioteca 'Documentos' (o 'Shared Documents').")
+    drive_id = drive["id"]
+
+    # 3) Descargar el archivo por ruta
+    file_path = cfg["file_path"].lstrip("/")  # "EIP BBDD/EIP EMPLEO.xlsx"
+    content_url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/root:/{file_path}:/content"
+    bin_resp = requests.get(content_url, headers=headers)
+    bin_resp.raise_for_status()
+    xls = io.BytesIO(bin_resp.content)
+
+    # 4) Leer hoja
+    ws_name = cfg.get("worksheet_name", "")
+    ws_index = int(cfg.get("worksheet_index", 0))
+    if ws_name:
+        df = pd.read_excel(xls, sheet_name=ws_name)
+    else:
+        df = pd.read_excel(xls, sheet_name=ws_index)
+
+    # Normaliza cabeceras como haces en tus páginas
+    df.columns = df.columns.str.strip()
+    return df
+
+# =========================
+# 🚀 PÁGINA
+# =========================
 def desarrollo_page():
     fecha_actual = datetime.today().strftime("%d/%m/%Y")
 
-    # ✅ BOTÓN DE RECARGA QUE BORRA LA CACHÉ Y ACTUALIZA DATOS
-    if st.button("🔄 Recargar datos desde Google Sheets"):
+    # Botón de recarga (limpia caché de datos)
+    if st.button("🔄 Recargar datos desde SharePoint"):
         st.cache_data.clear()
         st.rerun()
 
@@ -35,20 +90,24 @@ def desarrollo_page():
         unsafe_allow_html=True
     )
 
-    df = cargar_google_sheet()
-
-    if df is None or df.empty:
-        st.warning("⚠️ No se pudieron cargar los datos del documento.")
+    # Cargar datos de EMPLEO (SharePoint)
+    try:
+        df = cargar_empleo_sharepoint()
+    except Exception as e:
+        st.error(f"❌ Error al cargar los datos de SharePoint: {e}")
         return
 
-    st.success("✅ Datos cargados correctamente desde Google Sheets.")
+    if df is None or df.empty:
+        st.warning("⚠️ No se pudieron cargar datos del documento.")
+        return
+
+    st.success("✅ Datos cargados correctamente desde SharePoint (EIP EMPLEO.xlsx / GENERAL).")
 
     subcategorias = [
         "Principal",
         "Riesgo económico",
         "Cierre expediente total"
     ]
-
     seleccion = st.selectbox("Selecciona una subcategoría:", subcategorias)
 
     if seleccion == "Principal":

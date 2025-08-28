@@ -1,238 +1,333 @@
 import pandas as pd
 import streamlit as st
 import plotly.express as px
+import unicodedata
+import re
 from datetime import datetime
 
+# ---------- UI ----------
 def render_card(title, value, color):
     return f"""
         <div style="background-color:{color}; padding:16px; border-radius:12px; text-align:center; box-shadow: 0 4px 8px rgba(0,0,0,0.1)">
-            <h4 style="margin-bottom:0.5em">{title}</h4>
+            <h4 style="margin-bottom:0.5em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">{title}</h4>
             <h2 style="margin:0">{value}</h2>
         </div>
     """
 
+# ---------- Helpers ----------
+MESES_ES = {
+    "enero":"01","febrero":"02","marzo":"03","abril":"04","mayo":"05","junio":"06",
+    "julio":"07","agosto":"08","septiembre":"09","setiembre":"09","octubre":"10",
+    "noviembre":"11","diciembre":"12"
+}
+INVALID_TXT = {"", "NO ENCONTRADO", "NAN", "NULL", "NONE"}
+
+def _strip_accents(s: str) -> str:
+    return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
+
+def _norm_colname(s: str) -> str:
+    s = str(s)
+    s = _strip_accents(s).upper()
+    s = s.replace('\u00A0', ' ')
+    s = re.sub(r'[\.\-_/]', ' ', s)
+    s = re.sub(r'\s+', ' ', s).strip()
+    s = re.sub(r'[^A-Z0-9 ]', '', s)
+    return s
+
+def _norm_text_cell(x: object, upper: bool = False, deaccent: bool = False) -> str:
+    """Limpia NBSP, colapsa espacios, trim; opcional quitar acentos y poner MAYÚSCULAS."""
+    if pd.isna(x):
+        s = ""
+    else:
+        s = str(x).replace('\u00A0', ' ')
+    s = re.sub(r'\s+', ' ', s).strip()
+    if deaccent:
+        s = _strip_accents(s)
+    if upper:
+        s = s.upper()
+    return s
+
+def _build_colmap(cols):
+    expected = {
+        "CONSECUCION GE": ["CONSECUCION GE"],
+        "DEVOLUCION GE": ["DEVOLUCION GE"],
+        "INAPLICACION GE": ["INAPLICACION GE"],
+        "MODALIDAD PRACTICAS": ["MODALIDAD PRACTICAS", "MODALIDAD PRACTICA"],
+        "CONSULTOR EIP": ["CONSULTOR EIP"],
+        "PRACTICAS_GE": ["PRACTICAS GE", "PRACTICAS/GE", "PRACTCAS/GE"],
+        "EMPRESA PRACT": ["EMPRESA PRACT", "EMPRESA PRACTICAS", "EMPRESA PRACTICA", "EMPRESA PRACT."],
+        "EMPRESA GE": ["EMPRESA GE"],
+        "AREA": ["AREA"],
+        "ANIO": ["ANO", "ANIO", "AÑO"],
+        "NOMBRE": ["NOMBRE"],
+        "APELLIDOS": ["APELLIDOS"],
+        "FECHA CIERRE": ["FECHA CIERRE", "FECHA_CIERRE", "F CIERRE"],
+    }
+    norm_lookup = { _norm_colname(c): c for c in cols }
+    colmap = {}
+    for canon, aliases in expected.items():
+        found = None
+        for alias in aliases:
+            alias_norm = _norm_colname(alias)
+            if alias_norm in norm_lookup:
+                found = norm_lookup[alias_norm]; break
+        if not found:
+            for norm_key, real in norm_lookup.items():
+                if alias_norm in norm_key:
+                    found = real; break
+        if found:
+            colmap[canon] = found
+    return colmap
+
+def _to_bool(x):
+    if isinstance(x, bool): return x
+    if isinstance(x, (int, float)) and not pd.isna(x): return bool(x)
+    if isinstance(x, str): return x.strip().lower() in ('true','verdadero','sí','si','1','x')
+    return False
+
+def _clean_series(s: pd.Series) -> pd.Series:
+    s = s.dropna().astype(str).apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True))
+    return s[~s.isin(INVALID_TXT)]
+
+def _parse_fecha_es(value):
+    # Acepta '1 de enero de 2024', '1 enero 2024', dd/mm/aaaa, serial Excel…
+    if pd.isna(value): return None
+    if isinstance(value, (int, float)): return value
+    s = str(value).strip()
+    if not s: return None
+    s_low = _strip_accents(s.lower())
+    s_low = re.sub(r'\bde\b', ' ', s_low)
+    s_low = re.sub(r'\s+', ' ', s_low).strip()
+    for mes, num in MESES_ES.items():
+        s_low = re.sub(rf'\b{mes}\b', num, s_low)
+    m = re.match(r'^(\d{1,2})\s+(\d{2})\s+(\d{4})$', s_low)
+    if m:
+        d, mm, yyyy = m.groups()
+        d = d.zfill(2)
+        return f"{d}/{mm}/{yyyy}"
+    return s
+
+def _is_blank(x) -> bool:
+    if x is None: return True
+    if isinstance(x, float) and pd.isna(x): return True
+    if isinstance(x, str) and x.strip() == "": return True
+    return pd.isna(x)
+
+# ---------- App ----------
 def render(df):
     st.title("Informe de Cierre de Expedientes")
+    st.button("🔄 Recargar / limpiar caché", on_click=st.cache_data.clear)
 
-    # ========== Normalización de cabeceras ==========
-    df.columns = df.columns.str.strip().str.upper()
+    # Detecta columnas
+    colmap = _build_colmap(df.columns)
+    required = ["CONSECUCION GE","DEVOLUCION GE","INAPLICACION GE","CONSULTOR EIP",
+                "PRACTICAS_GE","EMPRESA PRACT","EMPRESA GE","AREA","NOMBRE","APELLIDOS","FECHA CIERRE"]
+    missing = [k for k in required if k not in colmap]
+    if missing:
+        st.error("Faltan columnas requeridas: " + ", ".join(missing))
+        st.stop()
 
-    columnas_requeridas = [
-        'CONSECUCIÓN GE', 'DEVOLUCIÓN GE', 'INAPLICACIÓN GE',
-        'MODALIDAD PRÁCTICAS', 'CONSULTOR EIP', 'PRÁCTCAS/GE',
-        'EMPRESA PRÁCT.', 'EMPRESA GE', 'AREA', 'AÑO',
-        'NOMBRE', 'APELLIDOS', 'FECHA CIERRE'
-    ]
-    if not all(col in df.columns for col in columnas_requeridas):
-        st.error("Faltan columnas requeridas en el DataFrame.")
-        return
+    # Renombra
+    df = df.rename(columns={colmap[k]:k for k in colmap})
 
-    # ========== Limpieza/normalización de strings y tipos ==========
-    for col in ['PRÁCTCAS/GE', 'EMPRESA PRÁCT.', 'EMPRESA GE', 'AREA', 'NOMBRE', 'APELLIDOS']:
-        df[col] = df[col].astype(str).str.strip().str.upper()
+    # Limpieza valores
+    df["AREA"] = df["AREA"].apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True))
+    for c in ["PRACTICAS_GE","EMPRESA PRACT","EMPRESA GE","NOMBRE","APELLIDOS"]:
+        df[c] = df[c].apply(_norm_text_cell)
+    df["CONSULTOR EIP"] = df["CONSULTOR EIP"].apply(_norm_text_cell).replace('', 'Otros').fillna('Otros')
+    df = df[df["CONSULTOR EIP"].str.upper()!="NO ENCONTRADO"]
 
-    df['AÑO'] = pd.to_numeric(df['AÑO'], errors='coerce')
-    df['CONSULTOR EIP'] = df['CONSULTOR EIP'].astype(str).str.strip()
-    df['CONSULTOR EIP'] = df['CONSULTOR EIP'].replace('', 'Otros').fillna('Otros')
-    df = df[df['CONSULTOR EIP'].str.upper() != 'NO ENCONTRADO']
+    # FECHA CIERRE robusta
+    col_fc = "FECHA CIERRE"
+    if not pd.api.types.is_numeric_dtype(df[col_fc]):
+        df[col_fc] = df[col_fc].apply(_parse_fecha_es)
+    if pd.api.types.is_numeric_dtype(df[col_fc]):
+        dt = pd.to_datetime(df[col_fc], unit="D", origin="1899-12-30", errors="coerce")
+    else:
+        dt = pd.to_datetime(df[col_fc], errors="coerce", dayfirst=True)
+    df[col_fc] = dt
+    anio = df[col_fc].dt.year
+    mask = (anio.isin([1899, 1970]) | ((anio < 2015) & (anio != 2000)) | (anio > 2035))
+    df.loc[mask, col_fc] = pd.NaT
+    df["AÑO_CIERRE"] = df[col_fc].dt.year
 
-    df['FECHA CIERRE'] = pd.to_datetime(df['FECHA CIERRE'], errors='coerce')
-    df['AÑO_CIERRE'] = df['FECHA CIERRE'].dt.year
+    # Booleanos
+    df["CONSECUCION_BOOL"]=df["CONSECUCION GE"].apply(_to_bool)
+    df["INAPLICACION_BOOL"]=df["INAPLICACION GE"].apply(_to_bool)
+    df["DEVOLUCION_BOOL"]=df["DEVOLUCION GE"].apply(_to_bool)
 
-    # ========== Helper para booleanos robustos ==========
-    def to_bool(x):
-        if isinstance(x, bool):
-            return x
-        if isinstance(x, (int, float)) and not pd.isna(x):
-            return bool(x)
-        if isinstance(x, str):
-            s = x.strip().lower()
-            return s in ('true', 'verdadero', 'sí', 'si', '1')
-        return False
+    # Selector informe
+    anios = sorted(df["AÑO_CIERRE"].dropna().unique().astype(int)) if "AÑO_CIERRE" in df else []
+    visibles = [a for a in anios if a != 2000]
+    opciones = [f"Cierre Expediente Año {a}" for a in visibles] + ["Cierre Expediente Total"] if visibles else ["Cierre Expediente Total"]
+    opcion = st.selectbox("Selecciona el tipo de informe:", opciones)
+    df_base = df.copy() if "Total" in opcion else df[df["AÑO_CIERRE"]==int(opcion.split()[-1])].copy()
 
-    df['CONSECUCIÓN_BOOL'] = df['CONSECUCIÓN GE'].apply(to_bool)
-    df['INAPLICACIÓN_BOOL'] = df['INAPLICACIÓN GE'].apply(to_bool)
-    df['DEVOLUCIÓN_BOOL'] = df['DEVOLUCIÓN GE'].apply(to_bool)
+    # Filtro consultor
+    consultores = df_base["CONSULTOR EIP"].dropna().apply(_norm_text_cell)
+    consultores = consultores[~consultores.str.upper().isin(list(INVALID_TXT))]
+    consultores_unicos = sorted(consultores.unique())
+    sel = st.multiselect("Filtrar por Consultor:", options=consultores_unicos, default=consultores_unicos)
+    df_f = df_base[df_base["CONSULTOR EIP"].isin(sel)].copy()
 
-    # ========== Selector de informe (ocultando 2000) ==========
-    anios_disponibles = sorted(df['AÑO_CIERRE'].dropna().unique().astype(int))
-    anios_visibles = [a for a in anios_disponibles if a != 2000]
-    opciones_informe = [f"Cierre Expediente Año {a}" for a in anios_visibles] + ["Cierre Expediente Total"]
-    opcion = st.selectbox("Selecciona el tipo de informe:", opciones_informe)
+    # Área normalizada para todo el dataset filtrado (ano+consultores)
+    df_f["AREA_N"] = df_f["AREA"].apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True))
+    df_f.loc[df_f["AREA_N"] == "", "AREA_N"] = "SIN ÁREA"
 
-    df_base = df.copy() if "Total" in opcion else df[df['AÑO_CIERRE'] == int(opcion.split()[-1])].copy()
-
-    # ========== Filtro por consultor ==========
-    consultores_unicos = sorted(df_base['CONSULTOR EIP'].dropna().unique())
-    seleccion_consultores = st.multiselect("Filtrar por Consultor:", options=consultores_unicos, default=consultores_unicos)
-    df_filtrado = df_base[df_base['CONSULTOR EIP'].isin(seleccion_consultores)].copy()
-
-    # ========== Flag de prácticas en curso (según tu lógica original) ==========
-    df_filtrado['PRACTICAS_BOOL'] = (
-        (df_filtrado['PRÁCTCAS/GE'] == 'GE') &
-        (~df_filtrado['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])) &
-        (~df_filtrado['CONSECUCIÓN_BOOL']) &
-        (~df_filtrado['DEVOLUCIÓN_BOOL']) &
-        (~df_filtrado['INAPLICACIÓN_BOOL'])
+    # Flag de prácticas en curso (NO se usa para TOTAL PRÁCTICAS por área)
+    df_f["PRACTICAS_BOOL"] = (
+        (df_f["PRACTICAS_GE"].str.upper()=="GE") &
+        (~df_f["EMPRESA PRACT"].str.upper().isin(["","NO ENCONTRADO"])) &
+        (~df_f["CONSECUCION_BOOL"]) &
+        (~df_f["DEVOLUCION_BOOL"]) &
+        (~df_f["INAPLICACION_BOOL"])
     )
 
-    # ========== Totales para tarjetas por año/total ==========
-    total_consecucion = int(df_filtrado['CONSECUCIÓN_BOOL'].sum())
-    total_inaplicacion = int(df_filtrado['INAPLICACIÓN_BOOL'].sum())
-    total_empresa_ge = int(df_filtrado['EMPRESA GE'][~df_filtrado['EMPRESA GE'].isin(['', 'NO ENCONTRADO'])].shape[0])
-    total_empresa_pract = int(df_filtrado['EMPRESA PRÁCT.'][~df_filtrado['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])].shape[0])
+    # Totales tarjetas
+    tot_con = int(df_f["CONSECUCION_BOOL"].sum())
+    tot_inap = int(df_f["INAPLICACION_BOOL"].sum())
+    tot_emp_ge = int(_clean_series(df_f["EMPRESA GE"]).shape[0])
+    tot_emp_pr = int(_clean_series(df_f["EMPRESA PRACT"]).shape[0])
 
     with st.container():
         if "Total" in opcion:
-            col1, col2, col3 = st.columns(3)
-            col1.markdown(render_card("CONSECUCIÓN", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
-            col2.markdown(render_card("INAPLICACIÓN", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
-            col3.markdown(render_card("Alumnado total en PRÁCTICAS", total_empresa_ge, "#ede7f6"), unsafe_allow_html=True)
+            c1, c2, c3 = st.columns(3)
+            c1.markdown(render_card("CONSECUCIÓN", tot_con, "#e3f2fd"), unsafe_allow_html=True)
+            c2.markdown(render_card("INAPLICACIÓN", tot_inap, "#fce4ec"), unsafe_allow_html=True)
+            c3.markdown(render_card("Alumnado total en PRÁCTICAS", tot_emp_ge, "#ede7f6"), unsafe_allow_html=True)
         else:
-            anio = opcion.split()[-1]
-            en_curso_2025 = 0
-            if anio == '2025':
-                # Filtrar por consultores seleccionados pero contar filas con AÑO_CIERRE=2000 y empresa de prácticas informada
-                df_consultores = df[df['CONSULTOR EIP'].isin(seleccion_consultores)]
-                en_curso_2025 = int(df_consultores[
-                    (df_consultores['AÑO_CIERRE'] == 2000) &
-                    (~df_consultores['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO']))
-                ].shape[0])
+            anio_txt = opcion.split()[-1]
+            if anio_txt == "2025":
+                c1, c2, c3, c4 = st.columns(4)
+                c1.markdown(render_card("CONSECUCIÓN 2025", tot_con, "#e3f2fd"), unsafe_allow_html=True)
+                c2.markdown(render_card("INAPLICACIÓN 2025", tot_inap, "#fce4ec"), unsafe_allow_html=True)
+                c3.markdown(render_card("Prácticas 2025", tot_emp_pr, "#f3e5f5"), unsafe_allow_html=True)
 
-                col1, col2, col3, col4 = st.columns(4)
-                col1.markdown(render_card(f"CONSECUCIÓN {anio}", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
-                col2.markdown(render_card(f"INAPLICACIÓN {anio}", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
-                col3.markdown(render_card(f"Prácticas {anio}", total_empresa_pract, "#f3e5f5"), unsafe_allow_html=True)
-                col4.markdown(render_card("Prácticas en curso 2025", en_curso_2025, "#fff3e0"), unsafe_allow_html=True)
+                df_cons = df[df["CONSULTOR EIP"].isin(sel)].copy()
+                m_sin_fecha = df_cons["FECHA CIERRE"].isna()
+                emp = df_cons["EMPRESA PRACT"].apply(_norm_text_cell)
+                m_emp_ok = ~(emp.eq("") | emp.str.upper().isin(list(INVALID_TXT)))
+                m_con_blank  = df_cons["CONSECUCION GE"].apply(_is_blank)
+                m_inap_blank = df_cons["INAPLICACION GE"].apply(_is_blank)
+                m_dev_blank  = df_cons["DEVOLUCION GE"].apply(_is_blank)
+                en_curso = int((m_sin_fecha & m_emp_ok & m_con_blank & m_inap_blank & m_dev_blank).sum())
+                c4.markdown(render_card("Prácticas en curso 2025", en_curso, "#fff3e0"), unsafe_allow_html=True)
             else:
-                col1, col2, col3 = st.columns(3)
-                col1.markdown(render_card(f"CONSECUCIÓN {anio}", total_consecucion, "#e3f2fd"), unsafe_allow_html=True)
-                col2.markdown(render_card(f"INAPLICACIÓN {anio}", total_inaplicacion, "#fce4ec"), unsafe_allow_html=True)
-                col3.markdown(render_card(f"Prácticas {anio}", total_empresa_pract, "#f3e5f5"), unsafe_allow_html=True)
+                c1, c2, c3 = st.columns(3)
+                c1.markdown(render_card(f"CONSECUCIÓN {anio_txt}", tot_con, "#e3f2fd"), unsafe_allow_html=True)
+                c2.markdown(render_card(f"INAPLICACIÓN {anio_txt}", tot_inap, "#fce4ec"), unsafe_allow_html=True)
+                c3.markdown(render_card(f"Prácticas {anio_txt}", tot_emp_pr, "#f3e5f5"), unsafe_allow_html=True)
 
-    # ========== Gráfico: cierres por consultor ==========
+    # Pie: cierres por consultor
     st.markdown("### Cierres gestionados por Consultor")
     df_cierre = pd.concat([
-        df_filtrado[df_filtrado['CONSECUCIÓN_BOOL']][['CONSULTOR EIP','NOMBRE','APELLIDOS']].assign(CIERRE='CONSECUCIÓN'),
-        df_filtrado[df_filtrado['INAPLICACIÓN_BOOL']][['CONSULTOR EIP','NOMBRE','APELLIDOS']].assign(CIERRE='INAPLICACIÓN')
+        df_f[df_f["CONSECUCION_BOOL"]][["CONSULTOR EIP","NOMBRE","APELLIDOS"]].assign(CIERRE="CONSECUCIÓN"),
+        df_f[df_f["INAPLICACION_BOOL"]][["CONSULTOR EIP","NOMBRE","APELLIDOS"]].assign(CIERRE="INAPLICACIÓN"),
     ], ignore_index=True)
-
-    resumen_total_cierres = df_cierre.groupby('CONSULTOR EIP').size().reset_index(name='TOTAL_CIERRES')
-    if not resumen_total_cierres.empty:
-        fig_pie = px.pie(resumen_total_cierres, names='CONSULTOR EIP', values='TOTAL_CIERRES',
-                         title=f'Distribución de cierres por Consultor ({opcion})', hole=0)
-        fig_pie.update_traces(textinfo='label+value')
-        st.plotly_chart(fig_pie, use_container_width=True)
+    resumen = df_cierre.groupby("CONSULTOR EIP").size().reset_index(name="TOTAL_CIERRES")
+    if not resumen.empty:
+        fig = px.pie(resumen, names="CONSULTOR EIP", values="TOTAL_CIERRES",
+                     title=f"Distribución de cierres por Consultor ({opcion})")
+        fig.update_traces(textinfo="label+value")
+        st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No hay cierres para los filtros seleccionados.")
 
-    # ========== Empresas por área ==========
+    # Empresas por área: selector
     st.markdown("### Empresas por ÁREA")
-    areas_disponibles = ['TODAS'] + sorted(df_filtrado['AREA'].dropna().unique())
-    area_seleccionada = st.selectbox("Filtrar empresas por área:", areas_disponibles)
-    df_empresas = df_filtrado if area_seleccionada == 'TODAS' else df_filtrado[df_filtrado['AREA'] == area_seleccionada].copy()
+    areas = ['TODAS'] + sorted(df_f["AREA_N"].unique())
+    area_sel = st.selectbox("Filtrar empresas por área:", areas)
+    df_emp = df_f if area_sel == 'TODAS' else df_f[df_f["AREA_N"] == area_sel].copy()
 
-    # ========== Resumen por área ==========
+    # -------- Resumen por ÁREA (siempre muestra todas las áreas; índice nombrado) --------
     st.markdown("### Resumen por ÁREA")
-    df_valid_area = df_empresas[df_empresas['AREA'] != ''].copy()
 
-    resumen_area = pd.DataFrame()
-    if not df_valid_area.empty:
-        resumen_area['TOTAL CONSECUCIÓN'] = df_valid_area[df_valid_area['CONSECUCIÓN_BOOL']].groupby('AREA').size()
-        resumen_area['TOTAL INAPLICACIÓN'] = df_valid_area[df_valid_area['INAPLICACIÓN_BOOL']].groupby('AREA').size()
-        if "Total" in opcion:
-            resumen_area['TOTAL PRÁCTICAS'] = df_valid_area[df_valid_area['PRACTICAS_BOOL']].groupby('AREA').size()
+    df_tmp = df_emp.copy()
+    if "AREA_N" not in df_tmp:
+        df_tmp["AREA_N"] = df_tmp["AREA"].apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True))
+        df_tmp.loc[df_tmp["AREA_N"] == "", "AREA_N"] = "SIN ÁREA"
 
-        resumen_area = resumen_area.fillna(0).astype(int).sort_values(by='TOTAL CONSECUCIÓN', ascending=False).reset_index()
+    # Lista maestra de áreas tras filtros de año+consultores (asegura LOGISTICA, BIM, etc.)
+    areas_idx = sorted(df_f["AREA_N"].unique())
 
-        total_row = {
-            'AREA': 'Total',
-            'TOTAL CONSECUCIÓN': int(resumen_area['TOTAL CONSECUCIÓN'].sum()),
-            'TOTAL INAPLICACIÓN': int(resumen_area['TOTAL INAPLICACIÓN'].sum())
-        }
-        if 'TOTAL PRÁCTICAS' in resumen_area.columns:
-            total_row['TOTAL PRÁCTICAS'] = int(resumen_area['TOTAL PRÁCTICAS'].sum())
+    con_area  = df_tmp[df_tmp["CONSECUCION_BOOL"]].groupby("AREA_N").size()
+    inap_area = df_tmp[df_tmp["INAPLICACION_BOOL"]].groupby("AREA_N").size()
 
-        resumen_area = pd.concat([resumen_area, pd.DataFrame([total_row])], ignore_index=True)
+    emp_pr_norm = df_tmp["EMPRESA PRACT"].apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True))
+    mask_pract  = ~emp_pr_norm.isin(INVALID_TXT)
+    prac_area   = df_tmp[mask_pract].groupby("AREA_N").size()
 
-        styled_area = resumen_area.style \
-            .background_gradient(subset=['TOTAL CONSECUCIÓN'], cmap='Greens') \
-            .background_gradient(subset=['TOTAL INAPLICACIÓN'], cmap='Reds')
-        if 'TOTAL PRÁCTICAS' in resumen_area.columns:
-            styled_area = styled_area.background_gradient(subset=['TOTAL PRÁCTICAS'], cmap='Blues')
+    # Resumen reindexado y con nombre de índice -> columna 'AREA' (evita 'index' y AREA=None)
+    resumen_area = pd.DataFrame(index=areas_idx)
+    resumen_area["TOTAL CONSECUCIÓN"]  = con_area.reindex(areas_idx, fill_value=0)
+    resumen_area["TOTAL INAPLICACIÓN"] = inap_area.reindex(areas_idx, fill_value=0)
+    resumen_area["TOTAL PRÁCTICAS"]    = prac_area.reindex(areas_idx, fill_value=0)
+    resumen_area.index.name = "AREA"
+    resumen_area = (
+        resumen_area.reset_index()
+                    .astype({"TOTAL CONSECUCIÓN": int,
+                             "TOTAL INAPLICACIÓN": int,
+                             "TOTAL PRÁCTICAS": int})
+                    .sort_values(by="TOTAL CONSECUCIÓN", ascending=False)
+    )
 
-        st.dataframe(styled_area, use_container_width=True)
-    else:
-        st.info("Sin datos de área para los filtros seleccionados.")
+    total_row = {
+        "AREA": "Total",
+        "TOTAL CONSECUCIÓN":  int(resumen_area["TOTAL CONSECUCIÓN"].sum()),
+        "TOTAL INAPLICACIÓN": int(resumen_area["TOTAL INAPLICACIÓN"].sum()),
+        "TOTAL PRÁCTICAS":    int(resumen_area["TOTAL PRÁCTICAS"].sum()),
+    }
+    resumen_area = pd.concat([resumen_area, pd.DataFrame([total_row])], ignore_index=True)
 
-    # ========== Tablas de empresas ==========
-    col_emp1, col_emp2 = st.columns(2)
-    with col_emp1:
+    styled = (resumen_area.style
+        .background_gradient(subset=["TOTAL CONSECUCIÓN"], cmap="Greens")
+        .background_gradient(subset=["TOTAL INAPLICACIÓN"], cmap="Reds")
+        .background_gradient(subset=["TOTAL PRÁCTICAS"], cmap="Blues")
+    )
+    st.dataframe(styled, use_container_width=True)
+
+    # Tablas de empresas
+    cemp1, cemp2 = st.columns(2)
+    with cemp1:
         st.markdown("#### Tabla: EMPRESA GE")
-        empresa_ge = df_empresas['EMPRESA GE'][~df_empresas['EMPRESA GE'].isin(['', 'NO ENCONTRADO'])] \
-            .value_counts().reset_index()
-        empresa_ge.columns = ['EMPRESA GE', 'EMPLEOS']
-        st.dataframe(empresa_ge.style.background_gradient(subset=['EMPLEOS'], cmap='YlOrBr'), use_container_width=True)
-    with col_emp2:
+        s_ge = _clean_series(df_emp["EMPRESA GE"])
+        emp_ge = s_ge.value_counts().reset_index()
+        emp_ge.columns = ["EMPRESA GE", "EMPLEOS"]
+        st.dataframe(emp_ge.style.background_gradient(subset=["EMPLEOS"], cmap="YlOrBr"), use_container_width=True)
+    with cemp2:
         st.markdown("#### Tabla: EMPRESA PRÁCT.")
-        empresa_pract = df_empresas['EMPRESA PRÁCT.'][~df_empresas['EMPRESA PRÁCT.'].isin(['', 'NO ENCONTRADO'])] \
-            .value_counts().reset_index()
-        empresa_pract.columns = ['EMPRESA PRÁCT.', 'EMPLEOS']
-        st.dataframe(empresa_pract.style.background_gradient(subset=['EMPLEOS'], cmap='PuBu'), use_container_width=True)
+        s_pr = _clean_series(df_emp["EMPRESA PRACT"])
+        emp_pr = s_pr.value_counts().reset_index()
+        emp_pr.columns = ["EMPRESA PRÁCT.", "EMPLEOS"]
+        st.dataframe(emp_pr.style.background_gradient(subset=["EMPLEOS"], cmap="PuBu"), use_container_width=True)
 
-    # ========== KPIs globales (tu bloque original, ahora robusto) ==========
-    # Filtra nombres válidos
-    df_validos = df[(df['NOMBRE'] != 'NO ENCONTRADO') & (df['APELLIDOS'] != 'NO ENCONTRADO')].copy()
-
-    # Total alumnado (por Nombre+Apellidos). Si prefieres por DNI, cambia esta línea:
-    total_alumnado_objetivo = df_validos[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0]
-    # Alternativa por DNI:
-    # if 'DNI' in df_validos.columns:
-    #     total_alumnado_objetivo = df_validos['DNI'].dropna().nunique()
+    # KPIs (👥 y 🎯)
+    df_valid = df[(df["NOMBRE"].str.upper()!="NO ENCONTRADO") & (df["APELLIDOS"].str.upper()!="NO ENCONTRADO")].copy()
+    total_al = df_valid[["NOMBRE","APELLIDOS"]].drop_duplicates().shape[0]
 
     st.markdown("## 👥 Total Alumnado")
-    st.markdown(render_card("Alumnado único", int(total_alumnado_objetivo), "#bbdefb"), unsafe_allow_html=True)
+    st.markdown(render_card("Alumnado único", int(total_al), "#bbdefb"), unsafe_allow_html=True)
 
     st.markdown("## 🎯 OBJETIVOS %")
 
-    # Normaliza empresas para comparar conversión
-    def norm_emp(s):
-        return s.strip().upper() if isinstance(s, str) else None
+    df_valid["EMP_PRACT_N"] = df_valid["EMPRESA PRACT"].apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True))
+    df_valid["EMP_GE_N"]    = df_valid["EMPRESA GE"].apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True))
 
-    df_validos['EMP_PRACT_N'] = df_validos['EMPRESA PRÁCT.'].apply(norm_emp)
-    df_validos['EMP_GE_N'] = df_validos['EMPRESA GE'].apply(norm_emp)
+    insercion_empleo = df_valid[df_valid["CONSECUCION_BOOL"]]
+    pct_empleo = round((insercion_empleo[["NOMBRE","APELLIDOS"]].drop_duplicates().shape[0] / total_al) * 100, 2) if total_al else 0.0
 
-    # KPI 1: Inserción laboral Empleo
-    insercion_empleo = df_validos[df_validos['CONSECUCIÓN_BOOL']]
-    porcentaje_empleo = round(
-        (insercion_empleo[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0] / total_alumnado_objetivo) * 100, 2
-    ) if total_alumnado_objetivo else 0.0
+    cond_cierre_dp = df_valid[["CONSECUCION_BOOL","DEVOLUCION_BOOL","INAPLICACION_BOOL"]].any(axis=1)
+    pct_cierre_dp = round((df_valid.loc[cond_cierre_dp, ["NOMBRE","APELLIDOS"]].drop_duplicates().shape[0] / total_al) * 100, 2) if total_al else 0.0
 
-    # KPI 2: Cierre de expediente Desarrollo Profesional (cualquiera de las tres)
-    cond_cierre_dp = df_validos[['CONSECUCIÓN_BOOL', 'DEVOLUCIÓN_BOOL', 'INAPLICACIÓN_BOOL']].any(axis=1)
-    porcentaje_cierre_dp = round(
-        (df_validos.loc[cond_cierre_dp, ['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0] / total_alumnado_objetivo) * 100, 2
-    ) if total_alumnado_objetivo else 0.0
+    practicas_realizadas = df_valid[~df_valid["EMP_PRACT_N"].isin(INVALID_TXT)]
+    pct_practicas = round((practicas_realizadas[["NOMBRE","APELLIDOS"]].drop_duplicates().shape[0] / total_al) * 100, 2) if total_al else 0.0
 
-    # KPI 3: Inserción Laboral Prácticas (tiene empresa de prácticas válida)
-    practicas_realizadas = df_validos[
-        df_validos['EMP_PRACT_N'].notna() &
-        (df_validos['EMP_PRACT_N'] != '') &
-        (df_validos['EMP_PRACT_N'] != 'NO ENCONTRADO')
-    ]
-    porcentaje_practicas = round(
-        (practicas_realizadas[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0] / total_alumnado_objetivo) * 100, 2
-    ) if total_alumnado_objetivo else 0.0
+    denom = practicas_realizadas[["NOMBRE","APELLIDOS"]].drop_duplicates().shape[0]
+    conversion = practicas_realizadas[practicas_realizadas["EMP_PRACT_N"] == practicas_realizadas["EMP_GE_N"]]
+    pct_conversion = round((conversion[["NOMBRE","APELLIDOS"]].drop_duplicates().shape[0] / denom) * 100, 2) if denom else 0.0
 
-    # KPI 4: Conversión prácticas -> empresa (sobre quienes hicieron prácticas)
-    denom = practicas_realizadas[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0]
-    conversion_realizada = practicas_realizadas[practicas_realizadas['EMP_PRACT_N'] == practicas_realizadas['EMP_GE_N']]
-    porcentaje_conversion = round(
-        (conversion_realizada[['NOMBRE', 'APELLIDOS']].drop_duplicates().shape[0] / denom) * 100, 2
-    ) if denom else 0.0
-
-    col_obj1, col_obj2, col_obj3, col_obj4 = st.columns(4)
-    col_obj1.markdown(render_card("Inserción laboral Empleo", f"{porcentaje_empleo}%", "#c8e6c9"), unsafe_allow_html=True)
-    col_obj2.markdown(render_card("Cierre de expediente Desarrollo Profesional", f"{porcentaje_cierre_dp}%", "#b2dfdb"), unsafe_allow_html=True)
-    col_obj3.markdown(render_card("Inserción Laboral Prácticas", f"{porcentaje_practicas}%", "#ffe082"), unsafe_allow_html=True)
-    col_obj4.markdown(render_card("Conversión prácticas a empresa", f"{porcentaje_conversion}%", "#f8bbd0"), unsafe_allow_html=True)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.markdown(render_card("Inserción laboral Empleo", f"{pct_empleo}%", "#c8e6c9"), unsafe_allow_html=True)
+    c2.markdown(render_card("Cierre de expediente Desarrollo Profesional", f"{pct_cierre_dp}%", "#b2dfdb"), unsafe_allow_html=True)
+    c3.markdown(render_card("Inserción Laboral Prácticas", f"{pct_practicas}%", "#ffe082"), unsafe_allow_html=True)
+    c4.markdown(render_card("Conversión prácticas a empresa", f"{pct_conversion}%", "#f8bbd0"), unsafe_allow_html=True)
