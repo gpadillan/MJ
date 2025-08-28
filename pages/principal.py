@@ -258,8 +258,14 @@ def principal_page():
     try:
         df = df_dev.copy()
         df.columns = df.columns.str.strip().str.upper()
+        # alias
         if "PRÁCTCAS/GE" in df.columns and "PRÁCTICAS/GE" not in df.columns:
             df = df.rename(columns={"PRÁCTCAS/GE": "PRÁCTICAS/GE"})
+
+        # Limpieza de consultor: igual que en el informe
+        if "CONSULTOR EIP" in df.columns:
+            df["CONSULTOR EIP"] = df["CONSULTOR EIP"].astype(str).str.strip()
+            df = df[df["CONSULTOR EIP"].str.upper() != "NO ENCONTRADO"]
 
         # Fechas y año de cierre
         if "FECHA CIERRE" in df.columns:
@@ -271,7 +277,7 @@ def principal_page():
 
         anio_obj = datetime.now().year
 
-        # Filtro por año de cierre (consecución / inaplicación / prácticas del año)
+        # ========== métricas por año (mismo criterio que Informe) ==========
         df_anio = df[df["AÑO_CIERRE"] == anio_obj].copy()
 
         df_anio["CONSECUCIÓN_BOOL"]  = df_anio["CONSECUCIÓN GE"].apply(to_bool)
@@ -281,7 +287,7 @@ def principal_page():
         total_inaplicacion = int(df_anio["INAPLICACIÓN_BOOL"].sum())
         total_practicas_anio = int(emp_pract_valida(df_anio["EMPRESA PRÁCT."]).sum())
 
-        # Prácticas en curso: FECHA CIERRE NaT + empresa prácticas informada (en todo el dataset)
+        # ========== prácticas en curso (global): FECHA CIERRE NaT + empresa prácticas válida ==========
         en_curso_mask = df["FECHA CIERRE"].isna() & emp_pract_valida(df["EMPRESA PRÁCT."])
         total_practicas_en_curso = int(en_curso_mask.sum())
 
@@ -363,7 +369,7 @@ def principal_page():
                         icon=folium.Icon(color="blue", icon="user", prefix="fa")
                     ).add_to(mapa)
 
-            # 🔴 Marcador central "España (provincias)" - desplazado para no solapar Madrid
+            # 🔴 Marcador central "España (provincias)"
             total_espana = count_prov['Alumnos'].sum()
             coords_espana = [40.4268, -3.7138]
             folium.Marker(
@@ -385,19 +391,16 @@ def principal_page():
                 }
                 return FLAGS.get(pais_nombre.title(), "🌍")
 
-            # 🔴 Países extranjeros en rojo con globo + bandera
+            # 🔴 Países extranjeros
             for _, row in count_pais.iterrows():
                 entidad, alumnos = row['Entidad'], row['Alumnos']
-
                 if entidad.upper() == "ESPAÑA":
-                    continue  # Evita duplicado para España como país
-
+                    continue
                 coords = PAISES_COORDS.get(entidad) or st.session_state["coords_cache"].get(entidad)
                 if not coords:
                     coords = geolocalizar_pais(entidad)
                     if coords:
                         st.session_state["coords_cache"][entidad] = coords
-
                 if coords:
                     bandera = get_flag_emoji(entidad)
                     folium.Marker(
@@ -409,7 +412,7 @@ def principal_page():
 
             folium_static(mapa)
 
-    # ===================== CLIENTES EN ESPAÑA INCOMPLETOS =====================
+    # ===================== CLIENTES ESPAÑA INCOMPLETOS =====================
     st.markdown("---")
     st.markdown("## 🧾 Clientes únicos en España con Provincia o Localidad vacías")
 
@@ -437,16 +440,13 @@ def principal_page():
         else:
             st.dataframe(df_incompletos, use_container_width=True)
 
-            # Botón de descarga
             from io import BytesIO
             import base64
-
             def to_excel_bytes(df_):
                 output = BytesIO()
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                     df_.to_excel(writer, index=False, sheet_name='Incompletos')
                 return output.getvalue()
-
             excel_data = to_excel_bytes(df_incompletos)
             b64 = base64.b64encode(excel_data).decode()
             href = f'<a href="data:application/octet-stream;base64,{b64}" download="clientes_incompletos.xlsx">📥 Descargar Excel</a>'
