@@ -1,5 +1,22 @@
 # sidebar.py
+import os
 import streamlit as st
+
+# --- Opcional: cachear carga de imágenes ---
+@st.cache_resource
+def _logo_path(unidad: str) -> str:
+    """
+    Devuelve la ruta del logo según la unidad (EIP/EIM).
+    Si no existe, cae al logo general de assets/grupo-mainjobs.png.
+    """
+    base = "assets"
+    candidates = {
+        "EIP": os.path.join(base, "logo_eip.png"),
+        "EIM": os.path.join(base, "logo_eim.png"),
+    }
+    fallback = os.path.join(base, "grupo-mainjobs.png")
+    path = candidates.get(unidad.upper(), fallback)
+    return path if os.path.exists(path) else fallback
 
 def show_sidebar():
     with st.sidebar:
@@ -8,7 +25,6 @@ def show_sidebar():
         st.markdown(f"### 👋 Bienvenido, {username}")
 
         # --- Selector de ámbito (EIP / EIM) ---
-        # Se guarda en st.session_state["unidad"] para que las páginas lo lean.
         unidad_actual = st.session_state.get("unidad", "EIP")
         st.session_state["unidad"] = st.radio(
             "Ámbito",
@@ -17,11 +33,18 @@ def show_sidebar():
             horizontal=True,
             key="radio_ambito",
         )
+
+        # --- Logo según ámbito ---
+        logo = _logo_path(st.session_state["unidad"])
+        # centrado y tamaño agradable
+        st.markdown("<div style='text-align:center;'>", unsafe_allow_html=True)
+        st.image(logo, width=160)
         st.caption(f"Ámbito activo: **{st.session_state['unidad']}**")
+        st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown("---")
 
-        # --- Navegación (misma para ambos ámbitos, solo cambia el contenido en las páginas) ---
+        # --- Navegación ---
         st.markdown("### 📂 Navegación")
         nav_items = {
             "Área Principal": "Principal",
@@ -30,7 +53,6 @@ def show_sidebar():
             "Área de Empleo": "Desarrollo",
             "Área Gestión de Cobro": "Gestión de Cobro",
         }
-
         for label, page_key in nav_items.items():
             if st.button(label, use_container_width=True, key=f"nav_{page_key}"):
                 st.session_state["current_page"] = page_key
@@ -38,7 +60,7 @@ def show_sidebar():
 
         st.markdown("---")
 
-        # --- (Opcional) Recargar / limpiar caché global ---
+        # --- Recargar / limpiar caché global ---
         if st.button("🔄 Recargar / limpiar caché", use_container_width=True, key="reload_cache"):
             for k in [
                 "academica_excel_data",
