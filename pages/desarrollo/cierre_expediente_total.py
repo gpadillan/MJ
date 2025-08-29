@@ -306,7 +306,7 @@ def render(df):
     total_al = df_valid[["NOMBRE","APELLIDOS"]].drop_duplicates().shape[0]
 
     st.markdown("## 👥 Total Alumnado")
-    st.markdown(render_card("Alumnado único", int(total_al), "#bbdefb"), unsafe_allow_html=True)
+    st.markdown(render_card("", int(total_al), "#bbdefb"), unsafe_allow_html=True)
 
     st.markdown("## 🎯 OBJETIVOS %")
 

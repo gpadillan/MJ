@@ -1,34 +1,26 @@
+# app.py
 import streamlit as st
+import importlib
 from auth import login_page
 from sidebar import show_sidebar
 
-# Páginas activas
-from pages.admisiones import main_admisiones
-from pages.academica.academica_main import academica_page
-from pages.desarrollo_main import desarrollo_page
-from pages import deuda_main
-from pages.inicio import inicio_page
-from pages.principal import principal_page  # ✅ Principal activa
+# ===================== Inicialización de sesión =====================
+DEFAULTS = {
+    'logged_in': False,
+    'username': "",
+    'role': "viewer",
+    'current_page': "Inicio",
+    'excel_uploaded': False,
+    'excel_filename': "",
+    'excel_data': None,
+    'upload_time': None,
+    'unidad': "EIP",          # 👈 Selector EIP/EIM controlado desde sidebar
+}
+for k, v in DEFAULTS.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
-# Inicialización de sesión
-if 'logged_in' not in st.session_state:
-    st.session_state['logged_in'] = False
-if 'username' not in st.session_state:
-    st.session_state['username'] = ""
-if 'role' not in st.session_state:
-    st.session_state['role'] = "viewer"
-if 'current_page' not in st.session_state:
-    st.session_state['current_page'] = "Inicio"
-if 'excel_uploaded' not in st.session_state:
-    st.session_state['excel_uploaded'] = False
-if 'excel_filename' not in st.session_state:
-    st.session_state['excel_filename'] = ""
-if 'excel_data' not in st.session_state:
-    st.session_state['excel_data'] = None
-if 'upload_time' not in st.session_state:
-    st.session_state['upload_time'] = None
-
-# Configuración general de la página
+# ===================== Config de página =====================
 st.set_page_config(
     page_title="Sistema de Gestión",
     page_icon="📊",
@@ -36,69 +28,92 @@ st.set_page_config(
     initial_sidebar_state="collapsed" if not st.session_state['logged_in'] else "expanded"
 )
 
-# Estilos personalizados
+# ===================== Estilos =====================
 def add_custom_css():
     st.markdown("""
     <style>
-    [data-testid="stSidebarNav"] {
-        display: none !important;
-    }
-    .main-header {
-        text-align: center;
-        padding: 1.5rem;
-        background-color: #f0f2f6;
-        border-radius: 10px;
-        margin-bottom: 2rem;
-    }
-    .card {
-        padding: 1.5rem;
-        border-radius: 10px;
-        background-color: #f8f9fa;
-        box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.05);
-        margin-bottom: 1rem;
-    }
-    .sidebar .sidebar-content {
-        background-color: #f8f9fa;
-    }
+    [data-testid="stSidebarNav"] { display: none !important; }
+    .main-header { text-align: center; padding: 1.5rem; background-color: #f0f2f6;
+                   border-radius: 10px; margin-bottom: 2rem; }
+    .card { padding: 1.5rem; border-radius: 10px; background-color: #f8f9fa;
+            box-shadow: 0 0.25rem 0.75rem rgba(0,0,0,0.05); margin-bottom: 1rem; }
+    .sidebar .sidebar-content { background-color: #f8f9fa; }
     </style>
     """, unsafe_allow_html=True)
 
     if not st.session_state['logged_in']:
         st.markdown("""
         <style>
-        [data-testid="stSidebar"] {
-            display: none !important;
-        }
-        section[data-testid="stSidebarUserContent"] {
-            display: none !important;
-        }
+        [data-testid="stSidebar"],
+        section[data-testid="stSidebarUserContent"] { display: none !important; }
         </style>
         """, unsafe_allow_html=True)
 
-# Función principal
+# ===================== Router =====================
+# Mapa de rutas para EIP (usa tus módulos actuales y sus callables)
+ROUTES_EIP = {
+    "Inicio":              ("pages.inicio",                   "inicio_page"),
+    "Admisiones":          ("pages.admisiones.main_admisiones","app"),
+    "Academica":           ("pages.academica.academica_main", "academica_page"),
+    "Desarrollo":          ("pages.desarrollo_main",          "desarrollo_page"),
+    "Gestión de Cobro":    ("pages.deuda_main",               "deuda_page"),
+    "Principal":           ("pages.principal",                "principal_page"),
+}
+
+# Mapa de rutas para EIM (módulos espejo en pages_eim con función `render`)
+# Crea la carpeta pages_eim/ y añade archivos: principal.py, admisiones.py,
+# academica.py, desarrollo.py (o empleo.py), gestion_cobro.py, inicio.py, cada uno con `render()`.
+ROUTES_EIM = {
+    "Inicio":              ("pages_eim.inicio",           "render"),
+    "Admisiones":          ("pages_eim.admisiones",       "render"),
+    "Academica":           ("pages_eim.academica",        "render"),
+    "Desarrollo":          ("pages_eim.desarrollo",       "render"),  # o empleo.py si prefieres
+    "Gestión de Cobro":    ("pages_eim.gestion_cobro",    "render"),
+    "Principal":           ("pages_eim.principal",        "render"),
+}
+
+def route_page():
+    unidad = st.session_state.get("unidad", "EIP")   # "EIP" / "EIM"
+    page   = st.session_state.get("current_page", "Inicio")
+    routes = ROUTES_EIP if unidad == "EIP" else ROUTES_EIM
+
+    module_path, func_name = routes.get(page, (None, None))
+    if not module_path:
+        st.title(f"{page} · {unidad}")
+        st.info("Ruta no definida para esta página.")
+        return
+
+    try:
+        mod = importlib.import_module(module_path)
+    except ModuleNotFoundError:
+        st.title(f"{page} · {unidad}")
+        st.info("Esta sección para el ámbito seleccionado aún no existe.")
+        return
+
+    fn = getattr(mod, func_name, None)
+    if fn is None:
+        st.title(f"{page} · {unidad}")
+        st.info(f"La página no define la función `{func_name}()`.")
+        return
+
+    # Etiqueta de ámbito activo visible en cada página
+    st.caption(f"Ámbito activo: **{unidad}**")
+    fn()
+
+# ===================== Main =====================
 def main():
     add_custom_css()
 
     if not st.session_state['logged_in']:
         login_page()
-    else:
-        show_sidebar()
+        return
 
-        current = st.session_state['current_page']
+    # Sidebar (selector EIP/EIM + navegación)
+    show_sidebar()
 
-        if current == "Inicio":
-            inicio_page()
-        elif current == "Admisiones":
-            main_admisiones.app()
-        elif current == "Academica":
-            academica_page()
-        elif current == "Desarrollo":
-            desarrollo_page()
-        elif current == "Gestión de Cobro":
-            deuda_main.deuda_page()
-        elif current == "Principal":  # ✅ Página Principal habilitada
-            principal_page()
+    # Router
+    route_page()
 
-# Punto de entrada
+# ===================== Entry point =====================
 if __name__ == "__main__":
     main()

@@ -195,3 +195,18 @@ def render(df: pd.DataFrame | None = None):
         fig_pie_consultor.update_traces(textposition="inside", textinfo="label+percent+value")
         fig_pie_consultor.update_layout(title="Alumnado por Consultor", height=500)
         st.plotly_chart(fig_pie_consultor, use_container_width=True)
+
+    # =============== NUEVO: Tabla detalle por Consultor ===============
+    st.markdown("### 👥 Detalle por Consultor")
+    consultores_detalle = sorted(df_filtrado["CONSULTOR EIP"].dropna().unique().tolist())
+    sel_detalle = st.multiselect(
+        "Filtrar tabla por Consultor:",
+        options=consultores_detalle,
+        default=consultores_detalle
+    )
+
+    df_tabla = df_filtrado[df_filtrado["CONSULTOR EIP"].isin(sel_detalle)][
+        ["CONSULTOR EIP", "NOMBRE", "APELLIDOS", "AREA"]
+    ].drop_duplicates().sort_values(["CONSULTOR EIP", "APELLIDOS", "NOMBRE"]).reset_index(drop=True)
+
+    st.dataframe(df_tabla, use_container_width=True)
