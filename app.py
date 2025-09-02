@@ -14,7 +14,7 @@ DEFAULTS = {
     'excel_filename': "",
     'excel_data': None,
     'upload_time': None,
-    'unidad': "EIP",          # 👈 Selector EIP/EIM controlado desde sidebar
+    'unidad': "EIP",  # 👈 Selector EIP/EIM controlado desde sidebar
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -33,10 +33,14 @@ def add_custom_css():
     st.markdown("""
     <style>
     [data-testid="stSidebarNav"] { display: none !important; }
-    .main-header { text-align: center; padding: 1.5rem; background-color: #f0f2f6;
-                   border-radius: 10px; margin-bottom: 2rem; }
-    .card { padding: 1.5rem; border-radius: 10px; background-color: #f8f9fa;
-            box-shadow: 0 0.25rem 0.75rem rgba(0,0,0,0.05); margin-bottom: 1rem; }
+    .main-header {
+        text-align: center; padding: 1.5rem; background-color: #f0f2f6;
+        border-radius: 10px; margin-bottom: 2rem;
+    }
+    .card {
+        padding: 1.5rem; border-radius: 10px; background-color: #f8f9fa;
+        box-shadow: 0 0.25rem 0.75rem rgba(0,0,0,0.05); margin-bottom: 1rem;
+    }
     .sidebar .sidebar-content { background-color: #f8f9fa; }
     </style>
     """, unsafe_allow_html=True)
@@ -50,31 +54,35 @@ def add_custom_css():
         """, unsafe_allow_html=True)
 
 # ===================== Router =====================
-# Mapa de rutas para EIP (usa tus módulos actuales y sus callables)
+# ---- Rutas para EIP (tu estructura actual en /pages) ----
 ROUTES_EIP = {
-    "Inicio":              ("pages.inicio",                   "inicio_page"),
+    "Inicio":              ("pages.inicio",                    "inicio_page"),
     "Admisiones":          ("pages.admisiones.main_admisiones","app"),
-    "Academica":           ("pages.academica.academica_main", "academica_page"),
-    "Desarrollo":          ("pages.desarrollo_main",          "desarrollo_page"),
-    "Gestión de Cobro":    ("pages.deuda_main",               "deuda_page"),
-    "Principal":           ("pages.principal",                "principal_page"),
+    "Academica":           ("pages.academica.academica_main",  "academica_page"),
+    "Desarrollo":          ("pages.desarrollo_main",           "desarrollo_page"),
+    "Gestión de Cobro":    ("pages.deuda_main",                "deuda_page"),
+    "Principal":           ("pages.principal",                 "principal_page"),
 }
 
-# Mapa de rutas para EIM (módulos espejo en pages_eim con función `render`)
-# Crea la carpeta pages_eim/ y añade archivos: principal.py, admisiones.py,
-# academica.py, desarrollo.py (o empleo.py), gestion_cobro.py, inicio.py, cada uno con `render()`.
+# ---- Rutas para EIM (espejo en /pagesEIM con las MISMAS funciones) ----
+# Asegúrate de crear:
+#   pagesEIM/__init__.py
+#   pagesEIM/academica/__init__.py
+#   pagesEIM/admisiones/__init__.py
+#   pagesEIM/deuda/__init__.py
+# y los módulos con las funciones indicadas abajo.
 ROUTES_EIM = {
-    "Inicio":              ("pages_eim.inicio",           "render"),
-    "Admisiones":          ("pages_eim.admisiones",       "render"),
-    "Academica":           ("pages_eim.academica",        "render"),
-    "Desarrollo":          ("pages_eim.desarrollo",       "render"),  # o empleo.py si prefieres
-    "Gestión de Cobro":    ("pages_eim.gestion_cobro",    "render"),
-    "Principal":           ("pages_eim.principal",        "render"),
+    "Inicio":              ("pagesEIM.inicio",                     "inicio_page"),
+    "Admisiones":          ("pagesEIM.admisiones.main_admisiones", "app"),
+    "Academica":           ("pagesEIM.academica.academica_main",   "academica_page"),
+    "Desarrollo":          ("pagesEIM.desarrollo_main",            "desarrollo_page"),
+    "Gestión de Cobro":    ("pagesEIM.deuda_main",                 "deuda_page"),
+    "Principal":           ("pagesEIM.principal",                  "principal_page"),
 }
 
 def route_page():
-    unidad = st.session_state.get("unidad", "EIP")   # "EIP" / "EIM"
-    page   = st.session_state.get("current_page", "Inicio")
+    unidad = st.session_state.get("unidad", "EIP")          # "EIP" / "EIM"
+    page   = st.session_state.get("current_page", "Inicio") # etiqueta del sidebar
     routes = ROUTES_EIP if unidad == "EIP" else ROUTES_EIM
 
     module_path, func_name = routes.get(page, (None, None))
@@ -83,6 +91,7 @@ def route_page():
         st.info("Ruta no definida para esta página.")
         return
 
+    # Carga dinámica del módulo
     try:
         mod = importlib.import_module(module_path)
     except ModuleNotFoundError:
@@ -90,6 +99,7 @@ def route_page():
         st.info("Esta sección para el ámbito seleccionado aún no existe.")
         return
 
+    # Obtiene la función a ejecutar
     fn = getattr(mod, func_name, None)
     if fn is None:
         st.title(f"{page} · {unidad}")

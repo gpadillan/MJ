@@ -286,28 +286,87 @@ def principal_page():
         if columnas_importe:
             total_preventas_importe = df_preventas[columnas_importe].sum(numeric_only=True).sum()
 
-    # ===================== GESTIÓN DE COBRO =====================
-    if os.path.exists(GESTION_FILE):
+    # ===================== GESTIÓN DE COBRO (EIP) =====================
+    st.markdown("---")
+    st.markdown("## 💼 Gestión de Cobro (EIP)")
+
+    # 1) Carga priorizando lo subido en EIP
+    df_gestion = None
+    if "excel_data_eip" in st.session_state and st.session_state["excel_data_eip"] is not None:
+        df_gestion = st.session_state["excel_data_eip"].copy()
+    elif os.path.exists(GESTION_FILE):
         df_gestion = pd.read_excel(GESTION_FILE)
 
-        if "Estado" in df_gestion.columns:
-            columnas_validas = []
+    if df_gestion is None or df_gestion.empty:
+        st.info("No hay datos de Gestión de Cobro disponibles.")
+    else:
+        # 2) Normaliza columnas
+        df_gestion.columns = [c.strip() for c in df_gestion.columns]
+        col_estado = next((c for c in df_gestion.columns if c.strip().lower() == "estado"), None)
 
+        if not col_estado:
+            st.error("❌ El archivo no contiene la columna 'Estado'.")
+        else:
+            # 3) Detecta columnas válidas (totales históricos + meses del año actual)
+            columnas_validas = []
             for anio in range(2018, anio_actual):
                 col = f"Total {anio}"
                 if col in df_gestion.columns:
                     columnas_validas.append(col)
-
             for mes_num in range(1, 13):
-                nombre_mes = f"{traduccion_meses[mes_num]} {anio_actual}"
-                if nombre_mes in df_gestion.columns:
-                    columnas_validas.append(nombre_mes)
+                col_mes = f"{traduccion_meses[mes_num]} {anio_actual}"
+                if col_mes in df_gestion.columns:
+                    columnas_validas.append(col_mes)
 
-            if columnas_validas:
-                df_gestion[columnas_validas] = df_gestion[columnas_validas].apply(pd.to_numeric, errors='coerce').fillna(0)
-                df_estado_totales = df_gestion.groupby("Estado")[columnas_validas].sum()
-                df_estado_totales["Total"] = df_estado_totales.sum(axis=1)
-                estados = df_estado_totales["Total"].to_dict()
+            if not columnas_validas:
+                st.info("No se encontraron columnas de totales/meses en el archivo de Gestión de Cobro.")
+            else:
+                # 4) Agregación
+                df_gestion[columnas_validas] = df_gestion[columnas_validas].apply(pd.to_numeric, errors="coerce").fillna(0)
+                df_resumen = (
+                    df_gestion.groupby(col_estado)[columnas_validas]
+                              .sum()
+                              .reset_index()
+                              .rename(columns={col_estado: "Estado"})
+                )
+                df_resumen["Total"] = df_resumen[columnas_validas].sum(axis=1)
+
+                # ====== SOLO TARJETAS (sin tabla) ======
+                def _card(title, amount, emoji="💶", bg="#eef4ff", fg="#1f2d3d"):
+                    return f"""
+                    <div style="background:{bg};border:1px solid #dfe3eb;border-radius:14px;padding:14px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);">
+                        <div style="font-weight:700;font-size:15px;margin-bottom:8px;color:{fg}">{emoji} {title}</div>
+                        <div style="font-size:26px;font-weight:800;color:{fg}">€ {format_euro(amount)}</div>
+                    </div>
+                    """
+
+                COLORS = {
+                    "COBRADO": ("#e7f5ff", "#0b5394"),
+                    "DOMICILIACIÓN CONFIRMADA": ("#fff4e6", "#8a4b00"),
+                    "DOMICILIACIÓN EMITIDA": ("#fff9db", "#7a5d00"),
+                    "DUDOSO COBRO": ("#fde0e0", "#8a1f1f"),
+                    "INCOBRABLE": ("#ffe3f1", "#7a1a53"),
+                    "NO COBRADO": ("#f1f3f5", "#343a40"),
+                    "PENDIENTE": ("#e6fcf5", "#0b7285"),
+                    "SIN ESTADO": ("#f8f9fa", "#495057"),
+                }
+
+                st.markdown("### Total por Estado")
+                filas = df_resumen.sort_values("Total", ascending=False)[["Estado", "Total"]].values.tolist()
+
+                ncols = 4
+                for i in range(0, len(filas), ncols):
+                    cols = st.columns(ncols)
+                    for j, c in enumerate(cols):
+                        if i + j >= len(filas): break
+                        estado, importe = filas[i + j]
+                        bg, fg = COLORS.get(estado, ("#eef4ff", "#1f2d3d"))
+                        c.markdown(_card(estado.title(), importe, "💶", bg, fg), unsafe_allow_html=True)
+
+                total_general = float(df_resumen["Total"].sum())
+                st.markdown("### Total General")
+                st.markdown(_card("Total General", total_general, "🧾", "#d3f9d8", "#0b5b1d"), unsafe_allow_html=True)
+
 
     # ===================== ADMISIONES =====================
     st.markdown("## 📥 Admisiones")
