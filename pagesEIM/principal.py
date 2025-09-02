@@ -1,4 +1,4 @@
-# principal.py  (pagesEIM)
+# pagesEIM/principal.py
 
 import os
 import pandas as pd
@@ -32,28 +32,25 @@ MESES_NOMBRE = {
     7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
 }
 
-# === Helper para obtener un DataFrame desde session_state sin usar "or" ===
-def pick_dataframe(obj):
-    """Devuelve un DataFrame si obj lo es; si es un dict, devuelve el primer DataFrame dentro."""
-    if obj is None:
-        return None
-    if isinstance(obj, pd.DataFrame):
-        return obj
-    if isinstance(obj, dict):
-        # si guardaste varias hojas: elegimos la primera que sea DF
-        for v in obj.values():
-            if isinstance(v, pd.DataFrame):
-                return v
+# Fichero publicado para todos los usuarios (fallback)
+GESTION_FILE = os.path.join("uploaded", "archivo_cargado_eim.xlsx")
+
+
+def load_eim_df_from_session_or_file(gestion_file_path: str) -> pd.DataFrame | None:
+    """
+    Prioriza el DF en sesión (si el admin subió el archivo). Si no existe,
+    intenta leer el XLSX publicado en disco para que lo vea todo el mundo.
+    """
+    df = st.session_state.get("excel_data_eim")
+    if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
+        return df
+    if os.path.exists(gestion_file_path):
+        try:
+            return pd.read_excel(gestion_file_path, dtype=str)
+        except Exception:
+            return None
     return None
 
-def first_df_from_session(keys):
-    """Devuelve el primer DataFrame encontrado en st.session_state para cualquiera de las keys dadas."""
-    for k in keys:
-        if k in st.session_state:
-            df = pick_dataframe(st.session_state.get(k))
-            if df is not None:
-                return df
-    return None
 
 # ===================== PÁGINA PRINCIPAL EIM =====================
 
@@ -70,27 +67,20 @@ def principal_page():
         st.success("Caché limpiada.")
 
     anio_actual = datetime.now().year
-    GESTION_FILE = os.path.join("uploaded", "archivo_cargado.xlsx")
 
-    # ===================== 💼 GESTIÓN DE COBRO (EIM) =====================
+    # ===================== GESTIÓN DE COBRO (EIM) =====================
     st.markdown("## 💼 Gestión de Cobro (EIM)")
 
-    # 1) Preferir lo subido en EIM
-    df_gestion = first_df_from_session(["excel_data_eim"])
-
-    # 2) Fallback al archivo local
-    if df_gestion is None and os.path.exists(GESTION_FILE):
-        try:
-            df_gestion = pd.read_excel(GESTION_FILE)
-        except Exception:
-            df_gestion = None
+    df_gestion = load_eim_df_from_session_or_file(GESTION_FILE)
 
     if df_gestion is not None and not df_gestion.empty and ("Estado" in df_gestion.columns):
+        # Filtrado / normalización ligera del campo Estado
         _INVALID_EST = {"", "NAN", "NULL", "NONE", "NO ENCONTRADO", "-"}
         _HIDE_ROWS_CONTAINS = ["BECAS ISA – CONSOLIDADO", "PENDIENTE COBRO ISA"]
 
         def _norm_estado(x):
-            if pd.isna(x): return "SIN ESTADO"
+            if pd.isna(x): 
+                return "SIN ESTADO"
             s = str(x).replace("\u00A0"," ").strip().upper()
             return "SIN ESTADO" if s in _INVALID_EST else s
 
@@ -101,7 +91,7 @@ def principal_page():
 
         df_g["ESTADO_N"] = df_g["Estado"].apply(_norm_estado)
 
-        # Columnas válidas: totales históricos + meses del año actual
+        # Detecta columnas válidas: totales históricos + meses del año actual
         columnas_validas = []
         for anio in range(2018, anio_actual):
             col = f"Total {anio}"
@@ -123,6 +113,7 @@ def principal_page():
             )
             df_estado["Total"] = df_estado[columnas_validas].sum(axis=1)
 
+            # Orden y colores de tarjetas
             ESTADOS_ORDER = [
                 "COBRADO",
                 "DOMICILIACIÓN CONFIRMADA",
@@ -142,12 +133,14 @@ def principal_page():
                 "PENDIENTE": "#FCE4EC",
             }
 
+            # Reordenar: conocidos primero
             known = df_estado[df_estado["Estado"].isin(ESTADOS_ORDER)].copy()
             known["__ord"] = known["Estado"].apply(lambda x: ESTADOS_ORDER.index(x))
             others = df_estado[~df_estado["Estado"].isin(ESTADOS_ORDER)].copy()
             others["__ord"] = list(range(len(known), len(known) + len(others)))
             df_estado_sorted = pd.concat([known, others], ignore_index=True).sort_values("__ord").drop(columns="__ord")
 
+            # Tarjetas por estado (4 por fila)
             st.markdown("### Total por Estado")
             for i in range(0, len(df_estado_sorted), 4):
                 cols = st.columns(4)
@@ -158,23 +151,20 @@ def principal_page():
                     color = COLOR_MAP.get(str(row["Estado"]).upper(), "#F5F5F5")
                     container.markdown(render_import_card(estado, importe, color), unsafe_allow_html=True)
 
+            # Total general
             total_general = f"{format_euro(df_estado_sorted['Total'].sum())} €"
             st.markdown("")
             st.markdown(render_import_card("TOTAL", total_general, "#D1C4E9"), unsafe_allow_html=True)
 
     else:
-        st.info("No hay datos de Gestión de Cobro (EIM). Sube el Excel en la sección **EIM** o coloca el archivo en `uploaded/archivo_cargado.xlsx`.")
+        st.info("No hay datos de Gestión de Cobro (EIM). Sube el Excel en la sección **EIM** o publica un archivo en `uploaded/archivo_cargado_eim.xlsx`.")
 
-    # ===================== 🌍 Global Alumnos (EIM) =====================
+    # ===================== MAPA: 🌍 Global Alumnos (EIM) =====================
     st.markdown("---")
     st.markdown("## 🌍 Global Alumnos")
 
-    # ⛔️ IMPORTANTE: nada de "df1 or df2" con DataFrames
-    df_mapa = first_df_from_session(["excel_data_eim"])
-    if df_mapa is None:
-        df_mapa = first_df_from_session(["excel_data"])
-
-    if df_mapa is None:
+    df_mapa = load_eim_df_from_session_or_file(GESTION_FILE)
+    if df_mapa is None or df_mapa.empty:
         st.warning("⚠️ No hay archivo cargado para el mapa (EIM).")
     else:
         required_cols = ['Cliente', 'Provincia', 'País']
@@ -188,7 +178,9 @@ def principal_page():
             df_u['Provincia'] = df_u['Provincia'].apply(normalize_text).str.title().str.strip()
             df_u['País'] = df_u['País'].apply(normalize_text).str.title().str.strip()
 
+            # Provincias válidas de España
             df_esp = df_u[(df_u['País'].str.upper() == 'ESPAÑA') & (df_u['Provincia'].isin(PROVINCIAS_COORDS))]
+            # Países (incluye registros sin provincia válida)
             df_ext = df_u[(df_u['Provincia'].isna()) | (~df_u['Provincia'].isin(PROVINCIAS_COORDS)) | (df_u['País'] == "Gibraltar")]
 
             count_prov = df_esp['Provincia'].value_counts().reset_index()
@@ -199,6 +191,7 @@ def principal_page():
 
             total_alumnos = int(count_prov['Alumnos'].sum() + count_pais['Alumnos'].sum())
 
+            # Badget total
             st.markdown(
                 f"<div style='padding: 4px 12px; display:inline-block; background-color:#e3f2fd; border-radius:6px; "
                 f"font-weight:700; color:#1565c0;'>👥 Total: {total_alumnos}</div>",
@@ -207,6 +200,7 @@ def principal_page():
 
             mapa = folium.Map(location=[25, 0], zoom_start=2, width="100%", height="700px", max_bounds=True)
 
+            # 🔵 Provincias de España
             for _, row in count_prov.iterrows():
                 entidad, alumnos = row['Entidad'], int(row['Alumnos'])
                 coords = PROVINCIAS_COORDS.get(entidad)
@@ -218,6 +212,7 @@ def principal_page():
                         icon=folium.Icon(color="blue", icon="user", prefix="fa")
                     ).add_to(mapa)
 
+            # 🔴 Marcador central España
             total_espana = int(count_prov['Alumnos'].sum())
             coords_espana = [40.4268, -3.7138]
             folium.Marker(
@@ -227,6 +222,7 @@ def principal_page():
                 icon=folium.Icon(color="red", icon="flag", prefix="fa")
             ).add_to(mapa)
 
+            # 🌍 Banderas por país
             def get_flag_emoji(pais_nombre):
                 FLAGS = {
                     "Francia": "🇫🇷", "Portugal": "🇵🇹", "Italia": "🇮🇹",
@@ -238,6 +234,7 @@ def principal_page():
                 }
                 return FLAGS.get(pais_nombre.title(), "🌍")
 
+            # 🔴 Países extranjeros / sin provincia válida
             for _, row in count_pais.iterrows():
                 entidad, alumnos = row['Entidad'], int(row['Alumnos'])
                 if entidad.upper() == "ESPAÑA":
@@ -258,15 +255,12 @@ def principal_page():
 
             folium_static(mapa)
 
-    # ===================== 🧾 Clientes España incompletos =====================
+    # ===================== CLIENTES ESPAÑA INCOMPLETOS =====================
     st.markdown("---")
     st.markdown("## 🧾 Clientes únicos en España con Provincia o Localidad vacías")
 
-    df_check = first_df_from_session(["excel_data_eim"])
-    if df_check is None:
-        df_check = first_df_from_session(["excel_data"])
-
-    if df_check is None:
+    df_check = load_eim_df_from_session_or_file(GESTION_FILE)
+    if df_check is None or df_check.empty:
         st.warning("⚠️ No hay archivo cargado para revisar clientes incompletos (EIM).")
         return
 
