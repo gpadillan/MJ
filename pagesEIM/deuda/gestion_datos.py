@@ -12,9 +12,9 @@ BYTES_KEY           = "excel_eim_bytes"           # bytes del archivo subido
 FILENAME_KEY        = "excel_eim_filename"        # nombre del archivo
 UPLOAD_TIME_KEY     = "excel_eim_upload_time"     # timestamp legible
 
-# Fichero "publicado para todos"
-PUBLISHED_DIR       = "uploaded"
-PUBLISHED_FILE      = os.path.join(PUBLISHED_DIR, "archivo_cargado_eim.xlsx")
+# Publicación para todos
+PUBLISHED_DIR = "uploaded"
+PUBLISHED_FILE = os.path.join(PUBLISHED_DIR, "archivo_cargado_eim.xlsx")
 
 # Estas las rellenan las subpáginas Global/Pendiente (EIM)
 GLOBAL_XLS_ALIASES  = ["descarga_global_eim", "descarga_global"]
@@ -23,7 +23,6 @@ PEND_XLS_ALIASES    = ["descarga_pendiente_total_eim", "descarga_pendiente_total
 PEND_HTML_ALIASES   = ["html_pendiente_total_eim", "html_pendiente_total"]
 
 def _is_admin() -> bool:
-    # El rol viene de tu login. "admin" puede subir/borrar/publicar.
     return st.session_state.get("role", "").lower() == "admin"
 
 def _fmt_dt(dt: datetime | None) -> str:
@@ -35,10 +34,6 @@ def _fmt_dt(dt: datetime | None) -> str:
         return str(dt)
 
 def _read_uploaded_file(file) -> pd.DataFrame:
-    """
-    Lee XLSX/XLS/CSV en un DataFrame (primera hoja si hay varias).
-    Devuelve texto en mayúsculas/str para evitar problemas en vistas.
-    """
     name = file.name.lower()
     content = file.read()
     if name.endswith(".csv"):
@@ -68,6 +63,18 @@ def _set_canonical_from_aliases(aliases: list[str]):
 
 def render():
     st.header("Sección: Gestión de Cobro (EIM)")
+
+    # ===== Carga automática desde publicación para todos =====
+    if DATA_KEY not in st.session_state or st.session_state.get(DATA_KEY) is None:
+        if os.path.exists(PUBLISHED_FILE):
+            try:
+                df_pub = pd.read_excel(PUBLISHED_FILE, dtype=str)
+                st.session_state[DATA_KEY] = df_pub
+                st.session_state[FILENAME_KEY] = os.path.basename(PUBLISHED_FILE)
+                st.session_state[UPLOAD_TIME_KEY] = datetime.fromtimestamp(os.path.getmtime(PUBLISHED_FILE))
+                st.info("Datos cargados desde la publicación global (solo lectura).")
+            except Exception as e:
+                st.warning(f"No se pudo leer la publicación global: {e}")
 
     # ===== Estado actual de datos cargados =====
     last_name = st.session_state.get(FILENAME_KEY, None)
@@ -170,7 +177,6 @@ def render():
     else:
         buffer = io.BytesIO()
         with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-            # Global
             _, df_glob = _first_in_state(GLOBAL_XLS_ALIASES)
             if df_glob is not None:
                 if isinstance(df_glob, dict):
@@ -179,7 +185,6 @@ def render():
                 else:
                     df_glob.to_excel(writer, index=False, sheet_name="Global")
 
-            # Pendiente
             _, pend = _first_in_state(PEND_XLS_ALIASES)
             if pend is not None:
                 if isinstance(pend, dict):

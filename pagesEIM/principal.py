@@ -74,22 +74,28 @@ def principal_page():
     df_gestion = load_eim_df_from_session_or_file(GESTION_FILE)
 
     if df_gestion is not None and not df_gestion.empty and ("Estado" in df_gestion.columns):
-        # Filtrado / normalización ligera del campo Estado
-        _INVALID_EST = {"", "NAN", "NULL", "NONE", "NO ENCONTRADO", "-"}
+        # Filtrado / normalización del campo Estado
+        _INVALID_EST = {"", "NAN", "NULL", "NONE", "NO ENCONTRADO", "-", "S/E", "SIN", "NA"}
         _HIDE_ROWS_CONTAINS = ["BECAS ISA – CONSOLIDADO", "PENDIENTE COBRO ISA"]
 
         def _norm_estado(x):
-            if pd.isna(x): 
+            if pd.isna(x):
                 return "SIN ESTADO"
-            s = str(x).replace("\u00A0"," ").strip().upper()
+            s = str(x).replace("\u00A0", " ").strip().upper()
             return "SIN ESTADO" if s in _INVALID_EST else s
 
         df_g = df_gestion.copy()
+
+        # Ocultar filas por texto
         if _HIDE_ROWS_CONTAINS:
             mask_hide = df_g["Estado"].astype(str).str.upper().str.contains("|".join(_HIDE_ROWS_CONTAINS), na=False)
             df_g = df_g[~mask_hide].copy()
 
+        # Estado normalizado
         df_g["ESTADO_N"] = df_g["Estado"].apply(_norm_estado)
+
+        # 👉 DESCARTAR "SIN ESTADO"
+        df_g = df_g[df_g["ESTADO_N"] != "SIN ESTADO"].copy()
 
         # Detecta columnas válidas: totales históricos + meses del año actual
         columnas_validas = []
@@ -109,7 +115,7 @@ def principal_page():
             df_estado = (
                 df_g.groupby("ESTADO_N")[columnas_validas].sum()
                     .reset_index()
-                    .rename(columns={"ESTADO_N":"Estado"})
+                    .rename(columns={"ESTADO_N": "Estado"})
             )
             df_estado["Total"] = df_estado[columnas_validas].sum(axis=1)
 
