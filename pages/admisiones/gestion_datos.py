@@ -8,6 +8,7 @@ import pytz
 UPLOAD_FOLDER = "uploaded_admisiones"
 VENTAS_FILE = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
 PREVENTAS_FILE = os.path.join(UPLOAD_FOLDER, "preventas.xlsx")
+PVFE_FILE = os.path.join(UPLOAD_FOLDER, "pv_fe.xlsx")          # <<--- NUEVO
 SITUACION_FILE = os.path.join(UPLOAD_FOLDER, "matricula_programas_25.xlsx")
 LEADS_GENERADOS_FILE = os.path.join(UPLOAD_FOLDER, "leads_generados.xlsx")
 METADATA_FILE = os.path.join(UPLOAD_FOLDER, "metadata.txt")
@@ -43,7 +44,9 @@ def app():
     if st.session_state.get("role") == "admin":
         st.markdown("### 📤 Subir archivos Excel")
 
-        col1, col2 = st.columns(2)
+        # Ahora 3 columnas: Ventas, Preventas, PV-FE
+        col1, col2, col3 = st.columns(3)
+
         with col1:
             archivo_ventas = st.file_uploader("Ventas", type=["xlsx"], key="ventas")
             if archivo_ventas:
@@ -56,6 +59,13 @@ def app():
             if archivo_preventas:
                 guardar_archivo(archivo_preventas, PREVENTAS_FILE)
                 st.success("✅ Archivo de preventas subido correctamente.")
+                st.rerun()
+
+        with col3:
+            archivo_pvfe = st.file_uploader("PV-FE", type=["xlsx"], key="pv_fe")
+            if archivo_pvfe:
+                guardar_archivo(archivo_pvfe, PVFE_FILE)
+                st.success("✅ Archivo PV-FE subido correctamente.")
                 st.rerun()
 
         st.markdown("### ➕ Subida archivo para Situación 2025")
@@ -74,7 +84,8 @@ def app():
 
     st.markdown("### 📄 Archivos actuales")
 
-    col1, col2 = st.columns(2)
+    # Vista previa en 3 columnas para mantener simetría con la subida
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         if os.path.exists(VENTAS_FILE):
@@ -97,6 +108,17 @@ def app():
                     st.rerun()
         else:
             st.info("📭 No hay archivo de preventas")
+
+    with col3:
+        if os.path.exists(PVFE_FILE):
+            st.markdown("**PV-FE.xlsx**")
+            st.dataframe(pd.read_excel(PVFE_FILE), use_container_width=True)
+            if st.session_state.get("role") == "admin":
+                if st.button("🗑️ Eliminar PV-FE", key="del_pvfe"):
+                    eliminar_archivo(PVFE_FILE)
+                    st.rerun()
+        else:
+            st.info("📭 No hay archivo PV-FE")
 
     st.markdown("---")
     st.markdown("### 🗂️ Archivo de Situación 2025")
