@@ -83,8 +83,10 @@ def _resolver_columnas(cols):
     keys = list(norm_map.keys())
 
     def find_any(patterns):
+        # exactos
         for p in patterns:
             if p in norm_map: return norm_map[p]
+        # subcadenas
         for p in patterns:
             for k in keys:
                 if p in k: return norm_map[k]
@@ -96,8 +98,16 @@ def _resolver_columnas(cols):
     estado  = find_any(["estado","fase","etapa"])
     comer   = find_any(["comercial","propietario","asesor","agente","owner","vendedor","responsable"])
     fecha   = find_any(["fecha factura","fecha_factura","fecha de factura","emision","fecha emision"])
+    # NUEVO: Proyecto
+    proy    = find_any([
+        "proyecto","nombre proyecto","proyecto/curso","curso",
+        "programa","producto","concepto","nombre del curso","nombre del programa"
+    ])
 
-    return {"razon": razon, "pend": pend, "total": total, "estado": estado, "comer": comer, "fecha": fecha}
+    return {
+        "razon": razon, "pend": pend, "total": total, "estado": estado,
+        "comer": comer, "fecha": fecha, "proy": proy
+    }
 
 def _encontrar_archivo_pvfe():
     if os.path.exists(PVFE_FILE): return PVFE_FILE
@@ -299,23 +309,18 @@ def app():
         else:
             dfp["_alias"] = "-"
 
-        # Resumen por alias
-        pvfe_summary = (
-            dfp.groupby("_alias", dropna=False)
-               .agg(pv_regs=("_alias","size"), pv_pend=("_pend","sum"), pv_total=("_total","sum"))
-               .reset_index()
-        )
-        pvfe_summary = dict(pvfe_summary.set_index("_alias")[["pv_regs","pv_pend","pv_total"]].T.to_dict())
+        # ==== helpers
+        def _join_unique(iterable):
+            out, seen = [], set()
+            for x in iterable:
+                sx = str(x).strip()
+                if sx and sx not in seen:
+                    out.append(sx); seen.add(sx)
+            return " / ".join(out)
 
-        # --------- Detalle por razón social (tabla legible y sin cortes raros) ----------
         def _join_estado(s: pd.Series) -> str:
             if not cols["estado"]: return ""
-            vals = [str(x).strip().upper() for x in s.dropna() if str(x).strip()]
-            out, seen = [], set()
-            for v in vals:
-                if v not in seen:
-                    out.append(v); seen.add(v)
-            return " / ".join(out)
+            return _join_unique([x for x in s.dropna()])
 
         def _fmt_totals(series: pd.Series):
             if series is None or series.empty: return ""
@@ -327,6 +332,15 @@ def app():
             parts = [f"{int(v)}" if abs(v-int(v))<1e-9 else f"{v:g}" for v in vals]
             return f"{' / '.join(parts)} = {euro_es(total)}"
 
+        # Resumen por alias
+        pvfe_summary = (
+            dfp.groupby("_alias", dropna=False)
+               .agg(pv_regs=("_alias","size"), pv_pend=("_pend","sum"), pv_total=("_total","sum"))
+               .reset_index()
+        )
+        pvfe_summary = dict(pvfe_summary.set_index("_alias")[["pv_regs","pv_pend","pv_total"]].T.to_dict())
+
+        # --------- Detalle por razón social (con PROYECTO) ----------
         key_razon = cols["razon"] if cols["razon"] else None
         for alias, g in dfp.groupby("_alias", dropna=False):
             rows = []
@@ -339,32 +353,35 @@ def app():
                 razon = gg[key_razon].dropna().astype(str).str.strip().iloc[0] if key_razon else ""
                 fechas = gg["_fecha"].dropna().dt.strftime("%d/%m/%Y").tolist()
                 fechas_text = " / ".join(fechas)
+                proyecto = _join_unique(gg[cols["proy"]].dropna()) if cols["proy"] else ""
                 pend = gg["_pend"].max() if cols["pend"] else 0
                 totals_text = _fmt_totals(gg["_total"]) if cols["total"] else ""
                 estado = _join_estado(gg[cols["estado"]]) if cols["estado"] else ""
-                rows.append((razon, fechas_text, pend, totals_text, estado))
+                rows.append((razon, proyecto, fechas_text, pend, totals_text, estado))
 
             details_rows[alias] = len(rows)
             if rows:
                 header = (
                     "<table style='width:100%;table-layout:fixed;border-collapse:collapse;font-size:.9rem;'>"
                     "<thead><tr>"
-                    "<th style='text-align:left;width:38%;padding:6px 8px'>Razón Social</th>"
-                    "<th style='text-align:left;width:22%;padding:6px 8px'>Fecha(s)</th>"
-                    "<th style='text-align:right;width:14%;padding:6px 8px'>Pendiente</th>"
-                    "<th style='text-align:left;width:18%;padding:6px 8px'>Total</th>"
-                    "<th style='text-align:left;width:8%;padding:6px 8px'>Estado</th>"
+                    "<th style='text-align:left;width:28%;padding:6px 8px'>Razón Social</th>"
+                    "<th style='text-align:left;width:24%;padding:6px 8px'>Proyecto</th>"
+                    "<th style='text-align:left;width:18%;padding:6px 8px'>Fecha(s)</th>"
+                    "<th style='text-align:right;width:12%;padding:6px 8px'>Pendiente</th>"
+                    "<th style='text-align:left;width:12%;padding:6px 8px'>Total</th>"
+                    "<th style='text-align:left;width:6%;padding:6px 8px'>Estado</th>"
                     "</tr></thead><tbody>"
                 )
                 body = "".join(
                     f"<tr>"
-                    f"<td style='padding:6px 8px;word-break:keep-all;overflow-wrap:break-word;white-space:normal;'>{rz}</td>"
-                    f"<td style='padding:6px 8px;word-break:keep-all;overflow-wrap:break-word;white-space:normal;'>{ff}</td>"
+                    f"<td style='padding:6px 8px;overflow-wrap:break-word;white-space:normal;'>{rz}</td>"
+                    f"<td style='padding:6px 8px;overflow-wrap:break-word;white-space:normal;'>{prj}</td>"
+                    f"<td style='padding:6px 8px;overflow-wrap:break-word;white-space:normal;'>{ff}</td>"
                     f"<td style='padding:6px 8px;text-align:right;white-space:nowrap;'>{euro_es(pn)}</td>"
-                    f"<td style='padding:6px 8px;word-break:keep-all;overflow-wrap:break-word;white-space:normal;'>{tt}</td>"
-                    f"<td style='padding:6px 8px;word-break:keep-all;overflow-wrap:break-word;white-space:normal;'>{es}</td>"
+                    f"<td style='padding:6px 8px;overflow-wrap:break-word;white-space:normal;'>{tt}</td>"
+                    f"<td style='padding:6px 8px;overflow-wrap:break-word;white-space:normal;'>{es}</td>"
                     f"</tr>"
-                    for (rz, ff, pn, tt, es) in rows
+                    for (rz, prj, ff, pn, tt, es) in rows
                 )
                 pvfe_details_html[alias] = header + body + "</tbody></table>"
             else:
@@ -498,8 +515,17 @@ def app():
             else:
                 vista["_total_num"] = 0
 
+            # Construir filas con PROYECTO
             rows = []
             key_razon = cols["razon"] if cols["razon"] else None
+            def _join_unique(iterable):
+                out, seen = [], set()
+                for x in iterable:
+                    sx = str(x).strip()
+                    if sx and sx not in seen:
+                        out.append(sx); seen.add(sx)
+                return " / ".join(out)
+
             if key_razon:
                 vista["_key"] = vista[key_razon].astype(str).str.strip().str.lower()
                 giter = vista.groupby("_key", dropna=False)
@@ -507,6 +533,7 @@ def app():
                 giter = [(i, gg) for i, gg in enumerate([vista])]
             for _, g in giter:
                 razon = g[key_razon].dropna().astype(str).str.strip().iloc[0] if key_razon else ""
+                proyecto = _join_unique(g[cols["proy"]].dropna()) if cols["proy"] else ""
                 fechas = g["Fecha Factura"].dropna().tolist()
                 fechas_text = " / ".join(sorted(set([f for f in fechas if f])))
                 pendiente = g["Pendiente"].max()
@@ -528,6 +555,7 @@ def app():
 
                 rows.append({
                     "Razón Social": razon,
+                    "Proyecto": proyecto,
                     "Fecha Factura": fechas_text,
                     "Pendiente": pendiente,
                     "Total": total_text,
