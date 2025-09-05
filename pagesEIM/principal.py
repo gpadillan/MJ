@@ -7,6 +7,8 @@ from datetime import datetime
 from streamlit_folium import folium_static
 import folium
 from utils.geo_utils import normalize_text, PROVINCIAS_COORDS, PAISES_COORDS, geolocalizar_pais
+import unicodedata
+import re
 
 # ===================== UTILS =====================
 
@@ -111,6 +113,7 @@ def principal_page():
         if not columnas_validas:
             st.info("No se encontraron columnas de totales/meses en el archivo de Gestión de Cobro (EIM).")
         else:
+            # Sumar importes por estado
             df_g[columnas_validas] = df_g[columnas_validas].apply(pd.to_numeric, errors="coerce").fillna(0)
             df_estado = (
                 df_g.groupby("ESTADO_N")[columnas_validas].sum()
@@ -119,48 +122,74 @@ def principal_page():
             )
             df_estado["Total"] = df_estado[columnas_validas].sum(axis=1)
 
-            # Orden y colores de tarjetas
-            ESTADOS_ORDER = [
-                "COBRADO",
-                "DOMICILIACIÓN CONFIRMADA",
-                "DOMICILIACIÓN EMITIDA",
-                "DUDOSO COBRO",
-                "INCOBRABLE",
-                "NO COBRADO",
-                "PENDIENTE",
-            ]
+            # ---- Normalizar claves para diccionario (sin acentos, mayúsculas) ----
+            def _strip_accents(s: str) -> str:
+                return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
+
+            def _norm_key(s: str) -> str:
+                s = _strip_accents(str(s)).upper()
+                s = re.sub(r'\s+', ' ', s).strip()
+                return s
+
+            tot_por_estado = { _norm_key(r["Estado"]): float(r["Total"]) for _, r in df_estado.iterrows() }
+
+            # Valores que necesitaremos
+            cobrado          = tot_por_estado.get("COBRADO", 0.0)
+            domic_confirmada = tot_por_estado.get("DOMICILIACION CONFIRMADA", 0.0)
+            pendiente        = tot_por_estado.get("PENDIENTE", 0.0)
+            dudoso           = tot_por_estado.get("DUDOSO COBRO", 0.0)
+            incobrable       = tot_por_estado.get("INCOBRABLE", 0.0)
+            domic_emitida    = tot_por_estado.get("DOMICILIACION EMITIDA", 0.0)
+            no_cobrado       = tot_por_estado.get("NO COBRADO", 0.0)
+
+            total_generado = cobrado + domic_confirmada
+
+            # Colores
             COLOR_MAP = {
                 "COBRADO": "#E3F2FD",
                 "DOMICILIACIÓN CONFIRMADA": "#FFE0B2",
-                "DOMICILIACIÓN EMITIDA": "#E8F5E9",
+                "DOMICILIACIÓN EMITIDA": "#FFF9C4",
                 "DUDOSO COBRO": "#FFEBEE",
-                "INCOBRABLE": "#EDE7F6",
-                "NO COBRADO": "#F3E5F5",
-                "PENDIENTE": "#FCE4EC",
+                "INCOBRABLE": "#FCE4EC",
+                "NO COBRADO": "#ECEFF1",
+                "PENDIENTE": "#E6FCF5",
+                "TOTAL GENERADO": "#D3F9D8",
             }
 
-            # Reordenar: conocidos primero
-            known = df_estado[df_estado["Estado"].isin(ESTADOS_ORDER)].copy()
-            known["__ord"] = known["Estado"].apply(lambda x: ESTADOS_ORDER.index(x))
-            others = df_estado[~df_estado["Estado"].isin(ESTADOS_ORDER)].copy()
-            others["__ord"] = list(range(len(known), len(known) + len(others)))
-            df_estado_sorted = pd.concat([known, others], ignore_index=True).sort_values("__ord").drop(columns="__ord")
+            # ======= FILA 1: Cobrado | Domiciliación Confirmada | Total generado =======
+            cols_top = st.columns(3)
+            cols_top[0].markdown(
+                render_import_card("📒 Cobrado", f"€ {format_euro(cobrado)}", COLOR_MAP["COBRADO"]),
+                unsafe_allow_html=True
+            )
+            cols_top[1].markdown(
+                render_import_card("📘 Domiciliación Confirmada", f"€ {format_euro(domic_confirmada)}", COLOR_MAP["DOMICILIACIÓN CONFIRMADA"]),
+                unsafe_allow_html=True
+            )
+            cols_top[2].markdown(
+                render_import_card("💰 Total generado", f"€ {format_euro(total_generado)}", COLOR_MAP["TOTAL GENERADO"]),
+                unsafe_allow_html=True
+            )
 
-            # Tarjetas por estado (4 por fila)
-            st.markdown("### Total por Estado")
-            for i in range(0, len(df_estado_sorted), 4):
-                cols = st.columns(4)
-                subset = df_estado_sorted.iloc[i:i+4]
-                for (idx, row), container in zip(subset.iterrows(), cols):
-                    estado = str(row["Estado"]).title()
-                    importe = f"{format_euro(row['Total'])} €"
-                    color = COLOR_MAP.get(str(row["Estado"]).upper(), "#F5F5F5")
-                    container.markdown(render_import_card(estado, importe, color), unsafe_allow_html=True)
+            # ======= FILA 2: Pendiente | Dudoso Cobro | Incobrable | Domiciliación Emitida | No Cobrado (5 en línea) =======
+            cols_bottom = st.columns(5)
+            items_bottom = [
+                ("⏳ Pendiente",               pendiente,     "PENDIENTE"),
+                ("❗ Dudoso Cobro",           dudoso,        "DUDOSO COBRO"),
+                ("🚫 Incobrable",             incobrable,    "INCOBRABLE"),
+                ("📤 Domiciliación Emitida",  domic_emitida, "DOMICILIACIÓN EMITIDA"),
+                ("🧾 No Cobrado",             no_cobrado,    "NO COBRADO"),
+            ]
+            for (title, amount, key), col in zip(items_bottom, cols_bottom):
+                color = COLOR_MAP.get(key, "#F5F5F5")
+                col.markdown(
+                    render_import_card(title, f"€ {format_euro(amount)}", color),
+                    unsafe_allow_html=True
+                )
 
-            # Total general
-            total_general = f"{format_euro(df_estado_sorted['Total'].sum())} €"
-            st.markdown("")
-            st.markdown(render_import_card("TOTAL", total_general, "#D1C4E9"), unsafe_allow_html=True)
+            # (Opcional) TOTAL absoluto de todo lo leído: lo dejo fuera porque no lo pediste
+            # total_abs = float(df_estado["Total"].sum())
+            # st.markdown(render_import_card("TOTAL (todos los estados)", f"€ {format_euro(total_abs)}", "#D1C4E9"), unsafe_allow_html=True)
 
     else:
         st.info("No hay datos de Gestión de Cobro (EIM). Sube el Excel en la sección **EIM** o publica un archivo en `uploaded/archivo_cargado_eim.xlsx`.")

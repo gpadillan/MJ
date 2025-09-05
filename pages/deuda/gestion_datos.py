@@ -1,4 +1,4 @@
-﻿import streamlit as st 
+﻿import streamlit as st
 import pandas as pd
 import io
 import os
@@ -7,11 +7,13 @@ UPLOAD_FOLDER = "uploaded"
 TIEMPO_FILENAME = os.path.join(UPLOAD_FOLDER, "ultima_subida.txt")
 EXCEL_FILENAME = os.path.join(UPLOAD_FOLDER, "archivo_cargado.xlsx")
 
+
 def cargar_marca_tiempo():
     if os.path.exists(TIEMPO_FILENAME):
         with open(TIEMPO_FILENAME, "r") as f:
             return f.read().strip()
     return "Fecha no disponible"
+
 
 def render():
     st.header("📁 Gestión de Datos – Gestión de Cobro")
@@ -31,10 +33,10 @@ def render():
     upload_time = st.session_state.get("upload_time", cargar_marca_tiempo())
     st.markdown(f"🕒 **Última actualización:** {upload_time}")
 
-    # Mostrar preview
+    # Mostrar preview (solo primeras filas por rendimiento)
     df = st.session_state["excel_data"]
     st.markdown("### Vista previa del archivo cargado")
-    st.dataframe(df.head(100), use_container_width=True)  # Mostrar solo primeras filas por rendimiento
+    st.dataframe(df.head(100), use_container_width=True)
 
     st.markdown("---")
     st.subheader("📋 Hojas disponibles:")

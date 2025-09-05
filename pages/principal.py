@@ -14,7 +14,11 @@ import re
 # ===================== UTILS GENERALES =====================
 
 def format_euro(value: float) -> str:
-    return f"{value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    try:
+        v = float(value)
+    except Exception:
+        v = 0.0
+    return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 def render_info_card(title, value1, value2, color="#e3f2fd"):
     return f"""
@@ -35,6 +39,26 @@ def render_import_card(title, value, color="#ede7f6"):
             <strong>{title}</strong><br>
             <strong>{value}</strong>
         </div>
+    """
+
+# Tarjeta compacta tipo "barra" para Gestión de Cobro (EIP)
+def render_bar_card(title: str, value, color="#E3F2FD", icon: str = ""):
+    if isinstance(value, (int, float)):
+        val_txt = f"€ {format_euro(value)}"
+    else:
+        val_txt = str(value)
+    return f"""
+    <div style="
+        background:{color};
+        border:1px solid #e6e9ef;
+        border-radius:14px;
+        padding:12px 14px;
+        box-shadow:0 2px 8px rgba(0,0,0,.06);
+        display:flex;flex-direction:column;align-items:center;justify-content:center;
+        min-height:64px; gap:6px;">
+        <div style="font-size:14px;font-weight:800;opacity:.9;white-space:nowrap">{icon} {title}</div>
+        <div style="font-size:16px;font-weight:900">{val_txt}</div>
+    </div>
     """
 
 # ===================== HELPERS DE EMPLEO (MISMOS QUE EN cierre_expediente_total.py) =====================
@@ -138,13 +162,8 @@ def _is_blank(x) -> bool:
 def normalizar_like_cierre(df_raw: pd.DataFrame) -> pd.DataFrame:
     """Normaliza EXACTAMENTE como cierre_expediente_total.py."""
     df = df_raw.copy()
-
-    # Detecta columnas
     colmap = _build_colmap(df.columns)
-    # Renombra solo las que encuentra
     df = df.rename(columns={colmap[k]:k for k in colmap})
-
-    # Limpieza
     df["AREA"] = df.get("AREA", pd.Series(index=df.index)).apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True))
     for c in ["PRACTICAS_GE","EMPRESA PRACT","EMPRESA GE","NOMBRE","APELLIDOS","CONSULTOR EIP"]:
         if c in df.columns:
@@ -153,7 +172,6 @@ def normalizar_like_cierre(df_raw: pd.DataFrame) -> pd.DataFrame:
         df["CONSULTOR EIP"] = df["CONSULTOR EIP"].replace('', 'Otros').fillna('Otros')
         df = df[df["CONSULTOR EIP"].str.upper()!="NO ENCONTRADO"]
 
-    # FECHA CIERRE robusta
     col_fc = "FECHA CIERRE"
     if col_fc in df.columns:
         if not pd.api.types.is_numeric_dtype(df[col_fc]):
@@ -171,7 +189,6 @@ def normalizar_like_cierre(df_raw: pd.DataFrame) -> pd.DataFrame:
         df["FECHA CIERRE"] = pd.NaT
         df["AÑO_CIERRE"] = pd.NA
 
-    # Booleanos
     if "CONSECUCION GE" in df.columns:
         df["CONSECUCION_BOOL"]=df["CONSECUCION GE"].apply(_to_bool)
     else:
@@ -184,7 +201,6 @@ def normalizar_like_cierre(df_raw: pd.DataFrame) -> pd.DataFrame:
         df["DEVOLUCION_BOOL"]=df["DEVOLUCION GE"].apply(_to_bool)
     else:
         df["DEVOLUCION_BOOL"]=False
-
     return df
 
 # ===================== CARGA DE DATOS (SharePoint) =====================
@@ -203,7 +219,6 @@ def load_academica_data():
             st.exception(e)
 
 def load_empleo_df_raw():
-    """Descarga el Excel de Empleo desde SharePoint (hoja GENERAL por defecto)."""
     try:
         config = st.secrets["empleo"]
         token = get_access_token(config)
@@ -221,7 +236,6 @@ def load_empleo_df_raw():
 def principal_page():
     st.title("📊 Panel Principal")
 
-    # 🔄 Recargar / limpiar caché (global)
     if st.button("🔄 Recargar datos manualmente"):
         for key in ["academica_excel_data", "excel_data", "df_ventas", "df_preventas", "df_gestion", "df_empleo_informe"]:
             if key in st.session_state:
@@ -232,7 +246,7 @@ def principal_page():
 
     load_academica_data()
 
-    # --- Ficheros locales (ventas / preventas / gestión) ---
+    # Ficheros locales
     UPLOAD_FOLDER = "uploaded_admisiones"
     GESTION_FOLDER = "uploaded"
     VENTAS_FILE = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
@@ -248,49 +262,40 @@ def principal_page():
     total_matriculas = 0
     total_preventas = 0
     total_preventas_importe = 0
-    columnas_validas = []
-    matriculas_por_mes = {}
-    importes_por_mes = {}
-    estados = {}
+    matriculas_por_mes, importes_por_mes = {}, {}
 
-    # ===================== VENTAS =====================
+    # ===== VENTAS =====
     if os.path.exists(VENTAS_FILE):
         df_ventas = pd.read_excel(VENTAS_FILE)
         df_ventas.columns = df_ventas.columns.str.strip().str.lower()
-
         if "fecha de cierre" in df_ventas.columns:
             df_ventas['fecha de cierre'] = pd.to_datetime(df_ventas['fecha de cierre'], errors='coerce')
             df_ventas = df_ventas.dropna(subset=['fecha de cierre'])
             df_ventas = df_ventas[df_ventas['fecha de cierre'].dt.year == anio_actual]
-
             if 'importe' not in df_ventas.columns:
                 df_ventas['importe'] = 0
             else:
                 df_ventas['importe'] = pd.to_numeric(df_ventas['importe'], errors='coerce').fillna(0)
-
             df_ventas['mes'] = df_ventas['fecha de cierre'].dt.month
             total_matriculas = len(df_ventas)
-
-            for m in range(1, 13):
+            for m in range(1, 12+1):
                 df_mes = df_ventas[df_ventas['mes'] == m]
                 matriculas_por_mes[m] = len(df_mes)
                 importes_por_mes[m] = df_mes['importe'].sum()
 
-    # ===================== PREVENTAS =====================
+    # ===== PREVENTAS =====
     if os.path.exists(PREVENTAS_FILE):
         df_preventas = pd.read_excel(PREVENTAS_FILE)
         df_preventas.columns = df_preventas.columns.str.strip().str.lower()
-
         total_preventas = len(df_preventas)
-        columnas_importe = [col for col in df_preventas.columns if "importe" in col]
+        columnas_importe = [c for c in df_preventas.columns if "importe" in c]
         if columnas_importe:
             total_preventas_importe = df_preventas[columnas_importe].sum(numeric_only=True).sum()
 
-    # ===================== GESTIÓN DE COBRO (EIP) =====================
+    # ===== GESTIÓN DE COBRO (EIP) =====
     st.markdown("---")
     st.markdown("## 💼 Gestión de Cobro (EIP)")
 
-    # 1) Carga priorizando lo subido en EIP
     df_gestion = None
     if "excel_data_eip" in st.session_state and st.session_state["excel_data_eip"] is not None:
         df_gestion = st.session_state["excel_data_eip"].copy()
@@ -300,14 +305,12 @@ def principal_page():
     if df_gestion is None or df_gestion.empty:
         st.info("No hay datos de Gestión de Cobro disponibles.")
     else:
-        # 2) Normaliza columnas
         df_gestion.columns = [c.strip() for c in df_gestion.columns]
         col_estado = next((c for c in df_gestion.columns if c.strip().lower() == "estado"), None)
 
         if not col_estado:
             st.error("❌ El archivo no contiene la columna 'Estado'.")
         else:
-            # 3) Detecta columnas válidas (totales históricos + meses del año actual)
             columnas_validas = []
             for anio in range(2018, anio_actual):
                 col = f"Total {anio}"
@@ -321,7 +324,6 @@ def principal_page():
             if not columnas_validas:
                 st.info("No se encontraron columnas de totales/meses en el archivo de Gestión de Cobro.")
             else:
-                # 4) Agregación
                 df_gestion[columnas_validas] = df_gestion[columnas_validas].apply(pd.to_numeric, errors="coerce").fillna(0)
                 df_resumen = (
                     df_gestion.groupby(col_estado)[columnas_validas]
@@ -331,53 +333,58 @@ def principal_page():
                 )
                 df_resumen["Total"] = df_resumen[columnas_validas].sum(axis=1)
 
-                # ====== SOLO TARJETAS (sin tabla) ======
-                def _card(title, amount, emoji="💶", bg="#eef4ff", fg="#1f2d3d"):
-                    return f"""
-                    <div style="background:{bg};border:1px solid #dfe3eb;border-radius:14px;padding:14px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);">
-                        <div style="font-weight:700;font-size:15px;margin-bottom:8px;color:{fg}">{emoji} {title}</div>
-                        <div style="font-size:26px;font-weight:800;color:{fg}">€ {format_euro(amount)}</div>
-                    </div>
-                    """
+                # === Totales por estado (robusto con acentos) ===
+                def _norm_estado(s):
+                    s = ''.join(ch for ch in unicodedata.normalize('NFD', str(s)) if unicodedata.category(ch) != 'Mn')
+                    s = re.sub(r'\s+', ' ', s).strip().upper()
+                    return s
 
+                tot_por_estado = {_norm_estado(r["Estado"]): float(r["Total"]) for _, r in df_resumen.iterrows()}
+
+                cobrado          = tot_por_estado.get("COBRADO", 0.0)
+                domic_confirmada = tot_por_estado.get("DOMICILIACION CONFIRMADA", 0.0)
+                pendiente        = tot_por_estado.get("PENDIENTE", 0.0)
+                dudoso           = tot_por_estado.get("DUDOSO COBRO", 0.0)
+                incobrable       = tot_por_estado.get("INCROBRABLE", tot_por_estado.get("INCOBRABLE", 0.0))
+                domic_emitida    = tot_por_estado.get("DOMICILIACION EMITIDA", 0.0)
+                no_cobrado       = tot_por_estado.get("NO COBRADO", 0.0)
+
+                total_generado = cobrado + domic_confirmada
+
+                # Paleta como en tu mock
                 COLORS = {
-                    "COBRADO": ("#e7f5ff", "#0b5394"),
-                    "DOMICILIACIÓN CONFIRMADA": ("#fff4e6", "#8a4b00"),
-                    "DOMICILIACIÓN EMITIDA": ("#fff9db", "#7a5d00"),
-                    "DUDOSO COBRO": ("#fde0e0", "#8a1f1f"),
-                    "INCOBRABLE": ("#ffe3f1", "#7a1a53"),
-                    "NO COBRADO": ("#f1f3f5", "#343a40"),
-                    "PENDIENTE": ("#e6fcf5", "#0b7285"),
-                    "SIN ESTADO": ("#f8f9fa", "#495057"),
+                    "COBRADO": "#E3F2FD",
+                    "CONFIRMADA": "#FFE0B2",
+                    "TOTAL": "#D3F9D8",
+                    "PENDIENTE": "#E6FCF5",
+                    "DUDOSO": "#FFEBEE",
+                    "INCOBRABLE": "#FCE4EC",
+                    "EMITIDA": "#FFF9C4",
+                    "NOCOBRADO": "#ECEFF1",
                 }
 
-                st.markdown("### Total por Estado")
-                filas = df_resumen.sort_values("Total", ascending=False)[["Estado", "Total"]].values.tolist()
+                # ===== Fila 1: Cobrado | Domiciliación Confirmada | Total generado =====
+                c1, c2, c3 = st.columns(3)
+                c1.markdown(render_bar_card("Cobrado", cobrado, COLORS["COBRADO"], "🟦"), unsafe_allow_html=True)
+                c2.markdown(render_bar_card("Domiciliación Confirmada", domic_confirmada, COLORS["CONFIRMADA"], "🟧"), unsafe_allow_html=True)
+                c3.markdown(render_bar_card("Total Generado", total_generado, COLORS["TOTAL"], "💰"), unsafe_allow_html=True)
 
-                ncols = 4
-                for i in range(0, len(filas), ncols):
-                    cols = st.columns(ncols)
-                    for j, c in enumerate(cols):
-                        if i + j >= len(filas): break
-                        estado, importe = filas[i + j]
-                        bg, fg = COLORS.get(estado, ("#eef4ff", "#1f2d3d"))
-                        c.markdown(_card(estado.title(), importe, "💶", bg, fg), unsafe_allow_html=True)
+                # ===== Fila 2: Pendiente | Dudoso Cobro | Incobrable | Domiciliación Emitida | No Cobrado =====
+                b1, b2, b3, b4, b5 = st.columns(5)
+                b1.markdown(render_bar_card("Pendiente", pendiente, COLORS["PENDIENTE"], "⏳"), unsafe_allow_html=True)
+                b2.markdown(render_bar_card("Dudoso Cobro", dudoso, COLORS["DUDOSO"], "❗"), unsafe_allow_html=True)
+                b3.markdown(render_bar_card("Incobrable", incobrable, COLORS["INCOBRABLE"], "⛔"), unsafe_allow_html=True)
+                b4.markdown(render_bar_card("Domiciliación Emitida", domic_emitida, COLORS["EMITIDA"], "📤"), unsafe_allow_html=True)
+                b5.markdown(render_bar_card("No Cobrado", no_cobrado, COLORS["NOCOBRADO"], "🧾"), unsafe_allow_html=True)
 
-                total_general = float(df_resumen["Total"].sum())
-                st.markdown("### Total General")
-                st.markdown(_card("Total General", total_general, "🧾", "#d3f9d8", "#0b5b1d"), unsafe_allow_html=True)
-
-
-    # ===================== ADMISIONES =====================
+    # ===== ADMISIONES =====
     st.markdown("## 📥 Admisiones")
     st.markdown(f"### 📅 Matrículas por Mes ({anio_actual})")
-
     for i in range(0, 12, 4):
         cols = st.columns(4)
         for j in range(4):
             mes_num = i + j + 1
-            if mes_num > 12:
-                continue
+            if mes_num > 12: continue
             mes = traduccion_meses[mes_num]
             matriculas = matriculas_por_mes.get(mes_num, 0)
             importe = format_euro(importes_por_mes.get(mes_num, 0))
@@ -388,7 +395,7 @@ def principal_page():
     col1.markdown(render_info_card("Matrículas Totales", total_matriculas, format_euro(sum(importes_por_mes.values())), "#c8e6c9"), unsafe_allow_html=True)
     col2.markdown(render_info_card("Preventas", total_preventas, format_euro(total_preventas_importe), "#ffe0b2"), unsafe_allow_html=True)
 
-    # ===================== ACADÉMICA =====================
+    # ===== ACADÉMICA =====
     if "academica_excel_data" in st.session_state:
         data = st.session_state["academica_excel_data"]
         hoja = "CONSOLIDADO ACADÉMICO"
@@ -414,48 +421,37 @@ def principal_page():
                     cols = st.columns(4)
                     for j, (titulo, valor) in enumerate(indicadores[i:i+4]):
                         cols[j].markdown(render_import_card(titulo, valor, "#f0f4c3"), unsafe_allow_html=True)
-
                 st.markdown("### 🏅 Certificaciones")
                 total_cert = int(df.iloc[13, 2])
                 st.markdown(render_import_card("🎖️ Total Certificaciones", total_cert, "#dcedc8"), unsafe_allow_html=True)
-
             except Exception as e:
                 st.warning("⚠️ Error al procesar los indicadores académicos.")
                 st.exception(e)
 
-    # ===================== DESARROLLO PROFESIONAL (REPLICA EXACTA DEL INFORME) =====================
+    # ===== DESARROLLO PROFESIONAL =====
     st.markdown("---")
     st.markdown("## 🔧 Indicadores de Empleo")
     try:
         anio_obj = datetime.now().year
-
-        # 1) Usa el DF normalizado del informe si está en session_state (match perfecto)
         if "df_empleo_informe" in st.session_state:
             df_empleo_norm = st.session_state["df_empleo_informe"].copy()
         else:
-            # 2) Carga de SharePoint y normaliza con la MISMA lógica
             df_empleo_src = load_empleo_df_raw()
             if df_empleo_src.empty:
                 st.info("Sin datos de empleo para mostrar.")
                 df_empleo_norm = pd.DataFrame()
             else:
                 df_empleo_norm = normalizar_like_cierre(df_empleo_src)
-                # guarda para próximas veces (y para que coincida con el informe si se reusa)
                 st.session_state["df_empleo_informe"] = df_empleo_norm.copy()
 
         if not df_empleo_norm.empty:
-            # === Totales del año en curso (exactamente igual que cierre_expediente_total.py) ===
             df_y = df_empleo_norm[df_empleo_norm["AÑO_CIERRE"] == anio_obj].copy()
-
             tot_con = int(df_y["CONSECUCION_BOOL"].sum()) if "CONSECUCION_BOOL" in df_y else 0
             tot_inap = int(df_y["INAPLICACION_BOOL"].sum()) if "INAPLICACION_BOOL" in df_y else 0
-
-            # Prácticas año = EMPRESA PRACT válida en el año
             emp_pr_norm_y = df_y["EMPRESA PRACT"].apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True)) if "EMPRESA PRACT" in df_y else pd.Series([], dtype=str)
             mask_pr_y = ~emp_pr_norm_y.isin(INVALID_TXT)
             tot_pract = int(mask_pr_y.sum())
 
-            # Prácticas en curso = (FECHA CIERRE NaT) & empresa práctica válida & (las 3 columnas en blanco)
             if not df_empleo_norm.empty:
                 m_sin_fecha = df_empleo_norm["FECHA CIERRE"].isna()
                 emp = df_empleo_norm["EMPRESA PRACT"].apply(_norm_text_cell) if "EMPRESA PRACT" in df_empleo_norm else pd.Series([], dtype=str)
@@ -474,21 +470,18 @@ def principal_page():
             cols[3].markdown(render_import_card(f"🛠️ Prácticas en curso {anio_obj}", tot_en_curso, "#fff3e0"), unsafe_allow_html=True)
         else:
             st.info("Sin datos de empleo para mostrar.")
-
     except Exception as e:
         st.warning("⚠️ No se pudieron cargar los indicadores de Desarrollo Profesional.")
         st.exception(e)
 
-    # ===================== MAPA =====================
+    # ===== MAPA =====
     st.markdown("---")
-
     if 'excel_data' not in st.session_state or st.session_state['excel_data'] is None:
         st.markdown("## 🌍 Global Alumnos")
         st.warning("⚠️ No hay archivo cargado desde deuda.")
     else:
         df_mapa = st.session_state['excel_data']
         required_cols = ['Cliente', 'Provincia', 'País']
-
         if not all(col in df_mapa.columns for col in required_cols):
             st.markdown("## 🌍 Global Alumnos")
             st.error("❌ El archivo debe tener columnas: Cliente, Provincia, País.")
@@ -497,23 +490,11 @@ def principal_page():
                 st.session_state["coords_cache"] = {}
 
             df_u = df_mapa.drop_duplicates(subset=['Cliente', 'Provincia', 'País']).copy()
-
-            # Normalización estricta
             df_u['Provincia'] = df_u['Provincia'].apply(normalize_text).str.title().str.strip()
             df_u['País'] = df_u['País'].apply(normalize_text).str.title().str.strip()
 
-            # Provincias válidas de España
-            df_esp = df_u[
-                (df_u['País'].str.upper() == 'ESPAÑA') &
-                (df_u['Provincia'].isin(PROVINCIAS_COORDS))
-            ]
-
-            # Países (incluye Gibraltar y España solo si tiene provincia inválida)
-            df_ext = df_u[
-                (df_u['Provincia'].isna()) |
-                (~df_u['Provincia'].isin(PROVINCIAS_COORDS)) |
-                (df_u['País'] == "Gibraltar")
-            ]
+            df_esp = df_u[(df_u['País'].str.upper() == 'ESPAÑA') & (df_u['Provincia'].isin(PROVINCIAS_COORDS))]
+            df_ext = df_u[(df_u['Provincia'].isna()) | (~df_u['Provincia'].isin(PROVINCIAS_COORDS)) | (df_u['País'] == "Gibraltar")]
 
             count_prov = df_esp['Provincia'].value_counts().reset_index()
             count_prov.columns = ['Entidad', 'Alumnos']
@@ -535,7 +516,6 @@ def principal_page():
 
             mapa = folium.Map(location=[25, 0], zoom_start=2, width="100%", height="700px", max_bounds=True)
 
-            # 🔵 Provincias españolas en azul
             for _, row in count_prov.iterrows():
                 entidad, alumnos = row['Entidad'], row['Alumnos']
                 coords = PROVINCIAS_COORDS.get(entidad)
@@ -547,7 +527,6 @@ def principal_page():
                         icon=folium.Icon(color="blue", icon="user", prefix="fa")
                     ).add_to(mapa)
 
-            # 🔴 Marcador central "España (provincias)"
             total_espana = count_prov['Alumnos'].sum()
             coords_espana = [40.4268, -3.7138]
             folium.Marker(
@@ -557,7 +536,6 @@ def principal_page():
                 icon=folium.Icon(color="red", icon="flag", prefix="fa")
             ).add_to(mapa)
 
-            # 🌍 Banderas por país
             def get_flag_emoji(pais_nombre):
                 FLAGS = {
                     "Francia": "🇫🇷", "Portugal": "🇵🇹", "Italia": "🇮🇹",
@@ -569,11 +547,10 @@ def principal_page():
                 }
                 return FLAGS.get(pais_nombre.title(), "🌍")
 
-            # 🔴 Países extranjeros en rojo
             for _, row in count_pais.iterrows():
                 entidad, alumnos = row['Entidad'], row['Alumnos']
                 if entidad.upper() == "ESPAÑA":
-                    continue  # Evita duplicados
+                    continue
                 coords = PAISES_COORDS.get(entidad) or st.session_state["coords_cache"].get(entidad)
                 if not coords:
                     coords = geolocalizar_pais(entidad)
@@ -590,7 +567,7 @@ def principal_page():
 
             folium_static(mapa)
 
-    # ===================== CLIENTES ESPAÑA INCOMPLETOS =====================
+    # ===== CLIENTES ESPAÑA INCOMPLETOS =====
     st.markdown("---")
     st.markdown("## 🧾 Clientes únicos en España con Provincia o Localidad vacías")
 

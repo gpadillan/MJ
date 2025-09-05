@@ -98,11 +98,7 @@ def _resolver_columnas(cols):
     estado  = find_any(["estado","fase","etapa"])
     comer   = find_any(["comercial","propietario","asesor","agente","owner","vendedor","responsable"])
     fecha   = find_any(["fecha factura","fecha_factura","fecha de factura","emision","fecha emision"])
-    # NUEVO: Proyecto
-    proy    = find_any([
-        "proyecto","nombre proyecto","proyecto/curso","curso",
-        "programa","producto","concepto","nombre del curso","nombre del programa"
-    ])
+    proy    = find_any(["proyecto","nombre proyecto","proyecto/curso","curso","programa","producto","concepto","nombre del curso","nombre del programa"])
 
     return {
         "razon": razon, "pend": pend, "total": total, "estado": estado,
@@ -166,6 +162,7 @@ def app():
     if os.path.exists(PREVENTAS_FILE):
         df_preventas = pd.read_excel(PREVENTAS_FILE)
         df_preventas.rename(columns={c: _strip_accents_lower(c) for c in df_preventas.columns}, inplace=True)
+        # (ARREGLO) columnas de importe:
         columnas_importe = [col for col in df_preventas.columns if "importe" in col]
         total_preventas_importe = df_preventas[columnas_importe].sum(numeric_only=True).sum() if columnas_importe else 0
         total_preventas_count   = df_preventas.shape[0]
@@ -187,7 +184,25 @@ def app():
         df_ventas = df_ventas[df_ventas["mes"] == mes_seleccionado]
     st.markdown(f"### {mes_seleccionado}")
 
-    # ======= RESUMEN & COLORES =======
+    # ======= CÁLCULO RÁPIDO FE (para tarjetas superiores) =======
+    pvfe_total_importe_filtrado = 0.0
+    pvfe_path_preview = _encontrar_archivo_pvfe()
+    if pvfe_path_preview and os.path.exists(pvfe_path_preview):
+        try:
+            _df_pvfe_prev = pd.read_excel(pvfe_path_preview)
+            _cols_prev = _resolver_columnas(_df_pvfe_prev.columns)
+            _dfp_prev = _df_pvfe_prev.copy()
+            if _cols_prev["fecha"]:
+                _dfp_prev["_fecha"] = pd.to_datetime(_dfp_prev[_cols_prev["fecha"]], errors="coerce", dayfirst=True)
+                _dfp_prev["_mes_es"] = _dfp_prev["_fecha"].dt.month_name().map(traducciones_meses)
+                if mes_seleccionado != "Todos":
+                    _dfp_prev = _dfp_prev[_dfp_prev["_mes_es"] == mes_seleccionado]
+            if _cols_prev["total"]:
+                pvfe_total_importe_filtrado = pd.to_numeric(_dfp_prev[_cols_prev["total"]], errors="coerce").fillna(0).sum()
+        except Exception:
+            pvfe_total_importe_filtrado = 0.0
+
+    # ======= RESUMEN & COLORES (para gráficos) =======
     resumen = df_ventas.groupby(["nombre_unificado","propietario"]).size().reset_index(name="Total Matrículas")
     totales_propietario = resumen.groupby("propietario")["Total Matrículas"].sum().reset_index()
     totales_propietario["propietario_display"] = totales_propietario.apply(
@@ -241,31 +256,39 @@ def app():
         fig.update_xaxes(categoryorder="array", categoryarray=orden_masters)
         st.plotly_chart(fig)
 
-    # ======= TARJETAS DE TOTALES =======
-    total_importe = df_ventas["importe"].sum() if "importe" in df_ventas.columns else 0
-    total_oportunidades = df_ventas_original.shape[0]
-    col1, col2, col3 = st.columns(3)
+    # ======= TARJETAS DE TOTALES (arriba) =======
+    total_importe_clientify = float(df_ventas["importe"].sum()) if "importe" in df_ventas.columns else 0.0
+    total_importe_fe = float(pvfe_total_importe_filtrado) if pvfe_total_importe_filtrado else 0.0
+    matriculas_count = int(df_ventas.shape[0] if mes_seleccionado != "Todos" else df_ventas_original.shape[0])
+
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.markdown(f"""
             <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #1f77b4;border-radius:8px;'>
-                <h4 style='margin:0'>Importe Total ({mes_seleccionado})</h4>
-                <p style='font-size:1.5rem;font-weight:700;margin:0'>{total_importe:,.2f} €</p>
+                <h4 style='margin:0'>Importe total Clientify</h4>
+                <p style='font-size:1.5rem;font-weight:700;margin:0'>{euro_es(total_importe_clientify)}</p>
             </div>
         """, unsafe_allow_html=True)
     with col2:
-        cantidad_matriculas = df_ventas.shape[0] if mes_seleccionado != "Todos" else total_oportunidades
-        titulo_matriculas = f"Matrículas ({mes_seleccionado})" if mes_seleccionado != "Todos" else f"Matrículas ({ANIO_ACTUAL})"
         st.markdown(f"""
-            <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #1f77b4;border-radius:8px;'>
-                <h4 style='margin:0'>{titulo_matriculas}</h4>
-                <p style='font-size:1.5rem;font-weight:700;margin:0'>{cantidad_matriculas}</p>
+            <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #7f3fbf;border-radius:8px;'>
+                <h4 style='margin:0'>Importe total FE</h4>
+                <p style='font-size:1.5rem;font-weight:700;margin:0'>{euro_es(total_importe_fe)}</p>
             </div>
         """, unsafe_allow_html=True)
     with col3:
+        titulo_matriculas = f"Matrículas ({mes_seleccionado})" if mes_seleccionado != "Todos" else f"Matrículas ({ANIO_ACTUAL})"
+        st.markdown(f"""
+            <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #2ca02c;border-radius:8px;'>
+                <h4 style='margin:0'>{titulo_matriculas}</h4>
+                <p style='font-size:1.5rem;font-weight:700;margin:0'>{matriculas_count}</p>
+            </div>
+        """, unsafe_allow_html=True)
+    with col4:
         st.markdown(f"""
             <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #1f77b4;border-radius:8px;'>
                 <h4 style='margin:0'>Preventas</h4>
-                <p style='font-size:1.5rem;font-weight:700;margin:0'>{total_preventas_importe:,.2f} € ({total_preventas_count})</p>
+                <p style='font-size:1.5rem;font-weight:700;margin:0'>{euro_es(total_preventas_importe)} ({total_preventas_count})</p>
             </div>
         """, unsafe_allow_html=True)
 
@@ -288,18 +311,17 @@ def app():
         cols = _resolver_columnas(df_pvfe_all.columns)
         dfp = df_pvfe_all.copy()
 
-        # FECHA / MES (nombre del mes en español, sin año)
+        # FECHA / MES
         if cols["fecha"]:
             dfp["_fecha"] = pd.to_datetime(dfp[cols["fecha"]], errors="coerce", dayfirst=True)
             dfp["_mes_es"] = dfp["_fecha"].dt.month_name().map(traducciones_meses)
         else:
             dfp["_fecha"] = pd.NaT
             dfp["_mes_es"] = ""
-
         if mes_seleccionado != "Todos":
             dfp = dfp[dfp["_mes_es"] == mes_seleccionado]
 
-        # NUMÉRICOS (si no están, 0)
+        # NUMÉRICOS
         dfp["_pend"]  = pd.to_numeric(dfp[cols["pend"]], errors="coerce").fillna(0) if cols["pend"] else 0
         dfp["_total"] = pd.to_numeric(dfp[cols["total"]], errors="coerce").fillna(0) if cols["total"] else 0
 
@@ -417,6 +439,7 @@ def app():
     # orden: primero con clientify (ventas o preventas), luego solo PV-FE
     all_aliases = set(pvfe_summary.keys()) | set(ventas_by_alias.keys()) | set(preventas_by_alias.keys())
     aliases_clientify = [a for a in all_aliases if (a in ventas_by_alias or a in preventas_by_alias)]
+    # (ARREGLO) línea correcta:
     aliases_solo_pvfe = [a for a in all_aliases if a not in aliases_clientify]
     ordered_aliases = aliases_clientify + aliases_solo_pvfe
 
@@ -438,12 +461,22 @@ def app():
         detail_html = pvfe_details_html.get(alias, "<i>Sin registros</i>")
         nrows = details_rows.get(alias, 1)
 
+        # Diferencia FE−Clientify (píldora)
+        pv_total = float(pv.get("pv_total", 0) or 0)
+        ve_importe = float(ve.get("ventas_importe", 0) or 0)
+        diff_fe_cli = pv_total - ve_importe
+        diff_badge = (
+            f"<span style='margin-left:10px;background:#000;color:#fff;"
+            f"border-radius:8px;padding:3px 8px;font-weight:800;white-space:nowrap;'>"
+            f"FE−Clientify: {euro_es(diff_fe_cli)}</span>"
+        )
+
         ff_block = f"""
             <div style="background:#eef7ff;border:1px solid #d9eaff;border-radius:8px;padding:10px;margin-bottom:8px;color:#000;">
                 <div style="font-weight:900;margin-bottom:4px">Facturación Ficticia</div>
                 <div style="font-weight:700">Registros: <b>{int(pv['pv_regs'])}</b></div>
                 <div style="font-weight:700">Pendiente: <b>{euro_es(pv['pv_pend'])}</b></div>
-                <div style="font-weight:700">Total: <b>{euro_es(pv['pv_total'])}</b></div>
+                <div style="font-weight:700">Total: <b>{euro_es(pv_total)}</b></div>
             </div>
         """
 
@@ -453,7 +486,7 @@ def app():
                 <div style="margin-bottom:6px">
                     <div style="font-weight:800">Ventas</div>
                     <div style="font-weight:700">Matrículas: <b>{int(ve['ventas_count'])}</b></div>
-                    <div style="font-weight:700">Importe: <b>{euro_es(ve['ventas_importe'])}</b></div>
+                    <div style="font-weight:700">Importe: <b>{euro_es(ve_importe)}</b></div>
                 </div>
                 <div>
                     <div style="font-weight:800">Preventas</div>
@@ -463,7 +496,6 @@ def app():
             </div>
         """
 
-        # Altura dinámica: base + 22px por fila (cap en 560)
         base_h = 260
         rows_h = 22 * int(nrows)
         height_guess = min(560, base_h + rows_h)
@@ -473,8 +505,8 @@ def app():
           <div style="background:{card_bg};border:3px solid {ring_color};border-radius:12px;padding:14px;color:{text_color};
                       box-shadow:0 2px 6px rgba(0,0,0,.06); overflow:hidden;">
             <div style="background:{ring_color};color:#fff;border-radius:10px;padding:10px 12px;
-                        font-weight:900;margin:-6px -6px 12px -6px;">
-              {owner_name}
+                        font-weight:900;margin:-6px -6px 12px -6px;display:flex;align-items:center;gap:6px;">
+              <span>{owner_name}</span>{diff_badge}
             </div>
             {ff_block}
             {clientify_block}
