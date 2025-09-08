@@ -278,7 +278,7 @@ def principal_page():
                 df_ventas['importe'] = pd.to_numeric(df_ventas['importe'], errors='coerce').fillna(0)
             df_ventas['mes'] = df_ventas['fecha de cierre'].dt.month
             total_matriculas = len(df_ventas)
-            for m in range(1, 12+1):
+            for m in range(1, 13):
                 df_mes = df_ventas[df_ventas['mes'] == m]
                 matriculas_por_mes[m] = len(df_mes)
                 importes_por_mes[m] = df_mes['importe'].sum()
@@ -292,91 +292,91 @@ def principal_page():
         if columnas_importe:
             total_preventas_importe = df_preventas[columnas_importe].sum(numeric_only=True).sum()
 
-        # ===== GESTIÓN DE COBRO (EIP) =====
-        st.markdown("---")
-        st.markdown("## 💼 Gestión de Cobro (EIP)")
+    # ===== GESTIÓN DE COBRO (EIP) =====
+    st.markdown("---")
+    st.markdown("## 💼 Gestión de Cobro (EIP)")
 
-        df_gestion = None
-        if "excel_data_eip" in st.session_state and st.session_state["excel_data_eip"] is not None:
-            df_gestion = st.session_state["excel_data_eip"].copy()
-        elif os.path.exists(GESTION_FILE):
-            df_gestion = pd.read_excel(GESTION_FILE)
+    df_gestion = None
+    if "excel_data_eip" in st.session_state and st.session_state["excel_data_eip"] is not None:
+        df_gestion = st.session_state["excel_data_eip"].copy()
+    elif os.path.exists(GESTION_FILE):
+        df_gestion = pd.read_excel(GESTION_FILE)
 
-        if df_gestion is None or df_gestion.empty:
-            st.info("No hay datos de Gestión de Cobro disponibles.")
+    if df_gestion is None or df_gestion.empty:
+        st.info("No hay datos de Gestión de Cobro disponibles.")
+    else:
+        df_gestion.columns = [c.strip() for c in df_gestion.columns]
+        col_estado = next((c for c in df_gestion.columns if c.strip().lower() == "estado"), None)
+
+        if not col_estado:
+            st.error("❌ El archivo no contiene la columna 'Estado'.")
         else:
-            df_gestion.columns = [c.strip() for c in df_gestion.columns]
-            col_estado = next((c for c in df_gestion.columns if c.strip().lower() == "estado"), None)
+            columnas_validas = []
+            for anio in range(2018, anio_actual):
+                col = f"Total {anio}"
+                if col in df_gestion.columns:
+                    columnas_validas.append(col)
+            for mes_num in range(1, 13):
+                col_mes = f"{traduccion_meses[mes_num]} {anio_actual}"
+                if col_mes in df_gestion.columns:
+                    columnas_validas.append(col_mes)
 
-            if not col_estado:
-                st.error("❌ El archivo no contiene la columna 'Estado'.")
+            if not columnas_validas:
+                st.info("No se encontraron columnas de totales/meses en el archivo de Gestión de Cobro.")
             else:
-                columnas_validas = []
-                for anio in range(2018, anio_actual):
-                    col = f"Total {anio}"
-                    if col in df_gestion.columns:
-                        columnas_validas.append(col)
-                for mes_num in range(1, 13):
-                    col_mes = f"{traduccion_meses[mes_num]} {anio_actual}"
-                    if col_mes in df_gestion.columns:
-                        columnas_validas.append(col_mes)
+                df_gestion[columnas_validas] = df_gestion[columnas_validas].apply(pd.to_numeric, errors="coerce").fillna(0)
+                df_resumen = (
+                    df_gestion.groupby(col_estado)[columnas_validas]
+                              .sum()
+                              .reset_index()
+                              .rename(columns={col_estado: "Estado"})
+                )
+                df_resumen["Total"] = df_resumen[columnas_validas].sum(axis=1)
 
-                if not columnas_validas:
-                    st.info("No se encontraron columnas de totales/meses en el archivo de Gestión de Cobro.")
-                else:
-                    df_gestion[columnas_validas] = df_gestion[columnas_validas].apply(pd.to_numeric, errors="coerce").fillna(0)
-                    df_resumen = (
-                        df_gestion.groupby(col_estado)[columnas_validas]
-                                  .sum()
-                                  .reset_index()
-                                  .rename(columns={col_estado: "Estado"})
-                    )
-                    df_resumen["Total"] = df_resumen[columnas_validas].sum(axis=1)
+                # === Totales por estado (robusto con acentos) ===
+                def _norm_estado(s):
+                    s = ''.join(ch for ch in unicodedata.normalize('NFD', str(s)) if unicodedata.category(ch) != 'Mn')
+                    s = re.sub(r'\s+', ' ', s).strip().upper()
+                    return s
 
-                    # === Totales por estado (robusto con acentos) ===
-                    def _norm_estado(s):
-                        s = ''.join(ch for ch in unicodedata.normalize('NFD', str(s)) if unicodedata.category(ch) != 'Mn')
-                        s = re.sub(r'\s+', ' ', s).strip().upper()
-                        return s
+                tot_por_estado = {_norm_estado(r["Estado"]): float(r["Total"]) for _, r in df_resumen.iterrows()}
 
-                    tot_por_estado = {_norm_estado(r["Estado"]): float(r["Total"]) for _, r in df_resumen.iterrows()}
+                cobrado          = tot_por_estado.get("COBRADO", 0.0)
+                domic_confirmada = tot_por_estado.get("DOMICILIACION CONFIRMADA", 0.0)
+                domic_emitida    = tot_por_estado.get("DOMICILIACION EMITIDA", 0.0)  # ← añadida a fila 1
+                pendiente        = tot_por_estado.get("PENDIENTE", 0.0)
+                dudoso           = tot_por_estado.get("DUDOSO COBRO", 0.0)
+                incobrable       = tot_por_estado.get("INCROBRABLE", tot_por_estado.get("INCOBRABLE", 0.0))
+                no_cobrado       = tot_por_estado.get("NO COBRADO", 0.0)
 
-                    cobrado          = tot_por_estado.get("COBRADO", 0.0)
-                    domic_confirmada = tot_por_estado.get("DOMICILIACION CONFIRMADA", 0.0)
-                    domic_emitida    = tot_por_estado.get("DOMICILIACION EMITIDA", 0.0)  # ← la añadimos a la fila 1
-                    pendiente        = tot_por_estado.get("PENDIENTE", 0.0)
-                    dudoso           = tot_por_estado.get("DUDOSO COBRO", 0.0)
-                    incobrable       = tot_por_estado.get("INCROBRABLE", tot_por_estado.get("INCOBRABLE", 0.0))
-                    no_cobrado       = tot_por_estado.get("NO COBRADO", 0.0)
+                # ✅ Total Generado = Cobrado + Confirmada + Emitida
+                total_generado = cobrado + domic_confirmada + domic_emitida
 
-                    # ✅ Total Generado ahora suma Cobrado + Confirmada + Emitida
-                    total_generado = cobrado + domic_confirmada + domic_emitida
+                # Paleta
+                COLORS = {
+                    "COBRADO": "#E3F2FD",
+                    "CONFIRMADA": "#FFE0B2",
+                    "EMITIDA": "#FFF9C4",
+                    "TOTAL": "#D3F9D8",
+                    "PENDIENTE": "#E6FCF5",
+                    "DUDOSO": "#FFEBEE",
+                    "INCOBRABLE": "#FCE4EC",
+                    "NOCOBRADO": "#ECEFF1",
+                }
 
-                    # Paleta
-                    COLORS = {
-                        "COBRADO": "#E3F2FD",
-                        "CONFIRMADA": "#FFE0B2",
-                        "EMITIDA": "#FFF9C4",
-                        "TOTAL": "#D3F9D8",
-                        "PENDIENTE": "#E6FCF5",
-                        "DUDOSO": "#FFEBEE",
-                        "INCOBRABLE": "#FCE4EC",
-                        "NOCOBRADO": "#ECEFF1",
-                    }
+                # ===== Fila 1: Cobrado | Confirmada | Emitida | Total Generado =====
+                c1, c2, c3, c4 = st.columns(4)
+                c1.markdown(render_bar_card("Cobrado", cobrado, COLORS["COBRADO"], "💵"), unsafe_allow_html=True)
+                c2.markdown(render_bar_card("Domiciliación Confirmada", domic_confirmada, COLORS["CONFIRMADA"], "💷"), unsafe_allow_html=True)
+                c3.markdown(render_bar_card("Domiciliación Emitida", domic_emitida, COLORS["EMITIDA"], "📤"), unsafe_allow_html=True)
+                c4.markdown(render_bar_card("Total Generado", total_generado, COLORS["TOTAL"], "💰"), unsafe_allow_html=True)
 
-                    # ===== Fila 1: Cobrado | Domiciliación Confirmada | Domiciliación Emitida | Total Generado =====
-                    c1, c2, c3, c4 = st.columns(4)
-                    c1.markdown(render_bar_card("Cobrado", cobrado, COLORS["COBRADO"], "💵​"), unsafe_allow_html=True)
-                    c2.markdown(render_bar_card("Domiciliación Confirmada", domic_confirmada, COLORS["CONFIRMADA"], "💷​"), unsafe_allow_html=True)
-                    c3.markdown(render_bar_card("Domiciliación Emitida", domic_emitida, COLORS["EMITIDA"], "📤"), unsafe_allow_html=True)
-                    c4.markdown(render_bar_card("Total Generado", total_generado, COLORS["TOTAL"], "💰"), unsafe_allow_html=True)
-
-                    # ===== Fila 2: Pendiente | Dudoso Cobro | Incobrable | No Cobrado =====
-                    b1, b2, b3, b4 = st.columns(4)
-                    b1.markdown(render_bar_card("Pendiente", pendiente, COLORS["PENDIENTE"], "⏳"), unsafe_allow_html=True)
-                    b2.markdown(render_bar_card("Dudoso Cobro", dudoso, COLORS["DUDOSO"], "❗"), unsafe_allow_html=True)
-                    b3.markdown(render_bar_card("Incobrable", incobrable, COLORS["INCOBRABLE"], "⛔"), unsafe_allow_html=True)
-                    b4.markdown(render_bar_card("No Cobrado", no_cobrado, COLORS["NOCOBRADO"], "🧾"), unsafe_allow_html=True)
+                # ===== Fila 2: Pendiente | Dudoso | Incobrable | No Cobrado =====
+                b1, b2, b3, b4 = st.columns(4)
+                b1.markdown(render_bar_card("Pendiente", pendiente, COLORS["PENDIENTE"], "⏳"), unsafe_allow_html=True)
+                b2.markdown(render_bar_card("Dudoso Cobro", dudoso, COLORS["DUDOSO"], "❗"), unsafe_allow_html=True)
+                b3.markdown(render_bar_card("Incobrable", incobrable, COLORS["INCOBRABLE"], "⛔"), unsafe_allow_html=True)
+                b4.markdown(render_bar_card("No Cobrado", no_cobrado, COLORS["NOCOBRADO"], "🧾"), unsafe_allow_html=True)
 
     # ===== ADMISIONES =====
     st.markdown("## 📥 Admisiones")
