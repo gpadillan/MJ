@@ -162,11 +162,11 @@ def principal_page():
             # ======= FILA 1: Cobrado | Domiciliación Confirmada | Domiciliación Emitida | Total generado =======
             cols_top = st.columns(4)
             cols_top[0].markdown(
-                render_import_card("📒 Cobrado", f"€ {format_euro(cobrado)}", COLOR_MAP["COBRADO"]),
+                render_import_card("💵​ Cobrado", f"€ {format_euro(cobrado)}", COLOR_MAP["COBRADO"]),
                 unsafe_allow_html=True
             )
             cols_top[1].markdown(
-                render_import_card("📘 Domiciliación Confirmada", f"€ {format_euro(domic_confirmada)}", COLOR_MAP["DOMICILIACIÓN CONFIRMADA"]),
+                render_import_card("💷​ Domiciliación Confirmada", f"€ {format_euro(domic_confirmada)}", COLOR_MAP["DOMICILIACIÓN CONFIRMADA"]),
                 unsafe_allow_html=True
             )
             cols_top[2].markdown(

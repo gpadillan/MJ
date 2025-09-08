@@ -366,8 +366,8 @@ def principal_page():
 
                     # ===== Fila 1: Cobrado | Domiciliación Confirmada | Domiciliación Emitida | Total Generado =====
                     c1, c2, c3, c4 = st.columns(4)
-                    c1.markdown(render_bar_card("Cobrado", cobrado, COLORS["COBRADO"], "🟦"), unsafe_allow_html=True)
-                    c2.markdown(render_bar_card("Domiciliación Confirmada", domic_confirmada, COLORS["CONFIRMADA"], "🟧"), unsafe_allow_html=True)
+                    c1.markdown(render_bar_card("Cobrado", cobrado, COLORS["COBRADO"], "💵​"), unsafe_allow_html=True)
+                    c2.markdown(render_bar_card("Domiciliación Confirmada", domic_confirmada, COLORS["CONFIRMADA"], "💷​"), unsafe_allow_html=True)
                     c3.markdown(render_bar_card("Domiciliación Emitida", domic_emitida, COLORS["EMITIDA"], "📤"), unsafe_allow_html=True)
                     c4.markdown(render_bar_card("Total Generado", total_generado, COLORS["TOTAL"], "💰"), unsafe_allow_html=True)
 
