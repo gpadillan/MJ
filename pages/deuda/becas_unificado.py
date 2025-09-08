@@ -216,7 +216,7 @@ def render():
         df_beca[sel_meses] = df_beca[sel_meses].apply(pd.to_numeric, errors="coerce").fillna(0)
         rest = df_beca[sel_meses].sum().reset_index()
         rest.columns = ["Mes", "Suma Total"]
-        st.markdown("#### 📅 Meses restantes (tarjetas)")
+        st.markdown("#### 📅 Meses restantes")
         html.write("<h3>Meses restantes (tarjetas)</h3>")
         for i in range(0, len(rest), 4):
             row = st.columns(4)
@@ -251,7 +251,7 @@ def render():
         fut = fut[fut["Suma Total"] > 0].reset_index(drop=True)
 
         if not fut.empty:
-            st.markdown("#### ⏭️ Años futuros (tarjetas)")
+            st.markdown("#### ⏭️ Años futuros")
             html.write("<h3>Años futuros (tarjetas)</h3>")
             for i in range(0, len(fut), 4):
                 row = st.columns(4)

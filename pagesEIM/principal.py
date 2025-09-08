@@ -9,6 +9,8 @@ import folium
 from utils.geo_utils import normalize_text, PROVINCIAS_COORDS, PAISES_COORDS, geolocalizar_pais
 import unicodedata
 import re
+from io import BytesIO
+import base64
 
 # ===================== UTILS =====================
 
@@ -133,16 +135,17 @@ def principal_page():
 
             tot_por_estado = { _norm_key(r["Estado"]): float(r["Total"]) for _, r in df_estado.iterrows() }
 
-            # Valores que necesitaremos
+            # Valores por estado
             cobrado          = tot_por_estado.get("COBRADO", 0.0)
             domic_confirmada = tot_por_estado.get("DOMICILIACION CONFIRMADA", 0.0)
+            domic_emitida    = tot_por_estado.get("DOMICILIACION EMITIDA", 0.0)  # ← incluir en 1ª fila y Total
             pendiente        = tot_por_estado.get("PENDIENTE", 0.0)
             dudoso           = tot_por_estado.get("DUDOSO COBRO", 0.0)
             incobrable       = tot_por_estado.get("INCOBRABLE", 0.0)
-            domic_emitida    = tot_por_estado.get("DOMICILIACION EMITIDA", 0.0)
             no_cobrado       = tot_por_estado.get("NO COBRADO", 0.0)
 
-            total_generado = cobrado + domic_confirmada
+            # ✅ Total generado = Cobrado + Confirmada + Emitida
+            total_generado = cobrado + domic_confirmada + domic_emitida
 
             # Colores
             COLOR_MAP = {
@@ -156,8 +159,8 @@ def principal_page():
                 "TOTAL GENERADO": "#D3F9D8",
             }
 
-            # ======= FILA 1: Cobrado | Domiciliación Confirmada | Total generado =======
-            cols_top = st.columns(3)
+            # ======= FILA 1: Cobrado | Domiciliación Confirmada | Domiciliación Emitida | Total generado =======
+            cols_top = st.columns(4)
             cols_top[0].markdown(
                 render_import_card("📒 Cobrado", f"€ {format_euro(cobrado)}", COLOR_MAP["COBRADO"]),
                 unsafe_allow_html=True
@@ -167,18 +170,21 @@ def principal_page():
                 unsafe_allow_html=True
             )
             cols_top[2].markdown(
+                render_import_card("📤 Domiciliación Emitida", f"€ {format_euro(domic_emitida)}", COLOR_MAP["DOMICILIACIÓN EMITIDA"]),
+                unsafe_allow_html=True
+            )
+            cols_top[3].markdown(
                 render_import_card("💰 Total generado", f"€ {format_euro(total_generado)}", COLOR_MAP["TOTAL GENERADO"]),
                 unsafe_allow_html=True
             )
 
-            # ======= FILA 2: Pendiente | Dudoso Cobro | Incobrable | Domiciliación Emitida | No Cobrado (5 en línea) =======
-            cols_bottom = st.columns(5)
+            # ======= FILA 2: Pendiente | Dudoso Cobro | Incobrable | No Cobrado (4 en línea) =======
+            cols_bottom = st.columns(4)
             items_bottom = [
-                ("⏳ Pendiente",               pendiente,     "PENDIENTE"),
-                ("❗ Dudoso Cobro",           dudoso,        "DUDOSO COBRO"),
-                ("🚫 Incobrable",             incobrable,    "INCOBRABLE"),
-                ("📤 Domiciliación Emitida",  domic_emitida, "DOMICILIACIÓN EMITIDA"),
-                ("🧾 No Cobrado",             no_cobrado,    "NO COBRADO"),
+                ("⏳ Pendiente",   pendiente,  "PENDIENTE"),
+                ("❗ Dudoso Cobro", dudoso,   "DUDOSO COBRO"),
+                ("🚫 Incobrable",  incobrable, "INCOBRABLE"),
+                ("🧾 No Cobrado",  no_cobrado, "NO COBRADO"),
             ]
             for (title, amount, key), col in zip(items_bottom, cols_bottom):
                 color = COLOR_MAP.get(key, "#F5F5F5")
@@ -186,10 +192,6 @@ def principal_page():
                     render_import_card(title, f"€ {format_euro(amount)}", color),
                     unsafe_allow_html=True
                 )
-
-            # (Opcional) TOTAL absoluto de todo lo leído: lo dejo fuera porque no lo pediste
-            # total_abs = float(df_estado["Total"].sum())
-            # st.markdown(render_import_card("TOTAL (todos los estados)", f"€ {format_euro(total_abs)}", "#D1C4E9"), unsafe_allow_html=True)
 
     else:
         st.info("No hay datos de Gestión de Cobro (EIM). Sube el Excel en la sección **EIM** o publica un archivo en `uploaded/archivo_cargado_eim.xlsx`.")
@@ -322,9 +324,6 @@ def principal_page():
             st.success("✅ No hay registros en España con Provincia o Localidad vacías.")
         else:
             st.dataframe(df_incompletos, use_container_width=True)
-
-            from io import BytesIO
-            import base64
 
             def to_excel_bytes(df_):
                 output = BytesIO()

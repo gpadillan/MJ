@@ -29,7 +29,6 @@ COLORES_FIJOS = {
 }
 
 def num_es(v: float, dec: int = 2) -> str:
-    """Formato español con coma decimal."""
     try:
         f = float(v)
     except Exception:
@@ -46,7 +45,6 @@ def num_es_sin_dec(v: float) -> str:
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
 def y_range_con_padding(series):
-    """Devuelve rango Y con padding para soportar positivos y negativos."""
     vals = pd.to_numeric(series, errors="coerce").fillna(0)
     vmin = float(vals.min() if len(vals) else 0)
     vmax = float(vals.max() if len(vals) else 0)
@@ -78,8 +76,8 @@ def render():
 
     # ===== filtros =====
     estados_unicos = sorted(df['Estado'].dropna().unique())
-    columnas_totales = [f'Total {a}' for a in range(2018, anio_actual)]          # históricos
-    meses_actuales = [f'{m} {anio_actual}' for m in MESES_ES]                     # año actual
+    columnas_totales = [f'Total {a}' for a in range(2018, anio_actual)]
+    meses_actuales = [f'{m} {anio_actual}' for m in MESES_ES]
     columnas_disponibles = columnas_totales + meses_actuales
 
     estados_seleccionados = st.multiselect(
@@ -104,16 +102,11 @@ def render():
         st.info("Selecciona al menos una columna válida.")
         return
 
-    # numéricos en solo las columnas elegidas
     df[columnas_existentes] = df[columnas_existentes].apply(pd.to_numeric, errors='coerce').fillna(0)
-
-    # dataset filtrado por estado
     df_filtrado = df[df['Estado'].isin(estados_seleccionados)].copy()
-
-    # agrupado por estado (no mostramos tabla)
     df_grouped = df_filtrado.groupby("Estado")[columnas_existentes].sum().reset_index()
 
-    # ===== 1) Total acumulado por Estado (primero) =====
+    # ===== 1) Total acumulado por Estado =====
     width, height = get_screen_size()
     df_grouped["Total acumulado"] = df_grouped[columnas_existentes].sum(axis=1)
 
@@ -124,7 +117,9 @@ def render():
         color_discrete_map=COLORES_FIJOS,
         orientation="h",
         template="plotly_white",
-        text=df_grouped.sort_values("Total acumulado", ascending=True)["Total acumulado"].apply(lambda v: f"€ {num_es_sin_dec(v)}")
+        text=df_grouped.sort_values("Total acumulado", ascending=True)["Total acumulado"].apply(
+            lambda v: f"€ {num_es_sin_dec(v)}"
+        )
     )
     fig_total.update_traces(textposition="outside", textfont=dict(size=12), cliponaxis=False)
     fig_total.update_layout(
@@ -152,7 +147,6 @@ def render():
         color_estado = COLORES_FIJOS.get(estado.strip().upper(), "#3b82f6")
         c1, c2 = st.columns(2)
 
-        # ---- Históricos ----
         if cols_hist_sorted:
             serie_hist = row[cols_hist_sorted].iloc[0]
             df_hist = pd.DataFrame({"Periodo": cols_hist_sorted, "Total": serie_hist.values})
@@ -164,7 +158,6 @@ def render():
                 template="plotly_white",
                 text=df_hist["Total"].apply(lambda v: f"€ {num_es_sin_dec(v)}")
             )
-            # >>> más claro (opacidad) y contorno
             fig_hist.update_traces(marker=dict(opacity=0.45, line=dict(color=color_estado, width=1.2)))
             fig_hist.update_yaxes(range=y_range_con_padding(df_hist["Total"]))
             fig_hist.update_layout(
@@ -179,7 +172,6 @@ def render():
         else:
             c1.info("Sin columnas históricas seleccionadas.")
 
-        # ---- Año actual por meses ----
         if mes_order:
             serie_mes = row[mes_order].iloc[0]
             df_mes = pd.DataFrame({"Periodo": mes_order, "Total": serie_mes.values})
@@ -214,14 +206,12 @@ def render():
                    .sum()
                    .reset_index()
         )
-        # quita categorías 0 para limpiar la tarta
         resumen_pago = resumen_pago[resumen_pago["Total Periodo"] != 0]
 
         st.markdown("### Distribución Forma de Pago (filtrada)")
         if resumen_pago.empty:
             st.info("No hay importes para los filtros actuales.")
         else:
-            # tarta (no donut) para evitar desconfiguración al ocultar leyenda
             fig_pago = px.pie(
                 resumen_pago,
                 names="Forma Pago",
@@ -243,6 +233,10 @@ def render():
     df_final = df_grouped.copy()
     df_final["Total fila"] = df_final[columnas_existentes].sum(axis=1)
 
+    # >>>>>>>>>> CLAVE PARA EL TICK VERDE EN "Hojas disponibles"
+    st.session_state["descarga_global"] = df_final  # <<<<<<<< AQUÍ ESTABA EL FALTANTE
+    # >>>>>>>>>>
+
     st.markdown("---")
     st.subheader("📥 Exportar esta hoja")
     buffer = io.BytesIO()
@@ -256,7 +250,7 @@ def render():
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    # Informe HTML (incluye todo ya con padding y tarta normal)
+    # Informe HTML
     st.markdown("### 💾 Exportar informe visual")
     html_buffer = io.StringIO()
     html_buffer.write("<html><head><meta charset='utf-8'><title>Informe de Estado</title></head><body>")
@@ -273,7 +267,6 @@ def render():
             continue
         color_estado = COLORES_FIJOS.get(estado.strip().upper(), "#3b82f6")
 
-        # Históricos (HTML) con opacidad
         if cols_hist_sorted:
             serie_hist = row[cols_hist_sorted].iloc[0]
             df_hist = pd.DataFrame({"Periodo": cols_hist_sorted, "Total": serie_hist.values})
@@ -284,7 +277,7 @@ def render():
                 template="plotly_white",
                 text=df_hist["Total"].apply(lambda v: f"€ {num_es_sin_dec(v)}")
             )
-            fig_hist.update_traces(marker=dict(opacity=0.45, line=dict(color=color_estado, width=1.2)))  # << claro
+            fig_hist.update_traces(marker=dict(opacity=0.45, line=dict(color=color_estado, width=1.2)))
             fig_hist.update_yaxes(range=y_range_con_padding(df_hist["Total"]))
             fig_hist.update_traces(textposition="outside", textfont=dict(size=14), cliponaxis=False)
             fig_hist.update_layout(
@@ -296,7 +289,6 @@ def render():
             )
             html_buffer.write(pio.to_html(fig_hist, include_plotlyjs='cdn', full_html=False))
 
-        # Meses (HTML)
         if mes_order:
             serie_mes = row[mes_order].iloc[0]
             df_mes = pd.DataFrame({"Periodo": mes_order, "Total": serie_mes.values})
@@ -323,9 +315,7 @@ def render():
         df_pago = df[df["Estado"].isin(estados_seleccionados)].copy()
         df_pago["Total Periodo"] = df_pago[columnas_existentes].sum(axis=1)
         resumen_pago = (
-            df_pago.groupby("Forma Pago", dropna=False)["Total Periodo"]
-                   .sum()
-                   .reset_index()
+            df_pago.groupby("Forma Pago", dropna=False)["Total Periodo"].sum().reset_index()
         )
         resumen_pago = resumen_pago[resumen_pago["Total Periodo"] != 0]
         if not resumen_pago.empty:
@@ -352,4 +342,6 @@ def render():
     os.makedirs("uploaded", exist_ok=True)
     with open("uploaded/reporte_estado.html", "w", encoding="utf-8") as f:
         f.write(html_buffer.getvalue())
+
+    # Ya lo guardabas, lo dejo aquí igualmente:
     st.session_state["html_global"] = html_buffer.getvalue()
