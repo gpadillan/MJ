@@ -1,4 +1,4 @@
-﻿# pendiente_total_page.py
+﻿# pages/deuda/pendiente.py  (Pendiente Total)
 
 import io
 from datetime import datetime
@@ -153,8 +153,7 @@ def vista_clientes_pendientes():
     else:
         _FIG_22_25 = None
 
-    # ---------------- Cards por año ----------------
-    st.markdown("## 🧮 Pendiente TOTAL (por año)")
+    # ---------------- Cards por año (solo mostrar años con total > 0) ----------------
     columnas_totales = [c for c in df_pendiente.columns
                         if c.startswith("Total ") and c.split()[-1].isdigit()
                         and int(c.split()[-1]) <= año_actual]
@@ -164,6 +163,8 @@ def vista_clientes_pendientes():
         "Suma_Total": [df_pendiente[c].sum() for c in columnas_totales],
         "Num_Clientes": [(df_pendiente.groupby("Cliente")[c].sum() > 0).sum() for c in columnas_totales],
     })
+    # ⛔️ Ocultar años con total 0
+    resumen_total = resumen_total[resumen_total["Suma_Total"] != 0].reset_index(drop=True)
 
     def _card(title, amount, ncli):
         return f"""
@@ -177,12 +178,16 @@ def vista_clientes_pendientes():
           </div>
         </div>
         """
-    for i in range(0, len(resumen_total), 4):
-        cols = st.columns(4)
-        for j, c in enumerate(cols):
-            if i + j >= len(resumen_total): break
-            row = resumen_total.iloc[i + j]
-            c.markdown(_card(f"Total {row['Año']}", row["Suma_Total"], row["Num_Clientes"]), unsafe_allow_html=True)
+
+    # Solo mostrar el bloque si hay años con total > 0
+    if not resumen_total.empty:
+        st.markdown("## 🧮 Pendiente TOTAL (por año)")
+        for i in range(0, len(resumen_total), 4):
+            cols = st.columns(4)
+            for j, c in enumerate(cols):
+                if i + j >= len(resumen_total): break
+                row = resumen_total.iloc[i + j]
+                c.markdown(_card(f"Total {row['Año']}", row["Suma_Total"], row["Num_Clientes"]), unsafe_allow_html=True)
 
     # ---------------- Totales consolidados ----------------
     num_clientes_total = len(total_clientes_unicos)
@@ -326,4 +331,3 @@ def render():
             file_name="reporte_deuda.html",
             mime="text/html"
         )
-

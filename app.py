@@ -14,7 +14,7 @@ DEFAULTS = {
     'excel_filename': "",
     'excel_data': None,
     'upload_time': None,
-    'unidad': "EIP",  # 👈 Selector EIP/EIM controlado desde sidebar
+    'unidad': "EIP",  # EIP / EIM / Mainjobs B2C
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -54,7 +54,7 @@ def add_custom_css():
         """, unsafe_allow_html=True)
 
 # ===================== Router =====================
-# ---- Rutas para EIP (tu estructura actual en /pages) ----
+# ---- Rutas para EIP (/pages) ----
 ROUTES_EIP = {
     "Inicio":              ("pages.inicio",                    "inicio_page"),
     "Admisiones":          ("pages.admisiones.main_admisiones","app"),
@@ -64,13 +64,7 @@ ROUTES_EIP = {
     "Principal":           ("pages.principal",                 "principal_page"),
 }
 
-# ---- Rutas para EIM (espejo en /pagesEIM con las MISMAS funciones) ----
-# Asegúrate de crear:
-#   pagesEIM/__init__.py
-#   pagesEIM/academica/__init__.py
-#   pagesEIM/admisiones/__init__.py
-#   pagesEIM/deuda/__init__.py
-# y los módulos con las funciones indicadas abajo.
+# ---- Rutas para EIM (/pagesEIM) ----
 ROUTES_EIM = {
     "Inicio":              ("pagesEIM.inicio",                     "inicio_page"),
     "Admisiones":          ("pagesEIM.admisiones.main_admisiones", "app"),
@@ -80,10 +74,32 @@ ROUTES_EIM = {
     "Principal":           ("pagesEIM.principal",                  "principal_page"),
 }
 
+# ---- Rutas para Mainjobs B2C (/pagesB2C) ----
+# Solo tiene “Principal” (suma EIP+EIM)
+ROUTES_B2C = {
+    "Principal":           ("pagesB2C.principal",                 "principal_page"),
+}
+
+def _get_routes_for_unidad(unidad: str):
+    if unidad == "EIP":
+        return ROUTES_EIP
+    if unidad == "EIM":
+        return ROUTES_EIM
+    if unidad == "Mainjobs B2C":
+        return ROUTES_B2C
+    # fallback
+    return ROUTES_EIP
+
 def route_page():
-    unidad = st.session_state.get("unidad", "EIP")          # "EIP" / "EIM"
-    page   = st.session_state.get("current_page", "Inicio") # etiqueta del sidebar
-    routes = ROUTES_EIP if unidad == "EIP" else ROUTES_EIM
+    unidad = st.session_state.get("unidad", "EIP")
+    page   = st.session_state.get("current_page", "Inicio")
+    routes = _get_routes_for_unidad(unidad)
+
+    # Si la página actual no existe en el ámbito elegido, forzamos una válida
+    if page not in routes:
+        # En B2C solo hay “Principal”
+        st.session_state["current_page"] = list(routes.keys())[0]
+        page = st.session_state["current_page"]
 
     module_path, func_name = routes.get(page, (None, None))
     if not module_path:
@@ -118,7 +134,7 @@ def main():
         login_page()
         return
 
-    # Sidebar (selector EIP/EIM + navegación)
+    # Sidebar (selector EIP/EIM/Mainjobs B2C + navegación)
     show_sidebar()
 
     # Router
