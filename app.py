@@ -20,6 +20,10 @@ for k, v in DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
+# Mantener memoria del ámbito anterior para detectar cambios
+if "_unidad_prev" not in st.session_state:
+    st.session_state["_unidad_prev"] = st.session_state["unidad"]
+
 # ===================== Config de página =====================
 st.set_page_config(
     page_title="Sistema de Gestión",
@@ -75,7 +79,6 @@ ROUTES_EIM = {
 }
 
 # ---- Rutas para Mainjobs B2C (/pagesB2C) ----
-# Solo tiene “Principal” (suma EIP+EIM)
 ROUTES_B2C = {
     "Principal":           ("pagesB2C.principal",                 "principal_page"),
 }
@@ -87,7 +90,6 @@ def _get_routes_for_unidad(unidad: str):
         return ROUTES_EIM
     if unidad == "Mainjobs B2C":
         return ROUTES_B2C
-    # fallback
     return ROUTES_EIP
 
 def route_page():
@@ -95,9 +97,7 @@ def route_page():
     page   = st.session_state.get("current_page", "Inicio")
     routes = _get_routes_for_unidad(unidad)
 
-    # Si la página actual no existe en el ámbito elegido, forzamos una válida
     if page not in routes:
-        # En B2C solo hay “Principal”
         st.session_state["current_page"] = list(routes.keys())[0]
         page = st.session_state["current_page"]
 
@@ -107,7 +107,6 @@ def route_page():
         st.info("Ruta no definida para esta página.")
         return
 
-    # Carga dinámica del módulo
     try:
         mod = importlib.import_module(module_path)
     except ModuleNotFoundError:
@@ -115,14 +114,12 @@ def route_page():
         st.info("Esta sección para el ámbito seleccionado aún no existe.")
         return
 
-    # Obtiene la función a ejecutar
     fn = getattr(mod, func_name, None)
     if fn is None:
         st.title(f"{page} · {unidad}")
         st.info(f"La página no define la función `{func_name}()`.")
         return
 
-    # Etiqueta de ámbito activo visible en cada página
     st.caption(f"Ámbito activo: **{unidad}**")
     fn()
 
@@ -134,8 +131,24 @@ def main():
         login_page()
         return
 
+    # Guardamos el ámbito antes de que el sidebar lo pueda cambiar
+    prev = st.session_state.get("_unidad_prev", st.session_state["unidad"])
+
     # Sidebar (selector EIP/EIM/Mainjobs B2C + navegación)
     show_sidebar()
+
+    # Si el usuario cambió el ámbito en el sidebar, hacer rerun inmediato
+    if st.session_state["unidad"] != prev:
+        st.session_state["_unidad_prev"] = st.session_state["unidad"]
+
+        # (opcional) si entras a B2C fuerza "Principal" para evitar páginas inexistentes
+        if st.session_state["unidad"] == "Mainjobs B2C":
+            st.session_state["current_page"] = "Principal"
+        # Si vuelves a EIP/EIM y estabas en "Principal", mantenemos la que tengas, o "Inicio"
+        if st.session_state["unidad"] in ("EIP", "EIM") and st.session_state.get("current_page") not in _get_routes_for_unidad(st.session_state["unidad"]):
+            st.session_state["current_page"] = "Inicio"
+
+        st.rerun()
 
     # Router
     route_page()
