@@ -15,7 +15,7 @@ from utils.geo_utils import (
 )
 
 # =========================================================
-# Utils visuales
+# Utils
 # =========================================================
 def format_euro(value: float) -> str:
     try:
@@ -24,18 +24,21 @@ def format_euro(value: float) -> str:
         v = 0.0
     return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-def render_card_big(title: str, value: float, bg="#eef4ff", fg="#1f2d3d") -> str:
+def render_bar_card(title: str, value: float, bg: str, emoji: str = "") -> str:
+    """Tarjeta grande con el mismo look que usas en EIP."""
     return f"""
     <div style="
-        background:{bg};
-        border:1px solid #dfe3eb;
-        border-radius:16px;
-        padding:18px 20px;
-        box-shadow:0 3px 8px rgba(0,0,0,.07);
-        min-height:108px;
-        display:flex;flex-direction:column;justify-content:center;">
-      <div style="font-weight:800;font-size:16px;margin-bottom:8px;color:{fg}">{title}</div>
-      <div style="font-size:30px;font-weight:900;color:{fg}">€ {format_euro(value)}</div>
+      background:{bg};
+      border:1px solid rgba(0,0,0,.05);
+      border-radius:16px;
+      padding:16px 18px;
+      box-shadow:0 3px 8px rgba(0,0,0,.06);
+      min-height:104px;
+      display:flex;flex-direction:column;justify-content:center;">
+        <div style="font-weight:800;font-size:15px;color:#2d3748;margin-bottom:6px">
+          {emoji} {title}
+        </div>
+        <div style="font-size:30px;font-weight:900;color:#111827">€ {format_euro(value)}</div>
     </div>
     """
 
@@ -43,7 +46,7 @@ def render_card_big(title: str, value: float, bg="#eef4ff", fg="#1f2d3d") -> str
 # Carga EIM: sesión -> disco (dos rutas compatibles)
 # =========================================================
 EIM_UPLOAD_FALLBACKS = [
-    os.path.join("uploaded_eim", "archivo_cargado.xlsx"),   # 📍 donde guarda la sección EIM
+    os.path.join("uploaded_eim", "archivo_cargado.xlsx"),   # donde guarda la sección EIM
     os.path.join("uploaded", "archivo_cargado_eim.xlsx"),   # compatibilidad
 ]
 
@@ -94,97 +97,87 @@ def principal_page():
     anio_actual = datetime.now().year
 
     # ===================== GESTIÓN DE COBRO (EIM) =====================
+    st.markdown("---")
     st.markdown("## 💼 Gestión de Cobro (EIM)")
 
     df_gestion = load_eim_df_from_session_or_file()
 
-    if df_gestion is None or df_gestion.empty or ("Estado" not in df_gestion.columns):
+    if df_gestion is None or df_gestion.empty:
         rutas_txt = " o ".join([f"`{p}`" for p in EIM_UPLOAD_FALLBACKS])
         st.info(
-            f"No hay datos de Gestión de Cobro (EIM). "
+            f"No hay datos de Gestión de Cobro disponibles. "
             f"Sube el Excel en la sección **EIM** o publica un archivo en {rutas_txt}."
         )
     else:
-        # Columnas válidas: totales históricos + meses del año actual
-        df_g = df_gestion.copy()
-        df_g.columns = [str(c).strip() for c in df_g.columns]
-        col_estado = next((c for c in df_g.columns if c.strip().lower() == "estado"), None)
-        if col_estado is None:
-            st.error("❌ El archivo de EIM no contiene la columna 'Estado'.")
+        # Normaliza encabezados y localiza 'Estado'
+        df_gestion.columns = [c.strip() for c in df_gestion.columns]
+        col_estado = next((c for c in df_gestion.columns if c.strip().lower() == "estado"), None)
+
+        if not col_estado:
+            st.error("❌ El archivo no contiene la columna 'Estado'.")
         else:
+            # Detecta columnas válidas (2018..año-1 + meses año actual)
             columnas_validas = []
             for anio in range(2018, anio_actual):
-                c = f"Total {anio}"
-                if c in df_g.columns:
-                    columnas_validas.append(c)
-            for m in range(1, 12 + 1):
-                c = f"{MESES_NOMBRE[m]} {anio_actual}"
-                if c in df_g.columns:
-                    columnas_validas.append(c)
+                col = f"Total {anio}"
+                if col in df_gestion.columns:
+                    columnas_validas.append(col)
+            for mes_num in range(1, 13):
+                col_mes = f"{MESES_NOMBRE[mes_num]} {anio_actual}"
+                if col_mes in df_gestion.columns:
+                    columnas_validas.append(col_mes)
 
             if not columnas_validas:
-                st.info("No se encontraron columnas de totales/meses para agregar.")
+                st.info("No se encontraron columnas de totales/meses en el archivo de Gestión de Cobro.")
             else:
-                df_g[columnas_validas] = df_g[columnas_validas].apply(pd.to_numeric, errors="coerce").fillna(0)
-
-                # Agrupar por estado
-                grp = (
-                    df_g.groupby(col_estado)[columnas_validas]
-                        .sum()
-                        .reset_index()
-                        .rename(columns={col_estado: "Estado"})
+                df_gestion[columnas_validas] = df_gestion[columnas_validas].apply(pd.to_numeric, errors="coerce").fillna(0)
+                df_resumen = (
+                    df_gestion.groupby(col_estado)[columnas_validas]
+                              .sum()
+                              .reset_index()
+                              .rename(columns={col_estado: "Estado"})
                 )
-                grp["Total"] = grp[columnas_validas].sum(axis=1)
+                df_resumen["Total"] = df_resumen[columnas_validas].sum(axis=1)
 
-                # Hash normalizado -> importe
-                tot_estado = { _norm_estado(r["Estado"]): float(r["Total"]) for _, r in grp.iterrows() }
+                # === Totales por estado (robusto con acentos) ===
+                tot_por_estado = {_norm_estado(r["Estado"]): float(r["Total"]) for _, r in df_resumen.iterrows()}
 
-                cobrado          = tot_estado.get("COBRADO", 0.0)
-                dom_conf         = tot_estado.get("DOMICILIACION CONFIRMADA", 0.0)
-                dom_emit         = tot_estado.get("DOMICILIACION EMITIDA", 0.0)
-                pendiente        = tot_estado.get("PENDIENTE", 0.0)
-                dudoso           = tot_estado.get("DUDOSO COBRO", 0.0)
-                incobrable       = tot_estado.get("INCOBRABLE", 0.0)
-                no_cobrado       = tot_estado.get("NO COBRADO", 0.0)
+                cobrado          = tot_por_estado.get("COBRADO", 0.0)
+                domic_confirmada = tot_por_estado.get("DOMICILIACION CONFIRMADA", 0.0)
+                domic_emitida    = tot_por_estado.get("DOMICILIACION EMITIDA", 0.0)
+                pendiente        = tot_por_estado.get("PENDIENTE", 0.0)
+                dudoso           = tot_por_estado.get("DUDOSO COBRO", 0.0)
+                incobrable       = tot_por_estado.get("INCROBRABLE", tot_por_estado.get("INCOBRABLE", 0.0))
+                no_cobrado       = tot_por_estado.get("NO COBRADO", 0.0)
 
-                total_generado = cobrado + dom_conf  # la suma que pediste
+                # ✅ Total Generado = Cobrado + Confirmada + Emitida
+                total_generado = cobrado + domic_confirmada + domic_emitida
 
-                # Colores
-                COLOR_MAP = {
-                    "COBRADO": ("#e7f0ff", "#0b5394"),
-                    "DOMICILIACIÓN CONFIRMADA": ("#fff1db", "#7a4d00"),
-                    "TOTAL GENERADO": ("#d9f7e6", "#0b5b1d"),
-
-                    "PENDIENTE": ("#e6fcf5", "#0b7285"),
-                    "DUDOSO COBRO": ("#ffebee", "#8a1f1f"),
-                    "INCOBRABLE": ("#fde3f1", "#7a1a53"),
-                    "DOMICILIACIÓN EMITIDA": ("#fff9db", "#6b5d00"),
-                    "NO COBRADO": ("#f1f3f5", "#343a40"),
+                # Paleta (misma que en tu EIP)
+                COLORS = {
+                    "COBRADO": "#E3F2FD",
+                    "CONFIRMADA": "#FFE0B2",
+                    "EMITIDA": "#FFF9C4",
+                    "TOTAL": "#D3F9D8",
+                    "PENDIENTE": "#E6FCF5",
+                    "DUDOSO": "#FFEBEE",
+                    "INCOBRABLE": "#FCE4EC",
+                    "NOCOBRADO": "#ECEFF1",
                 }
 
-                # ========== FILA 1 ==========
-                c1, c2, c3 = st.columns(3)
-                bg, fg = COLOR_MAP["COBRADO"]
-                c1.markdown(render_card_big("Cobrado", cobrado, bg, fg), unsafe_allow_html=True)
+                # ===== Fila 1: Cobrado | Confirmada | Emitida | Total Generado =====
+                c1, c2, c3, c4 = st.columns(4)
+                c1.markdown(render_bar_card("Cobrado", cobrado, COLORS["COBRADO"], "💵"), unsafe_allow_html=True)
+                c2.markdown(render_bar_card("Domiciliación Confirmada", domic_confirmada, COLORS["CONFIRMADA"], "💷"), unsafe_allow_html=True)
+                c3.markdown(render_bar_card("Domiciliación Emitida", domic_emitida, COLORS["EMITIDA"], "📤"), unsafe_allow_html=True)
+                c4.markdown(render_bar_card("Total Generado", total_generado, COLORS["TOTAL"], "💰"), unsafe_allow_html=True)
 
-                bg, fg = COLOR_MAP["DOMICILIACIÓN CONFIRMADA"]
-                c2.markdown(render_card_big("Domiciliación Confirmada", dom_conf, bg, fg), unsafe_allow_html=True)
-
-                bg, fg = COLOR_MAP["TOTAL GENERADO"]
-                c3.markdown(render_card_big("💰 Total generado", total_generado, bg, fg), unsafe_allow_html=True)
-
-                # ========== FILA 2 (los 5 en la misma línea, en el orden pedido) ==========
-                cols = st.columns(5)
-                items = [
-                    ("Pendiente", pendiente, "PENDIENTE"),
-                    ("Dudoso Cobro", dudoso, "DUDOSO COBRO"),
-                    ("Incobrable", incobrable, "INCOBRABLE"),
-                    ("Domiciliación Emitida", dom_emit, "DOMICILIACIÓN EMITIDA"),
-                    ("No Cobrado", no_cobrado, "NO COBRADO"),
-                ]
-                for (title, val, key), cont in zip(items, cols):
-                    bg, fg = COLOR_MAP[key]
-                    cont.markdown(render_card_big(title, val, bg, fg), unsafe_allow_html=True)
+                # ===== Fila 2: Pendiente | Dudoso | Incobrable | No Cobrado =====
+                b1, b2, b3, b4 = st.columns(4)
+                b1.markdown(render_bar_card("Pendiente", pendiente, COLORS["PENDIENTE"], "⏳"), unsafe_allow_html=True)
+                b2.markdown(render_bar_card("Dudoso Cobro", dudoso, COLORS["DUDOSO"], "❗"), unsafe_allow_html=True)
+                b3.markdown(render_bar_card("Incobrable", incobrable, COLORS["INCOBRABLE"], "⛔"), unsafe_allow_html=True)
+                b4.markdown(render_bar_card("No Cobrado", no_cobrado, COLORS["NOCOBRADO"], "🧾"), unsafe_allow_html=True)
 
     # ===================== 🌍 MAPA (opcional) =====================
     st.markdown("---")
@@ -223,6 +216,7 @@ def principal_page():
 
             mapa = folium.Map(location=[25, 0], zoom_start=2, width="100%", height="700px", max_bounds=True)
 
+            # Provincias 🇪🇸
             for _, row in count_prov.iterrows():
                 entidad, alumnos = row['Entidad'], int(row['Alumnos'])
                 coords = PROVINCIAS_COORDS.get(entidad)
@@ -251,6 +245,7 @@ def principal_page():
                 }
                 return FLAGS.get(pais_nombre.title(), "🌍")
 
+            # Países 🌍
             for _, row in count_pais.iterrows():
                 entidad, alumnos = row['Entidad'], int(row['Alumnos'])
                 if entidad.upper() == "ESPAÑA":
@@ -286,7 +281,7 @@ def principal_page():
     if missing_cols:
         st.warning(f"⚠️ Faltan columnas en el archivo: {', '.join(missing_cols)}")
     else:
-        df_filtrado = df_check[df_check['País'].astype(str).strip().str.upper() == "ESPAÑA"].copy()
+        df_filtrado = df_check[df_check['País'].astype(str).str.strip().str.upper() == "ESPAÑA"].copy()
         df_incompletos = df_filtrado[
             df_filtrado['Provincia'].isna() | (df_filtrado['Provincia'].astype(str).str.strip() == '') |
             df_filtrado['Localidad'].isna() | (df_filtrado['Localidad'].astype(str).str.strip() == '')
