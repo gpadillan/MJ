@@ -1,6 +1,4 @@
-﻿# pagesEIM/deuda/pendiente.py
-
-import io
+﻿import io
 from datetime import datetime
 
 import pandas as pd
@@ -32,11 +30,8 @@ resultado_exportacion = {}
 # Vista principal
 # ===========================
 def vista_clientes_pendientes():
-    # Ensancha el contenedor
     st.markdown("""
-    <style>
-      .block-container {max-width: 100% !important; padding-left: 1rem; padding-right: 1rem;}
-    </style>
+    <style>.block-container {max-width: 100% !important; padding-left: 1rem; padding-right: 1rem;}</style>
     """, unsafe_allow_html=True)
 
     st.header("📄 Clientes con Estado PENDIENTE")
@@ -45,7 +40,6 @@ def vista_clientes_pendientes():
         st.warning("⚠️ No hay archivo cargado. Ve a la sección Gestión de Datos (EIM).")
         return
 
-    # Normaliza/estandariza el DF EIM
     df_raw = st.session_state[DATA_KEY]
     df = prepare_eim_df(df_raw).copy()
     df.columns = df.columns.str.strip()
@@ -53,7 +47,6 @@ def vista_clientes_pendientes():
         st.error("❌ La columna 'Estado' no existe tras la normalización.")
         return
 
-    # Normaliza Estado
     df["Estado"] = (
         df["Estado"].astype(str)
         .str.replace(r"\s+", " ", regex=True)
@@ -72,10 +65,9 @@ def vista_clientes_pendientes():
 
     total_clientes_unicos = set()
 
-    # ---------------- 2018–2021 (solo tabla)
+    # ----- 2018–2021
     st.markdown("## 🕰️ Periodo 2018–2021")
     cols_18_21 = [f"Total {a}" for a in range(2018, 2022) if f"Total {a}" in df_pendiente.columns]
-
     if cols_18_21:
         df1 = df_pendiente[["Cliente"] + cols_18_21].copy()
         df1[cols_18_21] = df1[cols_18_21].apply(pd.to_numeric, errors="coerce").fillna(0)
@@ -85,23 +77,18 @@ def vista_clientes_pendientes():
 
         st.dataframe(df1, use_container_width=True)
         total_deuda_18_21 = float(df1[cols_18_21].sum().sum())
-
         st.markdown(
             f"**👥 Total clientes con deuda en 2018–2021:** "
             f"{df1['Cliente'].nunique()} – 🏅 Total deuda: {_eu(total_deuda_18_21)} €"
         )
-
         resultado_exportacion["2018_2021"] = df1
     else:
         total_deuda_18_21 = 0.0
 
-    # ---------------- 2022–año actual (meses incluidos)
+    # ----- 2022–actual (meses)
     st.markdown("## 📅 Periodo 2022–{} + meses {}".format(año_actual-1, año_actual))
-
     cols_22_prev = [f"Total {a}" for a in range(2022, año_actual) if f"Total {a}" in df_pendiente.columns]
     cols_year_months = [f"{m} {año_actual}" for m in meses if f"{m} {año_actual}" in df_pendiente.columns]
-
-    # Por defecto: hasta el mes actual (no incluye meses futuros)
     default_months = [c for i, c in enumerate(cols_year_months, start=1) if i <= mes_actual]
 
     cols_22_aa = st.multiselect(
@@ -129,7 +116,6 @@ def vista_clientes_pendientes():
 
         resultado_exportacion["2022_actual"] = df2
 
-        # Resumen para la barra
         resumen2 = pd.DataFrame({
             "Periodo": cols_22_aa,
             "Total_Deuda": [df2[c].sum() for c in cols_22_aa],
@@ -146,7 +132,6 @@ def vista_clientes_pendientes():
         fig2.update_yaxes(range=[0, max_y * 1.22])
         fig2.update_layout(margin=dict(l=20, r=20, t=20, b=50), xaxis_title="Periodo", yaxis_title="Total")
 
-        # Píldoras negras encima de cada barra
         annotations = []
         for _, r in resumen2.iterrows():
             annotations.append(dict(
@@ -161,13 +146,12 @@ def vista_clientes_pendientes():
         st.markdown("### ")
         st.plotly_chart(fig2, use_container_width=True)
 
-        # Guardar para HTML
         global _FIG_22_25
         _FIG_22_25 = fig2
     else:
         _FIG_22_25 = None
 
-    # ---------------- Cards por año (Pendiente TOTAL)
+    # ----- Cards por año
     st.markdown("## 🧮 Pendiente TOTAL (por año)")
     columnas_totales = [c for c in df_pendiente.columns
                         if c.startswith("Total ") and c.split()[-1].isdigit()
@@ -179,8 +163,6 @@ def vista_clientes_pendientes():
         "Suma_Total": [df_pendiente[c].sum() for c in columnas_totales],
         "Num_Clientes": [(df_pendiente.groupby("Cliente")[c].sum() > 0).sum() for c in columnas_totales],
     })
-
-    # 🔴 nuevo: ocultar años con suma 0
     resumen_total = resumen_total[resumen_total["Suma_Total"] > 0].reset_index(drop=True)
 
     if resumen_total.empty:
@@ -198,7 +180,6 @@ def vista_clientes_pendientes():
               </div>
             </div>
             """
-
         for i in range(0, len(resumen_total), 4):
             cols = st.columns(4)
             for j, c in enumerate(cols):
@@ -206,16 +187,14 @@ def vista_clientes_pendientes():
                 row = resumen_total.iloc[i + j]
                 c.markdown(_card(f"Total {row['Año']}", row["Suma_Total"], row["Num_Clientes"]), unsafe_allow_html=True)
 
-        # ---------------- Totales consolidados
         num_clientes_total = len(total_clientes_unicos)
         deuda_total_acumulada = total_deuda_18_21 + total_deuda_22_aa
         st.markdown(f"**👥 Total clientes con deuda en 2018–{año_actual}:** {num_clientes_total} – 🏅 Total deuda: {_eu(deuda_total_acumulada)} €")
         st.session_state["total_clientes_unicos"] = num_clientes_total
         st.session_state["total_deuda_acumulada"] = deuda_total_acumulada
 
-    # ---------------- DETALLE: AG Grid sin hueco a la derecha
+    # ----- Detalle AG Grid
     st.markdown("### 📋 Detalle de deuda por cliente")
-
     columnas_info_posibles = ["Cliente", "Proyecto", "Curso", "Comercial", "Forma Pago"]
     columnas_info = [c for c in columnas_info_posibles if c in df_pendiente.columns]
     columnas_sumatorias = cols_18_21 + (cols_22_aa if "cols_22_aa" in locals() else [])
@@ -238,22 +217,11 @@ def vista_clientes_pendientes():
             .sort_values(by="Total deuda", ascending=False)
         )
 
-        # Ajuste automático de columnas SIEMPRE que cambie el tamaño del grid
         auto_fit = JsCode("function(p){ p.api.sizeColumnsToFit(); }")
-
         gb = GridOptionsBuilder.from_dataframe(df_detalle)
-        gb.configure_default_column(
-            filter=True, sortable=True, resizable=True, wrapText=True, autoHeight=True, flex=1
-        )
-        gb.configure_grid_options(
-            domLayout='normal',
-            suppressRowClickSelection=True,
-            pagination=False,
-            onFirstDataRendered=auto_fit,
-            onGridSizeChanged=auto_fit,
-        )
-
-        # Reparto de ancho por importancia + mínimos
+        gb.configure_default_column(filter=True, sortable=True, resizable=True, wrapText=True, autoHeight=True, flex=1)
+        gb.configure_grid_options(domLayout='normal', suppressRowClickSelection=True,
+                                  pagination=False, onFirstDataRendered=auto_fit, onGridSizeChanged=auto_fit)
         if "Cliente" in df_detalle.columns:   gb.configure_column("Cliente",   flex=2, min_width=260)
         if "Proyecto" in df_detalle.columns:  gb.configure_column("Proyecto",  flex=2, min_width=220)
         if "Curso" in df_detalle.columns:     gb.configure_column("Curso",     flex=2, min_width=300)
@@ -261,15 +229,8 @@ def vista_clientes_pendientes():
         if "Forma Pago" in df_detalle.columns:gb.configure_column("Forma Pago",flex=1, min_width=200)
         gb.configure_column("Total deuda", type=["numericColumn","rightAligned"], flex=1, min_width=140)
 
-        AgGrid(
-            df_detalle,
-            gridOptions=gb.build(),
-            update_mode=GridUpdateMode.NO_UPDATE,
-            allow_unsafe_jscode=True,
-            theme="streamlit",
-            height=600,
-            use_container_width=True
-        )
+        AgGrid(df_detalle, gridOptions=gb.build(), update_mode=GridUpdateMode.NO_UPDATE,
+               allow_unsafe_jscode=True, theme="streamlit", height=600, use_container_width=True)
 
         resultado_exportacion["ResumenClientes"] = df_detalle
         st.session_state["detalle_filtrado"] = df_detalle
@@ -278,10 +239,8 @@ def vista_clientes_pendientes():
 
 
 def vista_totales_anuales():
-    """Solo prepara datos para exportación (sin gráfico)."""
     if DATA_KEY not in st.session_state or st.session_state[DATA_KEY] is None:
         return
-
     df = prepare_eim_df(st.session_state[DATA_KEY]).copy()
     if "Estado" not in df.columns:
         return
@@ -312,10 +271,8 @@ def render():
     st.markdown(f"### 🧮 TOTAL desde gráfico anual: 🏅 {_eu(total_global)} €")
 
     if resultado_exportacion:
-        # Guardar en sesión con claves EIM
         st.session_state[SAVE_KEY_XLS] = resultado_exportacion
 
-        # Excel
         buffer_excel = io.BytesIO()
         with pd.ExcelWriter(buffer_excel, engine="xlsxwriter") as writer:
             for sheet_name, df_export in resultado_exportacion.items():
@@ -329,7 +286,6 @@ def render():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-        # HTML
         html_buffer = io.StringIO()
         html_buffer.write("<html><head><meta charset='utf-8'><title>Exportación PENDIENTE (EIM)</title></head><body>")
         if "2018_2021" in resultado_exportacion:
@@ -346,7 +302,6 @@ def render():
         html_buffer.write(f"<h2>🧮 TOTAL desde gráfico anual: {_eu(st.session_state.get('total_deuda_barras_eim', 0))} €</h2>")
         html_buffer.write("</body></html>")
 
-        # Guardar HTML en sesión EIM y botón de descarga
         html_str = html_buffer.getvalue()
         st.session_state[SAVE_KEY_HTML] = html_str
         st.download_button(

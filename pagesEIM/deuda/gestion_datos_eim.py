@@ -1,14 +1,12 @@
-﻿# pagesEIM/deuda/gestion_datos.py
-
-import io
+﻿import io
 import os
 import pandas as pd
 import streamlit as st
 
-# Carpeta/archivos de EIM (igual que en pagesEIM/deuda_main.py)
-UPLOAD_FOLDER_EIM   = "uploaded_eim"
-EXCEL_FILENAME_EIM  = os.path.join(UPLOAD_FOLDER_EIM, "archivo_cargado.xlsx")
-TIEMPO_FILENAME_EIM = os.path.join(UPLOAD_FOLDER_EIM, "ultima_subida.txt")
+# ===== Rutas (alineadas con deuda_main.py de EIM) =====
+UPLOAD_FOLDER_EIM   = "uploaded"
+EXCEL_FILENAME_EIM  = os.path.join(UPLOAD_FOLDER_EIM, "archivo_cargado_eim.xlsx")
+TIEMPO_FILENAME_EIM = os.path.join(UPLOAD_FOLDER_EIM, "ultima_subida_eim.txt")
 
 
 def _cargar_marca_tiempo_eim():
@@ -19,9 +17,7 @@ def _cargar_marca_tiempo_eim():
 
 
 def _safe_write_sheet(writer, base_name: str, payload):
-    """
-    Escribe DataFrames o dicts de DataFrames con nombres de hoja seguros (<=31 chars).
-    """
+    """Escribe DataFrames o dicts de DataFrames con nombre de hoja seguro (<=31 chars)."""
     def _safe(s: str) -> str:
         bad = '[]:*?/\\'
         for ch in bad:
@@ -31,10 +27,9 @@ def _safe_write_sheet(writer, base_name: str, payload):
     if isinstance(payload, pd.DataFrame):
         payload.to_excel(writer, sheet_name=_safe(base_name), index=False)
     elif isinstance(payload, dict):
-        # nombre hoja: <base>_<clave>
         for k, df in payload.items():
             sheet = f"{base_name}_{str(k)}"
-            payload[k].to_excel(writer, sheet_name=_safe(sheet), index=False)
+            df.to_excel(writer, sheet_name=_safe(sheet), index=False)
 
 
 def render():
@@ -60,10 +55,10 @@ def render():
     st.markdown("---")
     st.subheader("📋 Hojas disponibles:")
 
+    # ✅ claves de sesión EIM
     def hoja_estado(clave, nombre):
         return f"✅ {nombre}" if clave in st.session_state else f"❌ {nombre} aún no generado"
 
-    # 🔹 Solo estas dos líneas (como pediste)
     hojas_disponibles = [
         hoja_estado("descarga_global_eim", "Global"),
         hoja_estado("descarga_pendiente_total_eim", "Pendiente Total"),
@@ -76,13 +71,10 @@ def render():
 
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-        # Global (si es df o dict de dfs)
         if "descarga_global_eim" in st.session_state:
             _safe_write_sheet(writer, "Global", st.session_state["descarga_global_eim"])
-
-        # Pendiente Total (si es df o dict de dfs)
         if "descarga_pendiente_total_eim" in st.session_state:
-            _safe_write_sheet(writer, "pendiente_total", st.session_state["descarga_pendiente_total_eim"])
+            _safe_write_sheet(writer, "Pendiente_Total", st.session_state["descarga_pendiente_total_eim"])
 
     buffer.seek(0)
     st.download_button(
@@ -95,7 +87,7 @@ def render():
     st.markdown("---")
     st.subheader("🌐 Descargar informe HTML consolidado (EIM)")
 
-    # Solo unimos los HTML que existan para EIM
+    # ✅ unir solo HTMLs de EIM
     html_claves_eim = {
         "html_global_eim": "Global",
         "html_pendiente_total_eim": "Pendiente Total",

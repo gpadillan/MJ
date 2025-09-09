@@ -1,4 +1,5 @@
-﻿import os
+﻿# pagesEIM/deuda/global_eim.py
+import os
 import io
 from datetime import datetime
 
@@ -62,13 +63,17 @@ def y_range_con_padding(series):
 def render():
     st.subheader("Estado")
 
-    # datos base
-    if 'excel_data' not in st.session_state or st.session_state['excel_data'] is None:
-        st.warning("⚠️ No hay archivo cargado. Vuelve a la sección Gestión de Cobro.")
+    # ⚠️ EVITAR "or" entre DataFrames → comprobación explícita
+    df = st.session_state.get("excel_data_eim", None)
+    if df is None:
+        df = st.session_state.get("excel_data", None)
+
+    if df is None or (isinstance(df, pd.DataFrame) and df.empty):
+        st.warning("⚠️ No hay archivo cargado. Vuelve a la sección Gestión de Datos (EIM).")
         return
 
-    df = st.session_state['excel_data'].copy()
-    if 'Estado' not in df.columns:
+    df = df.copy()
+    if "Estado" not in df.columns:
         st.error("❌ La columna 'Estado' no existe en el archivo.")
         return
 
@@ -78,7 +83,7 @@ def render():
     estados_unicos = sorted(df['Estado'].dropna().unique())
     columnas_totales = [f'Total {a}' for a in range(2018, anio_actual)]
     meses_actuales = [f'{m} {anio_actual}' for m in MESES_ES]
-    columnas_disponibles = columnas_totales + meses_actuales
+    columnas_disponibles = [c for c in columnas_totales + meses_actuales if c in df.columns]
 
     estados_seleccionados = st.multiselect(
         "Filtrar por Estado",
@@ -144,9 +149,10 @@ def render():
         if row.empty:
             continue
 
-        color_estado = COLORES_FIJOS.get(estado.strip().upper(), "#3b82f6")
+        color_estado = COLORES_FIJOS.get(str(estado).strip().upper(), "#3b82f6")
         c1, c2 = st.columns(2)
 
+        # --- Históricos
         if cols_hist_sorted:
             serie_hist = row[cols_hist_sorted].iloc[0]
             df_hist = pd.DataFrame({"Periodo": cols_hist_sorted, "Total": serie_hist.values})
@@ -158,6 +164,7 @@ def render():
                 template="plotly_white",
                 text=df_hist["Total"].apply(lambda v: f"€ {num_es_sin_dec(v)}")
             )
+            # Más claro (opacity) y margen alto para que no se corten las etiquetas
             fig_hist.update_traces(marker=dict(opacity=0.45, line=dict(color=color_estado, width=1.2)))
             fig_hist.update_yaxes(range=y_range_con_padding(df_hist["Total"]))
             fig_hist.update_layout(
@@ -172,6 +179,7 @@ def render():
         else:
             c1.info("Sin columnas históricas seleccionadas.")
 
+        # --- Año actual por meses
         if mes_order:
             serie_mes = row[mes_order].iloc[0]
             df_mes = pd.DataFrame({"Periodo": mes_order, "Total": serie_mes.values})
@@ -220,7 +228,7 @@ def render():
             )
             fig_pago.update_traces(textposition="inside", textinfo="label+percent+value")
             fig_pago.update_layout(
-                height=540,
+                height=560,  # un poco más alto para que quepan etiquetas grandes
                 margin=dict(t=60, b=40, l=10, r=10),
                 legend_title_text="Forma de pago",
                 legend=dict(orientation="v")
@@ -233,9 +241,10 @@ def render():
     df_final = df_grouped.copy()
     df_final["Total fila"] = df_final[columnas_existentes].sum(axis=1)
 
-    # >>>>>>>>>> CLAVE PARA EL TICK VERDE EN "Hojas disponibles"
-    st.session_state["descarga_global"] = df_final  # <<<<<<<< AQUÍ ESTABA EL FALTANTE
-    # >>>>>>>>>>
+    # Guardar con las claves EIM (para “Gestión de Datos – EIM”)
+    st.session_state["descarga_global_eim"] = df_final
+    # (opcional) mantener también la genérica por compatibilidad
+    st.session_state["descarga_global"] = df_final
 
     st.markdown("---")
     st.subheader("📥 Exportar esta hoja")
@@ -265,7 +274,7 @@ def render():
         row = df_grouped[df_grouped["Estado"] == estado]
         if row.empty:
             continue
-        color_estado = COLORES_FIJOS.get(estado.strip().upper(), "#3b82f6")
+        color_estado = COLORES_FIJOS.get(str(estado).strip().upper(), "#3b82f6")
 
         if cols_hist_sorted:
             serie_hist = row[cols_hist_sorted].iloc[0]
@@ -326,22 +335,24 @@ def render():
                 template="plotly_white"
             )
             fig_pago.update_traces(textposition="inside", textinfo="label+percent+value")
-            fig_pago.update_layout(height=540)
+            fig_pago.update_layout(height=560)
             html_buffer.write("<h2>Distribución Forma de Pago (filtrada)</h2>")
             html_buffer.write(pio.to_html(fig_pago, include_plotlyjs='cdn', full_html=False))
 
     html_buffer.write("</body></html>")
 
+    html_value = html_buffer.getvalue()
+    # Guardar con clave EIM (y genérica por compatibilidad)
+    st.session_state["html_global_eim"] = html_value
+    st.session_state["html_global"] = html_value
+
     st.download_button(
         label="📄 Descargar informe HTML",
-        data=html_buffer.getvalue(),
+        data=html_value,
         file_name="reporte_estado.html",
         mime="text/html"
     )
 
     os.makedirs("uploaded", exist_ok=True)
     with open("uploaded/reporte_estado.html", "w", encoding="utf-8") as f:
-        f.write(html_buffer.getvalue())
-
-    # Ya lo guardabas, lo dejo aquí igualmente:
-    st.session_state["html_global"] = html_buffer.getvalue()
+        f.write(html_value)
