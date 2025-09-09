@@ -51,15 +51,30 @@ def _norm_key(s: str) -> str:
     s = re.sub(r'\s+', ' ', s).strip()
     return s
 
-def _load_df_from_session_or_file(session_key: str, fallback_path: str) -> pd.DataFrame | None:
+@st.cache_data(show_spinner=False)
+def _read_excel_cached(path: str, mtime: float) -> pd.DataFrame:
+    """Lee excel con caché invalidada por la fecha de modificación (mtime)."""
+    return pd.read_excel(path, dtype=str)
+
+def _load_any_from_session_or_files(session_key: str, fallbacks: list[str]) -> pd.DataFrame | None:
+    """
+    1) Si hay DF en sesión, lo usa.
+    2) Si no, recorre rutas fallback; si existe, lo lee con caché por mtime.
+    """
     df = st.session_state.get(session_key)
     if isinstance(df, pd.DataFrame) and not df.empty:
         return df.copy()
-    if os.path.exists(fallback_path):
-        try:
-            return pd.read_excel(fallback_path, dtype=str)
-        except Exception:
-            return None
+
+    for path in fallbacks:
+        if os.path.exists(path):
+            try:
+                mtime = os.path.getmtime(path)
+                df = _read_excel_cached(path, mtime)
+                # Guarda en sesión para el resto de páginas
+                st.session_state[session_key] = df.copy()
+                return df
+            except Exception:
+                continue
     return None
 
 def _detect_period_columns(df: pd.DataFrame, anio_actual: int) -> list[str]:
@@ -88,11 +103,9 @@ def _totales_por_estado(df: pd.DataFrame, anio_actual: int) -> dict[str, float]:
     if not cols:
         return {}
 
-    # A números (NaN -> 0)
     df = df.copy()
     df[cols] = df[cols].apply(pd.to_numeric, errors="coerce").fillna(0)
 
-    # Agrupar por estado
     df_group = (
         df.groupby("Estado", dropna=False)[cols]
           .sum()
@@ -102,7 +115,6 @@ def _totales_por_estado(df: pd.DataFrame, anio_actual: int) -> dict[str, float]:
     df_group["Estado"] = df_group["EstadoRaw"].apply(_norm_key)
     df_group["Total"] = df_group[cols].sum(axis=1)
 
-    # Diccionario {ESTADO_NORMALIZADO: total}
     return { row["Estado"]: float(row["Total"]) for _, row in df_group.iterrows() }
 
 # ===================== PÁGINA =====================
@@ -110,7 +122,14 @@ def _totales_por_estado(df: pd.DataFrame, anio_actual: int) -> dict[str, float]:
 def principal_page():
     st.title("Mainjobs B2C")
 
-    # Colores para las tarjetas
+    # Botón de recarga manual por si el usuario quiere forzar refresco
+    if st.button("🔄 Recargar datos (B2C)"):
+        for k in ("excel_data", "excel_data_eim"):
+            if k in st.session_state:
+                del st.session_state[k]
+        st.cache_data.clear()
+        st.success("Caché limpiada. Datos recargados al vuelo.")
+
     COLORS = {
         "COBRADO": "#E3F2FD",
         "CONFIRMADA": "#FFE0B2",
@@ -124,21 +143,22 @@ def principal_page():
 
     anio_actual = datetime.now().year
 
-    # Rutas por defecto (mismo esquema que usas en EIP/EIM)
-    PATH_EIP = os.path.join("uploaded", "archivo_cargado.xlsx")
-    PATH_EIM = os.path.join("uploaded", "archivo_cargado_eim.xlsx")
+    # Rutas reales publicadas por EIP/EIM
+    EIP_FALLBACKS = [os.path.join("uploaded", "archivo_cargado.xlsx")]
+    EIM_FALLBACKS = [
+        os.path.join("uploaded_eim", "archivo_cargado.xlsx"),       # ruta que guarda EIM
+        os.path.join("uploaded", "archivo_cargado_eim.xlsx"),       # compatibilidad
+    ]
 
-    # Cargar DF EIP y EIM (prioriza sesión; si no, lee fichero publicado)
-    df_eip = _load_df_from_session_or_file("excel_data", PATH_EIP)
-    df_eim = _load_df_from_session_or_file("excel_data_eim", PATH_EIM)
+    # Cargar DF EIP y EIM (si no hay en sesión, lee directamente de disco)
+    df_eip = _load_any_from_session_or_files("excel_data", EIP_FALLBACKS)
+    df_eim = _load_any_from_session_or_files("excel_data_eim", EIM_FALLBACKS)
 
     # Calcular totales por estado para ambos
     tot_eip = _totales_por_estado(df_eip, anio_actual) if df_eip is not None else {}
     tot_eim = _totales_por_estado(df_eim, anio_actual) if df_eim is not None else {}
 
-    # Helper para coger valor robusto
     def val(dic, key, *alias):
-        # acepta claves alternativas por si hay variantes
         keys = (key,) + alias
         for k in keys:
             if k in dic:
