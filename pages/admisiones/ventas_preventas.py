@@ -180,7 +180,7 @@ def app():
     )
     opciones_meses = ["Todos"] + meses_disponibles["mes"].tolist()
     mes_seleccionado = st.selectbox("Selecciona un Mes:", opciones_meses)
-    if mes_seleccionado != "Todos":
+    if mes_seleccionado != "Todos 2025":
         df_ventas = df_ventas[df_ventas["mes"] == mes_seleccionado]
     st.markdown(f"### {mes_seleccionado}")
 
