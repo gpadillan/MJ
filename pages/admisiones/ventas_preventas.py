@@ -15,7 +15,7 @@ UPLOAD_FOLDER   = "uploaded_admisiones"
 VENTAS_FILE     = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
 PREVENTAS_FILE  = os.path.join(UPLOAD_FOLDER, "preventas.xlsx")
 PVFE_FILE       = os.path.join(UPLOAD_FOLDER, "pv_fe.xlsx")   # si no existe busco por 'listadoFacturacionFicticia*'
-ANIO_ACTUAL     = 2025
+ANIO_ACTUAL     = datetime.now().year  # ← año en curso
 
 # =========================
 # UTILIDADES
@@ -162,7 +162,7 @@ def app():
     if os.path.exists(PREVENTAS_FILE):
         df_preventas = pd.read_excel(PREVENTAS_FILE)
         df_preventas.rename(columns={c: _strip_accents_lower(c) for c in df_preventas.columns}, inplace=True)
-        # (ARREGLO) columnas de importe:
+        # columnas de importe:
         columnas_importe = [col for col in df_preventas.columns if "importe" in col]
         total_preventas_importe = df_preventas[columnas_importe].sum(numeric_only=True).sum() if columnas_importe else 0
         total_preventas_count   = df_preventas.shape[0]
@@ -180,9 +180,13 @@ def app():
     )
     opciones_meses = ["Todos"] + meses_disponibles["mes"].tolist()
     mes_seleccionado = st.selectbox("Selecciona un Mes:", opciones_meses)
-    if mes_seleccionado != "Todos 2025":
+
+    if mes_seleccionado != "Todos":
         df_ventas = df_ventas[df_ventas["mes"] == mes_seleccionado]
-    st.markdown(f"### {mes_seleccionado}")
+
+    # —— título dinámico: si es “Todos”, muestra Año actual
+    titulo_periodo = mes_seleccionado if mes_seleccionado != "Todos" else f"Año {ANIO_ACTUAL}"
+    st.markdown(f"### {titulo_periodo}")
 
     # ======= CÁLCULO RÁPIDO FE (para tarjetas superiores) =======
     pvfe_total_importe_filtrado = 0.0
@@ -231,27 +235,37 @@ def app():
         df_bar["mes_etiqueta"] = df_bar["mes"].apply(lambda m: f"{m} ({tot_mes.get(m,0)})" if pd.notna(m) else m)
         orden_mes_etiqueta = [f"{m} ({tot_mes[m]})" for m in orden_meses if m in tot_mes]
 
-        fig = px.bar(df_bar, x="mes_etiqueta", y="Total Matrículas",
-                     color="propietario_display", color_discrete_map=color_map_display,
-                     barmode="group", text="Total Matrículas",
-                     title="Distribución Mensual de Matrículas por Propietario",
-                     width=width, height=height)
+        fig = px.bar(
+            df_bar, x="mes_etiqueta", y="Total Matrículas",
+            color="propietario_display", color_discrete_map=color_map_display,
+            barmode="group", text="Total Matrículas",
+            title=f"Distribución Mensual de Matrículas por Propietario — {ANIO_ACTUAL}",
+            width=width, height=height
+        )
         fig.update_traces(textposition="outside")
-        fig.update_layout(xaxis_title="Mes", yaxis_title="Total Matrículas",
-                          margin=dict(l=20,r=20,t=40,b=140),
-                          xaxis=dict(categoryorder="array", categoryarray=orden_mes_etiqueta),
-                          legend=dict(orientation="h", yanchor="bottom", y=-0.5, xanchor="center", x=0.5))
+        fig.update_layout(
+            xaxis_title="Mes", yaxis_title="Total Matrículas",
+            margin=dict(l=20,r=20,t=40,b=140),
+            xaxis=dict(categoryorder="array", categoryarray=orden_mes_etiqueta),
+            legend=dict(orientation="h", yanchor="bottom", y=-0.5, xanchor="center", x=0.5)
+        )
         st.plotly_chart(fig)
     else:
-        fig = px.scatter(resumen, x="nombre_unificado", y="propietario_display",
-                         size="Total Matrículas", color="propietario_display",
-                         color_discrete_map=color_map_display, text="Total Matrículas",
-                         size_max=60, width=width, height=height)
-        fig.update_traces(textposition="middle center", textfont_size=12, textfont_color="white",
-                          marker=dict(line=dict(color="black", width=1.2)))
-        fig.update_layout(xaxis_title="Máster / Programa (Unificado)", yaxis_title="Propietario",
-                          legend=dict(orientation="v", yanchor="top", y=0.98, xanchor="left", x=1.02),
-                          margin=dict(l=20,r=20,t=40,b=80))
+        fig = px.scatter(
+            resumen, x="nombre_unificado", y="propietario_display",
+            size="Total Matrículas", color="propietario_display",
+            color_discrete_map=color_map_display, text="Total Matrículas",
+            size_max=60, width=width, height=height
+        )
+        fig.update_traces(
+            textposition="middle center", textfont_size=12, textfont_color="white",
+            marker=dict(line=dict(color="black", width=1.2))
+        )
+        fig.update_layout(
+            xaxis_title="Máster / Programa (Unificado)", yaxis_title="Propietario",
+            legend=dict(orientation="v", yanchor="top", y=0.98, xanchor="left", x=1.02),
+            margin=dict(l=20,r=20,t=40,b=80)
+        )
         fig.update_yaxes(categoryorder="array", categoryarray=orden_propietarios[::-1])
         fig.update_xaxes(categoryorder="array", categoryarray=orden_masters)
         st.plotly_chart(fig)
@@ -439,7 +453,6 @@ def app():
     # orden: primero con clientify (ventas o preventas), luego solo PV-FE
     all_aliases = set(pvfe_summary.keys()) | set(ventas_by_alias.keys()) | set(preventas_by_alias.keys())
     aliases_clientify = [a for a in all_aliases if (a in ventas_by_alias or a in preventas_by_alias)]
-    # (ARREGLO) línea correcta:
     aliases_solo_pvfe = [a for a in all_aliases if a not in aliases_clientify]
     ordered_aliases = aliases_clientify + aliases_solo_pvfe
 
@@ -448,7 +461,7 @@ def app():
         owner_name = alias_to_owner.get(alias, alias)
         tiene_clientify = (alias in ventas_by_alias) or (alias in preventas_by_alias)
 
-        # Colores (gris si no hay clientify/ventas)
+        # Colores
         ring_color = owner_color_map.get(owner_name, "#1f77b4") if owner_name in owners_in_chart else ("#1f77b4" if tiene_clientify else "#888")
         if tiene_clientify:
             card_bg, title_color, text_color, clientify_bg = "#fff", "#000", "#000", "#f2f2f2"
@@ -461,7 +474,7 @@ def app():
         detail_html = pvfe_details_html.get(alias, "<i>Sin registros</i>")
         nrows = details_rows.get(alias, 1)
 
-        # Diferencia FE−Clientify (píldora)
+        # Diferencia FE−Clientify
         pv_total = float(pv.get("pv_total", 0) or 0)
         ve_importe = float(ve.get("ventas_importe", 0) or 0)
         diff_fe_cli = pv_total - ve_importe
