@@ -1,29 +1,30 @@
 ﻿# pagesEIM/deuda_main.py
-import streamlit as st
-import pandas as pd
-from datetime import datetime
-import pytz
 import os
 import io
+from datetime import datetime
+from pathlib import Path
 
-# === Rutas compartidas (pon aquí una RUTA DE RED si cada usuario ejecuta su app local) ===
-UPLOAD_FOLDER = st.secrets.get("shared_upload_path", "uploaded")  # p.ej. "\\\\SRV\\MainjobsData\\uploaded"
+import pandas as pd
+import pytz
+import streamlit as st
+
+# ====== Rutas compartidas (puedes sobreescribir con secrets) ======
+UPLOAD_FOLDER = st.secrets.get("shared_upload_path", "uploaded")
 EIM_EXCEL_FILENAME = "archivo_cargado_eim.xlsx"
 EIM_TIME_FILENAME  = "ultima_subida_eim.txt"
 
-def _ruta_excel():
+def _ruta_excel() -> str:
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     return os.path.join(UPLOAD_FOLDER, EIM_EXCEL_FILENAME)
 
-def _ruta_tiempo():
+def _ruta_tiempo() -> str:
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     return os.path.join(UPLOAD_FOLDER, EIM_TIME_FILENAME)
 
-# Guardar Excel en disco (EIM)
+# ====== Persistencia ======
 def guardar_excel_eim(df: pd.DataFrame):
     df.to_excel(_ruta_excel(), index=False)
 
-# Guardar marca de tiempo (hora Madrid)
 def guardar_marca_tiempo_eim() -> str:
     zona = pytz.timezone("Europe/Madrid")
     hora_local = datetime.now(zona).strftime("%d/%m/%Y %H:%M:%S")
@@ -31,7 +32,6 @@ def guardar_marca_tiempo_eim() -> str:
         f.write(hora_local)
     return hora_local
 
-# Cargar Excel si existe (EIM)
 def cargar_excel_guardado_eim() -> pd.DataFrame | None:
     path = _ruta_excel()
     if os.path.exists(path):
@@ -41,7 +41,6 @@ def cargar_excel_guardado_eim() -> pd.DataFrame | None:
             return None
     return None
 
-# Cargar marca de tiempo
 def cargar_marca_tiempo_eim() -> str:
     path = _ruta_tiempo()
     if os.path.exists(path):
@@ -49,16 +48,41 @@ def cargar_marca_tiempo_eim() -> str:
             return f.read().strip()
     return "Fecha no disponible"
 
-# =================== SUBPÁGINAS ===================
-from pagesEIM.deuda import gestion_datos, global_, pendiente, becas_unificado, pendiente_cobro_isa
+# ====== Comprobación de submódulos ======
+def _comprobar_submodulos():
+    base = Path(__file__).parent / "deuda"
+    esperados = [
+        "__init__.py",
+        "gestion_datos.py",
+        "global_.py",
+        "pendiente.py",
+    ]
+    faltan = [n for n in esperados if not (base / n).exists()]
+    if faltan:
+        st.error("Faltan archivos en `pagesEIM/deuda/`:")
+        for n in faltan:
+            st.markdown(f"- ❌ `{n}`")
+        st.stop()
 
+# ====== Página principal de Gestión de Cobro (EIM) ======
 def deuda_page():
-    # Estado de sesión
+    # Estado de sesión (EIM)
     st.session_state.setdefault('excel_data_eim', None)
     st.session_state.setdefault('excel_filename_eim', None)
     st.session_state.setdefault('upload_time_eim', None)
 
-    # Si no hay datos en sesión, intenta cargar del disco compartido
+    # Cabecera
+    col1, col2 = st.columns([0.8, 0.2])
+    with col1:
+        st.header("📂 Gestión de Cobro (EIM)")
+    with col2:
+        st.markdown(
+            f"<div style='margin-top: 25px; font-size: 14px; color: gray;'>"
+            f"🕒 Última actualización: {st.session_state.get('upload_time_eim','Fecha no disponible')}</div>",
+            unsafe_allow_html=True
+        )
+
+    # Cargar desde disco si no hay datos en sesión
     if st.session_state['excel_data_eim'] is None:
         df_guardado = cargar_excel_guardado_eim()
         if df_guardado is not None:
@@ -66,16 +90,7 @@ def deuda_page():
             st.session_state['excel_filename_eim'] = EIM_EXCEL_FILENAME
             st.session_state['upload_time_eim'] = cargar_marca_tiempo_eim()
 
-    col1, col2 = st.columns([0.8, 0.2])
-    with col1:
-        st.header("📂 Sección: Gestión de Cobro (EIM)")
-    with col2:
-        st.markdown(
-            f"<div style='margin-top: 25px; font-size: 14px; color: gray;'>🕒 Última actualización: {st.session_state.get('upload_time_eim','Fecha no disponible')}</div>",
-            unsafe_allow_html=True
-        )
-
-    # Subida solo admin
+    # Subida de archivo solo para administradores
     if st.session_state.get('role', 'viewer') == "admin":
         archivo = st.file_uploader("📤 Sube un archivo Excel (EIM)", type=["xlsx", "xls"], key="eim_uploader")
         if archivo:
@@ -83,11 +98,11 @@ def deuda_page():
                 xls = pd.ExcelFile(archivo, engine="openpyxl")
                 df = pd.read_excel(xls, sheet_name=xls.sheet_names[0], dtype=str)
 
-                # Guarda en disco compartido + marca de tiempo
+                # Guardar en disco compartido + marca de tiempo
                 guardar_excel_eim(df)
                 hora_local = guardar_marca_tiempo_eim()
 
-                # Guarda en sesión
+                # Guardar en sesión
                 st.session_state['excel_data_eim'] = df
                 st.session_state['excel_filename_eim'] = archivo.name
                 st.session_state['upload_time_eim'] = hora_local
@@ -95,9 +110,11 @@ def deuda_page():
                 st.success(f"✅ Archivo EIM cargado y guardado: {archivo.name}")
                 st.rerun()
             except Exception as e:
-                st.error(f"❌ Error al procesar el archivo: {e}")
+                st.error("❌ Error al procesar el archivo EIM.")
+                st.exception(e)
+                return
     else:
-        # Vista no admin: garantiza lectura del fichero compartido
+        # Usuarios no-admin: asegurar lectura del fichero compartido
         if st.session_state['excel_data_eim'] is None:
             df_guardado = cargar_excel_guardado_eim()
             if df_guardado is not None:
@@ -108,17 +125,29 @@ def deuda_page():
                 st.warning("⚠️ El administrador aún no ha subido el archivo de EIM.")
                 return
 
-    # Aviso nombre de archivo
+    # Mostrar nombre del archivo
     if st.session_state['excel_data_eim'] is not None:
         st.success(f"📎 Archivo cargado (EIM): {st.session_state['excel_filename_eim']}")
 
-    # Navegación (igual que antes)
+    # Diagnóstico de submódulos
+    _comprobar_submodulos()
+
+    # Imports perezosos (solo lo que necesitas: gestión_datos, global_, pendiente)
+    try:
+        from pagesEIM.deuda import gestion_datos as eim_gestion_datos
+        from pagesEIM.deuda import global_       as eim_global
+        from pagesEIM.deuda import pendiente     as eim_pendiente
+    except Exception as e:
+        st.error("❌ No se pudieron cargar los submódulos de `pagesEIM.deuda` (gestion_datos/global_/pendiente).")
+        st.info("Revisa nombres (minúsculas/mayúsculas) y que exista `__init__.py`.")
+        st.exception(e)
+        return
+
+    # Navegación (solo estas tres)
     subcategorias = [
         "Gestión de Datos",
         "Global",
         "Pendiente Total",
-        "Becas ISA - Consolidado",
-        "Pendiente Cobro ISA",
     ]
     st.session_state.setdefault("subcategoria_deuda_eim", subcategorias[0])
 
@@ -130,12 +159,8 @@ def deuda_page():
     )
 
     if seccion == "Gestión de Datos":
-        gestion_datos.render()
+        eim_gestion_datos.render()
     elif seccion == "Global":
-        global_.render()
+        eim_global.render()
     elif seccion == "Pendiente Total":
-        pendiente.render()
-    elif seccion == "Becas ISA - Consolidado":
-        becas_unificado.render()
-    elif seccion == "Pendiente Cobro ISA":
-        pendiente_cobro_isa.render()
+        eim_pendiente.render()
