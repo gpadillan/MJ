@@ -11,67 +11,51 @@ import folium
 from streamlit_folium import folium_static
 
 from utils.geo_utils import (
-    normalize_text,
-    PROVINCIAS_COORDS,
-    PAISES_COORDS,
-    geolocalizar_pais,
+    normalize_text, PROVINCIAS_COORDS, PAISES_COORDS, geolocalizar_pais
 )
 
-# ===================== UTILS =====================
-
+# =========================================================
+# Utils
+# =========================================================
 def format_euro(value: float) -> str:
     try:
         v = float(value)
     except Exception:
         v = 0.0
-    # 1.234.567,89
     return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 def render_bar_card(title: str, value: float, bg: str, emoji: str = "") -> str:
-    """Tarjeta grande tipo 'barra' como en EIP."""
+    """Tarjeta grande con el mismo look que usas en EIP."""
     return f"""
     <div style="
-        background:{bg};
-        border:1px solid rgba(0,0,0,0.06);
-        border-radius:16px;
-        padding:18px 18px;
-        box-shadow:0 4px 12px rgba(0,0,0,0.06);
-        min-height:120px;
-    ">
-        <div style="font-weight:700;font-size:15px;color:#2a2f3a;display:flex;gap:8px;align-items:center;">
-            <span style="font-size:18px">{emoji}</span>
-            {title}
+      background:{bg};
+      border:1px solid rgba(0,0,0,.05);
+      border-radius:16px;
+      padding:16px 18px;
+      box-shadow:0 3px 8px rgba(0,0,0,.06);
+      min-height:104px;
+      display:flex;flex-direction:column;justify-content:center;">
+        <div style="font-weight:800;font-size:15px;color:#2d3748;margin-bottom:6px">
+          {emoji} {title}
         </div>
-        <div style="margin-top:12px">
-            <div style="font-size:22px;color:#0b2239;margin-bottom:4px">€</div>
-            <div style="font-size:34px;font-weight:900;color:#0b2239;line-height:1;">
-                {format_euro(value)}
-            </div>
-        </div>
+        <div style="font-size:30px;font-weight:900;color:#111827">€ {format_euro(value)}</div>
     </div>
     """
 
-MESES_NOMBRE = {
-    1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
-    7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
-}
-
-# Rutas de archivos de EIM
-GESTION_FILE_EIM = os.path.join("uploaded_eim", "archivo_cargado_eim.xlsx")
-GESTION_FILE_FALLBACK = os.path.join("uploaded", "archivo_cargado_eim.xlsx")
-
+# =========================================================
+# Carga EIM: sesión -> disco (dos rutas compatibles)
+# =========================================================
+EIM_UPLOAD_FALLBACKS = [
+    os.path.join("uploaded_eim", "archivo_cargado.xlsx"),   # donde guarda la sección EIM
+    os.path.join("uploaded", "archivo_cargado_eim.xlsx"),   # compatibilidad
+]
 
 def load_eim_df_from_session_or_file() -> pd.DataFrame | None:
-    """
-    Prioriza el DF en sesión (si el admin subió el archivo en 'Área Gestión de Cobro').
-    Si no existe, intenta leer el XLSX publicado en disco para que lo vea todo el mundo.
-    """
+    """Prioriza session_state; si no, busca excel en disco (dos rutas)."""
     df = st.session_state.get("excel_data_eim")
-    if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
+    if isinstance(df, pd.DataFrame) and not df.empty:
         return df
-
-    # Disco (primero uploaded_eim/, luego fallback uploaded/)
-    for path in (GESTION_FILE_EIM, GESTION_FILE_FALLBACK):
+    for path in EIM_UPLOAD_FALLBACKS:
         if os.path.exists(path):
             try:
                 return pd.read_excel(path, dtype=str)
@@ -79,19 +63,33 @@ def load_eim_df_from_session_or_file() -> pd.DataFrame | None:
                 pass
     return None
 
+# =========================================================
+# Normalizadores
+# =========================================================
+def _strip_accents(s: str) -> str:
+    return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
 
-# ===================== PÁGINA PRINCIPAL EIM =====================
+def _norm_estado(s: str) -> str:
+    s = _strip_accents(str(s)).upper()
+    s = re.sub(r'\s+', ' ', s).strip()
+    return s
 
+MESES_NOMBRE = {
+    1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
+    7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
+}
+
+# =========================================================
+# Página principal EIM
+# =========================================================
 def principal_page():
     st.title("📊 Panel EIM")
 
-    # 🔄 Recargar / limpiar caché
+    # Botón recargar / limpiar
     if st.button("🔄 Recargar datos (EIM)"):
-        for key in [
-            "excel_data_eim", "coords_cache",
-        ]:
-            if key in st.session_state:
-                del st.session_state[key]
+        for k in ["excel_data_eim", "upload_time_eim", "coords_cache"]:
+            if k in st.session_state:
+                del st.session_state[k]
         st.cache_data.clear()
         st.cache_resource.clear()
         st.success("Caché limpiada.")
@@ -105,20 +103,20 @@ def principal_page():
     df_gestion = load_eim_df_from_session_or_file()
 
     if df_gestion is None or df_gestion.empty:
+        rutas_txt = " o ".join([f"`{p}`" for p in EIM_UPLOAD_FALLBACKS])
         st.info(
-            "No hay datos de Gestión de Cobro (EIM). "
-            "Sube el Excel en **Área Gestión de Cobro** o publica un archivo en "
-            "`uploaded_eim/archivo_cargado_eim.xlsx`."
+            f"No hay datos de Gestión de Cobro disponibles. "
+            f"Sube el Excel en la sección **EIM** o publica un archivo en {rutas_txt}."
         )
     else:
-        # Normaliza cabeceras y localiza la columna Estado
+        # Normaliza encabezados y localiza 'Estado'
         df_gestion.columns = [c.strip() for c in df_gestion.columns]
         col_estado = next((c for c in df_gestion.columns if c.strip().lower() == "estado"), None)
 
         if not col_estado:
             st.error("❌ El archivo no contiene la columna 'Estado'.")
         else:
-            # Detecta columnas válidas (totales históricos + meses del año actual)
+            # Detecta columnas válidas (2018..año-1 + meses año actual)
             columnas_validas = []
             for anio in range(2018, anio_actual):
                 col = f"Total {anio}"
@@ -130,42 +128,32 @@ def principal_page():
                     columnas_validas.append(col_mes)
 
             if not columnas_validas:
-                st.info("No se encontraron columnas de totales/meses en el archivo de Gestión de Cobro (EIM).")
+                st.info("No se encontraron columnas de totales/meses en el archivo de Gestión de Cobro.")
             else:
-                df_gestion[columnas_validas] = (
-                    df_gestion[columnas_validas].apply(pd.to_numeric, errors="coerce").fillna(0)
-                )
-
+                df_gestion[columnas_validas] = df_gestion[columnas_validas].apply(pd.to_numeric, errors="coerce").fillna(0)
                 df_resumen = (
-                    df_gestion
-                    .groupby(col_estado)[columnas_validas]
-                    .sum()
-                    .reset_index()
-                    .rename(columns={col_estado: "Estado"})
+                    df_gestion.groupby(col_estado)[columnas_validas]
+                              .sum()
+                              .reset_index()
+                              .rename(columns={col_estado: "Estado"})
                 )
                 df_resumen["Total"] = df_resumen[columnas_validas].sum(axis=1)
 
-                # === Totales por estado (robusto con acentos/espacios) ===
-                def _norm_estado(s):
-                    s = ''.join(ch for ch in unicodedata.normalize('NFD', str(s)) if unicodedata.category(ch) != 'Mn')
-                    s = re.sub(r'\s+', ' ', s).strip().upper()
-                    return s
-
-                tot_por_estado = { _norm_estado(r["Estado"]): float(r["Total"]) for _, r in df_resumen.iterrows() }
+                # === Totales por estado (robusto con acentos) ===
+                tot_por_estado = {_norm_estado(r["Estado"]): float(r["Total"]) for _, r in df_resumen.iterrows()}
 
                 cobrado          = tot_por_estado.get("COBRADO", 0.0)
                 domic_confirmada = tot_por_estado.get("DOMICILIACION CONFIRMADA", 0.0)
-                domic_emitida    = tot_por_estado.get("DOMICILIACION EMITIDA", 0.0)    # incluida en fila 1
+                domic_emitida    = tot_por_estado.get("DOMICILIACION EMITIDA", 0.0)
                 pendiente        = tot_por_estado.get("PENDIENTE", 0.0)
                 dudoso           = tot_por_estado.get("DUDOSO COBRO", 0.0)
-                # (algunos ficheros venían con typo "INCROBRABLE")
                 incobrable       = tot_por_estado.get("INCROBRABLE", tot_por_estado.get("INCOBRABLE", 0.0))
                 no_cobrado       = tot_por_estado.get("NO COBRADO", 0.0)
 
                 # ✅ Total Generado = Cobrado + Confirmada + Emitida
                 total_generado = cobrado + domic_confirmada + domic_emitida
 
-                # Colores (igual estética EIP)
+                # Paleta (misma que en tu EIP)
                 COLORS = {
                     "COBRADO": "#E3F2FD",
                     "CONFIRMADA": "#FFE0B2",
@@ -179,43 +167,19 @@ def principal_page():
 
                 # ===== Fila 1: Cobrado | Confirmada | Emitida | Total Generado =====
                 c1, c2, c3, c4 = st.columns(4)
-                c1.markdown(
-                    render_bar_card("Cobrado", cobrado, COLORS["COBRADO"], "💵"),
-                    unsafe_allow_html=True
-                )
-                c2.markdown(
-                    render_bar_card("Domiciliación Confirmada", domic_confirmada, COLORS["CONFIRMADA"], "💷"),
-                    unsafe_allow_html=True
-                )
-                c3.markdown(
-                    render_bar_card("Domiciliación Emitida", domic_emitida, COLORS["EMITIDA"], "📤"),
-                    unsafe_allow_html=True
-                )
-                c4.markdown(
-                    render_bar_card("Total Generado", total_generado, COLORS["TOTAL"], "💰"),
-                    unsafe_allow_html=True
-                )
+                c1.markdown(render_bar_card("Cobrado", cobrado, COLORS["COBRADO"], "💵"), unsafe_allow_html=True)
+                c2.markdown(render_bar_card("Domiciliación Confirmada", domic_confirmada, COLORS["CONFIRMADA"], "💷"), unsafe_allow_html=True)
+                c3.markdown(render_bar_card("Domiciliación Emitida", domic_emitida, COLORS["EMITIDA"], "📤"), unsafe_allow_html=True)
+                c4.markdown(render_bar_card("Total Generado", total_generado, COLORS["TOTAL"], "💰"), unsafe_allow_html=True)
 
                 # ===== Fila 2: Pendiente | Dudoso | Incobrable | No Cobrado =====
                 b1, b2, b3, b4 = st.columns(4)
-                b1.markdown(
-                    render_bar_card("Pendiente",   pendiente, COLORS["PENDIENTE"], "⏳"),
-                    unsafe_allow_html=True
-                )
-                b2.markdown(
-                    render_bar_card("Dudoso Cobro", dudoso,    COLORS["DUDOSO"], "❗"),
-                    unsafe_allow_html=True
-                )
-                b3.markdown(
-                    render_bar_card("Incobrable",  incobrable, COLORS["INCOBRABLE"], "⛔"),
-                    unsafe_allow_html=True
-                )
-                b4.markdown(
-                    render_bar_card("No Cobrado",  no_cobrado, COLORS["NOCOBRADO"], "🧾"),
-                    unsafe_allow_html=True
-                )
+                b1.markdown(render_bar_card("Pendiente", pendiente, COLORS["PENDIENTE"], "⏳"), unsafe_allow_html=True)
+                b2.markdown(render_bar_card("Dudoso Cobro", dudoso, COLORS["DUDOSO"], "❗"), unsafe_allow_html=True)
+                b3.markdown(render_bar_card("Incobrable", incobrable, COLORS["INCOBRABLE"], "⛔"), unsafe_allow_html=True)
+                b4.markdown(render_bar_card("No Cobrado", no_cobrado, COLORS["NOCOBRADO"], "🧾"), unsafe_allow_html=True)
 
-    # ===================== MAPA: 🌍 Global Alumnos (EIM) =====================
+    # ===================== 🌍 MAPA (opcional) =====================
     st.markdown("---")
     st.markdown("## 🌍 Global Alumnos")
 
@@ -234,9 +198,7 @@ def principal_page():
             df_u['Provincia'] = df_u['Provincia'].apply(normalize_text).str.title().str.strip()
             df_u['País'] = df_u['País'].apply(normalize_text).str.title().str.strip()
 
-            # Provincias válidas de España
             df_esp = df_u[(df_u['País'].str.upper() == 'ESPAÑA') & (df_u['Provincia'].isin(PROVINCIAS_COORDS))]
-            # Países (incluye registros sin provincia válida)
             df_ext = df_u[(df_u['Provincia'].isna()) | (~df_u['Provincia'].isin(PROVINCIAS_COORDS)) | (df_u['País'] == "Gibraltar")]
 
             count_prov = df_esp['Provincia'].value_counts().reset_index()
@@ -246,17 +208,15 @@ def principal_page():
             count_pais.columns = ['Entidad', 'Alumnos']
 
             total_alumnos = int(count_prov['Alumnos'].sum() + count_pais['Alumnos'].sum())
-
-            # Badge total
             st.markdown(
-                f"<div style='padding: 4px 12px; display:inline-block; background-color:#e3f2fd; border-radius:6px; "
-                f"font-weight:700; color:#1565c0;'>👥 Total: {total_alumnos}</div>",
+                f"<div style='padding:4px 12px;display:inline-block;background:#e3f2fd;border-radius:6px;"
+                f"font-weight:700;color:#1565c0;'>👥 Total: {total_alumnos}</div>",
                 unsafe_allow_html=True
             )
 
             mapa = folium.Map(location=[25, 0], zoom_start=2, width="100%", height="700px", max_bounds=True)
 
-            # 🔵 Provincias de España
+            # Provincias 🇪🇸
             for _, row in count_prov.iterrows():
                 entidad, alumnos = row['Entidad'], int(row['Alumnos'])
                 coords = PROVINCIAS_COORDS.get(entidad)
@@ -268,29 +228,24 @@ def principal_page():
                         icon=folium.Icon(color="blue", icon="user", prefix="fa")
                     ).add_to(mapa)
 
-            # 🔴 Marcador central España
             total_espana = int(count_prov['Alumnos'].sum())
-            coords_espana = [40.4268, -3.7138]
             folium.Marker(
-                location=coords_espana,
+                location=[40.4268, -3.7138],
                 popup=f"<b>España (provincias)</b><br>Total alumnos: {total_espana}",
                 tooltip=f"España (provincias) ({total_espana})",
                 icon=folium.Icon(color="red", icon="flag", prefix="fa")
             ).add_to(mapa)
 
-            # 🌍 Banderas por país
             def get_flag_emoji(pais_nombre):
                 FLAGS = {
-                    "Francia": "🇫🇷", "Portugal": "🇵🇹", "Italia": "🇮🇹",
-                    "Alemania": "🇩🇪", "Reino Unido": "🇬🇧", "Marruecos": "🇲🇦",
-                    "Argentina": "🇦🇷", "México": "🇲🇽", "Colombia": "🇨🇴",
-                    "Chile": "🇨🇱", "Brasil": "🇧🇷", "Perú": "🇵🇪",
-                    "Uruguay": "🇺🇾", "Venezuela": "🇻🇪", "Ecuador": "🇪🇨",
-                    "Gibraltar": "🇬🇮"
+                    "Francia":"🇫🇷","Portugal":"🇵🇹","Italia":"🇮🇹","Alemania":"🇩🇪","Reino Unido":"🇬🇧",
+                    "Marruecos":"🇲🇦","Argentina":"🇦🇷","México":"🇲🇽","Colombia":"🇨🇴","Chile":"🇨🇱",
+                    "Brasil":"🇧🇷","Perú":"🇵🇪","Uruguay":"🇺🇾","Venezuela":"🇻🇪","Ecuador":"🇪🇨",
+                    "Gibraltar":"🇬🇮"
                 }
                 return FLAGS.get(pais_nombre.title(), "🌍")
 
-            # 🔴 Países extranjeros / sin provincia válida
+            # Países 🌍
             for _, row in count_pais.iterrows():
                 entidad, alumnos = row['Entidad'], int(row['Alumnos'])
                 if entidad.upper() == "ESPAÑA":
@@ -321,10 +276,10 @@ def principal_page():
         return
 
     required_cols_check = ['Cliente', 'Provincia', 'Localidad', 'Nacionalidad', 'País', 'Comercial']
-    missing_cols = [col for col in required_cols_check if col not in df_check.columns]
+    missing_cols = [c for c in required_cols_check if c not in df_check.columns]
 
     if missing_cols:
-        st.warning(f"⚠️ Faltan columnas para la tabla: {', '.join(missing_cols)}")
+        st.warning(f"⚠️ Faltan columnas en el archivo: {', '.join(missing_cols)}")
     else:
         df_filtrado = df_check[df_check['País'].astype(str).str.strip().str.upper() == "ESPAÑA"].copy()
         df_incompletos = df_filtrado[
@@ -333,10 +288,9 @@ def principal_page():
         ][['Cliente', 'Provincia', 'Localidad', 'Nacionalidad', 'País', 'Comercial']]
 
         df_incompletos = (
-            df_incompletos
-            .drop_duplicates(subset=["Cliente"])
-            .sort_values(by="Cliente")
-            .reset_index(drop=True)
+            df_incompletos.drop_duplicates(subset=["Cliente"])
+                          .sort_values(by="Cliente")
+                          .reset_index(drop=True)
         )
 
         if df_incompletos.empty:
