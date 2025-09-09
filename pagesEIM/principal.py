@@ -25,20 +25,21 @@ def format_euro(value: float) -> str:
     return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 def render_bar_card(title: str, value: float, bg: str, emoji: str = "") -> str:
-    """Tarjeta grande con el mismo look que usas en EIP."""
+    """MISMO look & feel que en EIP (medida y estilo idénticos)."""
     return f"""
     <div style="
       background:{bg};
-      border:1px solid rgba(0,0,0,.05);
-      border-radius:16px;
-      padding:16px 18px;
-      box-shadow:0 3px 8px rgba(0,0,0,.06);
-      min-height:104px;
-      display:flex;flex-direction:column;justify-content:center;">
-        <div style="font-weight:800;font-size:15px;color:#2d3748;margin-bottom:6px">
-          {emoji} {title}
-        </div>
-        <div style="font-size:30px;font-weight:900;color:#111827">€ {format_euro(value)}</div>
+      border:1px solid #dfe3eb;
+      border-radius:14px;
+      padding:14px 16px;
+      box-shadow:0 2px 6px rgba(0,0,0,.06);
+    ">
+      <div style="font-weight:700;font-size:15px;margin-bottom:8px;color:#1f2d3d">
+        {emoji} {title}
+      </div>
+      <div style="font-size:26px;font-weight:800;color:#1f2d3d">
+        € {format_euro(value)}
+      </div>
     </div>
     """
 
