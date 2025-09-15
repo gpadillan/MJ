@@ -1,20 +1,20 @@
 # app.py
-import streamlit as st
 import importlib
+import streamlit as st
 from auth import login_page
 from sidebar import show_sidebar
 
 # ===================== Inicialización de sesión =====================
 DEFAULTS = {
-    'logged_in': False,
-    'username': "",
-    'role': "viewer",
-    'current_page': "Inicio",
-    'excel_uploaded': False,
-    'excel_filename': "",
-    'excel_data': None,
-    'upload_time': None,
-    'unidad': "EIP",  # EIP / EIM / Mainjobs B2C
+    "logged_in": False,
+    "username": "",
+    "role": "viewer",
+    "current_page": "Inicio",
+    "excel_uploaded": False,
+    "excel_filename": "",
+    "excel_data": None,
+    "upload_time": None,
+    "unidad": "EIP",  # EIP / EIM / Mainjobs B2C
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -29,58 +29,64 @@ st.set_page_config(
     page_title="Sistema de Gestión",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="collapsed" if not st.session_state['logged_in'] else "expanded"
+    initial_sidebar_state="collapsed" if not st.session_state["logged_in"] else "expanded",
 )
 
 # ===================== Estilos =====================
 def add_custom_css():
-    st.markdown("""
-    <style>
-    [data-testid="stSidebarNav"] { display: none !important; }
-    .main-header {
-        text-align: center; padding: 1.5rem; background-color: #f0f2f6;
-        border-radius: 10px; margin-bottom: 2rem;
-    }
-    .card {
-        padding: 1.5rem; border-radius: 10px; background-color: #f8f9fa;
-        box-shadow: 0 0.25rem 0.75rem rgba(0,0,0,0.05); margin-bottom: 1rem;
-    }
-    .sidebar .sidebar-content { background-color: #f8f9fa; }
-    </style>
-    """, unsafe_allow_html=True)
-
-    if not st.session_state['logged_in']:
-        st.markdown("""
+    st.markdown(
+        """
         <style>
-        [data-testid="stSidebar"],
-        section[data-testid="stSidebarUserContent"] { display: none !important; }
+        [data-testid="stSidebarNav"] { display: none !important; }
+        .main-header {
+            text-align: center; padding: 1.5rem; background-color: #f0f2f6;
+            border-radius: 10px; margin-bottom: 2rem;
+        }
+        .card {
+            padding: 1.5rem; border-radius: 10px; background-color: #f8f9fa;
+            box-shadow: 0 0.25rem 0.75rem rgba(0,0,0,0.05); margin-bottom: 1rem;
+        }
+        .sidebar .sidebar-content { background-color: #f8f9fa; }
         </style>
-        """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if not st.session_state["logged_in"]:
+        st.markdown(
+            """
+            <style>
+            [data-testid="stSidebar"],
+            section[data-testid="stSidebarUserContent"] { display: none !important; }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
 
 # ===================== Router =====================
 # ---- Rutas para EIP (/pages) ----
 ROUTES_EIP = {
-    "Inicio":              ("pages.inicio",                    "inicio_page"),
-    "Admisiones":          ("pages.admisiones.main_admisiones","app"),
-    "Academica":           ("pages.academica.academica_main",  "academica_page"),
-    "Desarrollo":          ("pages.desarrollo_main",           "desarrollo_page"),
-    "Gestión de Cobro":    ("pages.deuda_main",                "deuda_page"),
-    "Principal":           ("pages.principal",                 "principal_page"),
+    "Inicio": ("pages.inicio", "inicio_page"),
+    "Admisiones": ("pages.admisiones.main_admisiones", "app"),
+    "Academica": ("pages.academica.academica_main", "academica_page"),
+    "Desarrollo": ("pages.desarrollo_main", "desarrollo_page"),
+    "Gestión de Cobro": ("pages.deuda_main", "deuda_page"),
+    "Principal": ("pages.principal", "principal_page"),
 }
 
 # ---- Rutas para EIM (/pagesEIM) ----
 ROUTES_EIM = {
-    "Inicio":              ("pagesEIM.inicio",                     "inicio_page"),
-    "Admisiones":          ("pagesEIM.admisiones.main_admisiones", "app"),
-    "Academica":           ("pagesEIM.academica.academica_main",   "academica_page"),
-    "Desarrollo":          ("pagesEIM.desarrollo_main",            "desarrollo_page"),
-    "Gestión de Cobro":    ("pagesEIM.deuda_main",                 "deuda_page"),
-    "Principal":           ("pagesEIM.principal",                  "principal_page"),
+    "Inicio": ("pagesEIM.inicio", "inicio_page"),
+    "Admisiones": ("pagesEIM.admisiones.main_admisiones", "app"),
+    "Academica": ("pagesEIM.academica.academica_main", "academica_page"),
+    "Desarrollo": ("pagesEIM.desarrollo_main", "desarrollo_page"),
+    "Gestión de Cobro": ("pagesEIM.deuda_main", "deuda_page"),
+    "Principal": ("pagesEIM.principal", "principal_page"),
 }
 
 # ---- Rutas para Mainjobs B2C (/pagesB2C) ----
 ROUTES_B2C = {
-    "Principal":           ("pagesB2C.principal",                 "principal_page"),
+    "Principal": ("pagesB2C.principal", "principal_page"),
 }
 
 def _get_routes_for_unidad(unidad: str):
@@ -94,7 +100,7 @@ def _get_routes_for_unidad(unidad: str):
 
 def route_page():
     unidad = st.session_state.get("unidad", "EIP")
-    page   = st.session_state.get("current_page", "Inicio")
+    page = st.session_state.get("current_page", "Inicio")
     routes = _get_routes_for_unidad(unidad)
 
     if page not in routes:
@@ -127,7 +133,7 @@ def route_page():
 def main():
     add_custom_css()
 
-    if not st.session_state['logged_in']:
+    if not st.session_state["logged_in"]:
         login_page()
         return
 
@@ -144,8 +150,11 @@ def main():
         # (opcional) si entras a B2C fuerza "Principal" para evitar páginas inexistentes
         if st.session_state["unidad"] == "Mainjobs B2C":
             st.session_state["current_page"] = "Principal"
-        # Si vuelves a EIP/EIM y estabas en "Principal", mantenemos la que tengas, o "Inicio"
-        if st.session_state["unidad"] in ("EIP", "EIM") and st.session_state.get("current_page") not in _get_routes_for_unidad(st.session_state["unidad"]):
+
+        # Si vuelves a EIP/EIM y estabas en "Principal", ajusta a una válida
+        if st.session_state["unidad"] in ("EIP", "EIM") and (
+            st.session_state.get("current_page") not in _get_routes_for_unidad(st.session_state["unidad"])
+        ):
             st.session_state["current_page"] = "Inicio"
 
         st.rerun()
