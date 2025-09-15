@@ -215,9 +215,9 @@ def app():
         st.dataframe(conteo_programas.style.background_gradient(cmap="Blues"), use_container_width=True)
 
     # =========================
-    # TARJETAS POR PROPIETARIO (con VENTAS y CONVERSIÓN por mes)
+    # TARJETAS POR PROPIETARIO (con VENTAS y RATIO por mes)
     # =========================
-    st.subheader("🧑‍💼 Ventas por Propietario (tarjetas)")
+    st.subheader(" Ventas por Propietario")
 
     # LEADS por propietario y mes (para chips)
     df_mes_prop = (
@@ -315,7 +315,7 @@ def app():
             f'<div class="row">'
             f'<span class="pill">🧊 Leads: {int(leads_total)}</span>'
             f'<span class="pill">🧾 Ventas: {ventas_total}</span>'
-            f'<span class="pill">🎯 Conversión: {ratio_global_txt}</span>'
+            f'<span class="pill">🎯 Ratio: {ratio_global_txt}</span>'
             f'</div>'
         )
 
@@ -332,7 +332,7 @@ def app():
                     f'{mes}'
                     f'<span class="count">L: {l}</span>'
                     f'<span class="count">V: {v}</span>'
-                    f'<span class="count-alt">{r:.1f}%</span>'
+                    f'<span class="count-alt">Ratio: {r:.1f}%</span>'
                     f'</span>'
                 )
         # Si no hubo nada de nada
