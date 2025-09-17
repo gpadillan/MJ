@@ -151,7 +151,8 @@ def app():
 
     st.markdown("---")
     st.subheader("📊 Análisis")
-    col3, col4, col5 = st.columns([1, 1, 1])
+    # Antes: col3, col4, col5 = st.columns([1, 1, 1])
+    col3, col4 = st.columns([1, 1])
 
     with col3:
         st.subheader("Forma de Pago")
@@ -223,23 +224,3 @@ def app():
             st.plotly_chart(fig4, use_container_width=True)
         else:
             st.info("No hay datos suficientes para mostrar el embudo de PVP por forma de pago.")
-
-    with col5:
-        st.subheader("Total por Origen")
-
-        if "origen" in df_filtrado.columns:
-            df_filtrado["origen"] = (
-                df_filtrado["origen"].astype(str).str.strip()
-                .replace(["nan", "None", ""], "(En Blanco)").fillna("(En Blanco)")
-            )
-
-            conteo_origen = df_filtrado["origen"].value_counts().reset_index()
-            conteo_origen.columns = ["Origen", "Cantidad"]
-
-            total = conteo_origen["Cantidad"].sum()
-            total_row = pd.DataFrame([{"Origen": "TOTAL", "Cantidad": total}])
-            tabla_origen = pd.concat([conteo_origen, total_row], ignore_index=True)
-
-            st.dataframe(tabla_origen, use_container_width=True)
-        else:
-            st.info("La columna 'origen' no está disponible en el archivo.")
