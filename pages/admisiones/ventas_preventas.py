@@ -17,6 +17,10 @@ PREVENTAS_FILE  = os.path.join(UPLOAD_FOLDER, "preventas.xlsx")
 PVFE_FILE       = os.path.join(UPLOAD_FOLDER, "pv_fe.xlsx")   # si no existe busco por 'listadoFacturacionFicticia*'
 ANIO_ACTUAL     = datetime.now().year  # ← año en curso
 
+# Pasteles (ajusta si quieres aún más claro)
+OWNER_HEADER_LIGHTEN = 0.82  # 0..1 (más alto = más claro) cabecera de tarjeta
+OWNER_BLOCK_LIGHTEN  = 0.92  # 0..1 bloques internos (FF/Clientify)
+
 # =========================
 # UTILIDADES
 # =========================
@@ -53,6 +57,23 @@ def euro_es(n) -> str:
     s = f"{f:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     if s.endswith(",00"): s = s[:-3]
     return f"{s} €"
+
+def lighten_hex(hex_color: str, factor: float = 0.85) -> str:
+    """
+    Aclara un color hex mezclándolo con blanco.
+    factor 0..1 (más alto = más claro).
+    """
+    try:
+        h = hex_color.lstrip("#")
+        if len(h) == 3:
+            h = "".join([c*2 for c in h])
+        r = int(h[0:2], 16); g = int(h[2:4], 16); b = int(h[4:6], 16)
+        rl = int(r + (255 - r) * factor)
+        gl = int(g + (255 - g) * factor)
+        bl = int(b + (255 - b) * factor)
+        return f"#{rl:02x}{gl:02x}{bl:02x}"
+    except Exception:
+        return "#f5f7fa"
 
 # =========================
 # CATEGORÍAS (para nombre_unificado)
@@ -162,7 +183,6 @@ def app():
     if os.path.exists(PREVENTAS_FILE):
         df_preventas = pd.read_excel(PREVENTAS_FILE)
         df_preventas.rename(columns={c: _strip_accents_lower(c) for c in df_preventas.columns}, inplace=True)
-        # columnas de importe:
         columnas_importe = [col for col in df_preventas.columns if "importe" in col]
         total_preventas_importe = df_preventas[columnas_importe].sum(numeric_only=True).sum() if columnas_importe else 0
         total_preventas_count   = df_preventas.shape[0]
@@ -184,7 +204,6 @@ def app():
     if mes_seleccionado != "Todos":
         df_ventas = df_ventas[df_ventas["mes"] == mes_seleccionado]
 
-    # —— título dinámico: si es “Todos”, muestra Año actual
     titulo_periodo = mes_seleccionado if mes_seleccionado != "Todos" else f"Año {ANIO_ACTUAL}"
     st.markdown(f"### {titulo_periodo}")
 
@@ -307,7 +326,7 @@ def app():
         """, unsafe_allow_html=True)
 
     # ======================================================================
-    #        FACTURACIÓN FICTICIA + CLIENTIFY POR COMERCIAL (robusto)
+    #        FACTURACIÓN FICTICIA + CLIENTIFY POR COMERCIAL (PASTELES)
     # ======================================================================
     st.markdown("---")
     st.markdown("#### Facturación Ficticia + Clientify por Comercial")
@@ -459,14 +478,12 @@ def app():
     # ======= TARJETAS (UNA POR FILA) =======
     for alias in ordered_aliases:
         owner_name = alias_to_owner.get(alias, alias)
-        tiene_clientify = (alias in ventas_by_alias) or (alias in preventas_by_alias)
-
-        # Colores
-        ring_color = owner_color_map.get(owner_name, "#1f77b4") if owner_name in owners_in_chart else ("#1f77b4" if tiene_clientify else "#888")
-        if tiene_clientify:
-            card_bg, title_color, text_color, clientify_bg = "#fff", "#000", "#000", "#f2f2f2"
-        else:
-            card_bg, title_color, text_color, clientify_bg = "#4a4a4a", "#fff", "#fff", "#2b2b2b"
+        base_color = owner_color_map.get(owner_name, "#1f77b4") if owner_name in owners_in_chart else "#888"
+        # pastel a juego con el gráfico anual
+        header_bg = lighten_hex(base_color, OWNER_HEADER_LIGHTEN)
+        block_bg  = lighten_hex(base_color, OWNER_BLOCK_LIGHTEN)
+        ring_color = base_color
+        text_color = "#111827"  # negro
 
         pv = pvfe_summary.get(alias, {"pv_regs":0,"pv_pend":0,"pv_total":0})
         ve = ventas_by_alias.get(alias, {"ventas_count":0,"ventas_importe":0})
@@ -474,7 +491,6 @@ def app():
         detail_html = pvfe_details_html.get(alias, "<i>Sin registros</i>")
         nrows = details_rows.get(alias, 1)
 
-        # Diferencia FE−Clientify
         pv_total = float(pv.get("pv_total", 0) or 0)
         ve_importe = float(ve.get("ventas_importe", 0) or 0)
         diff_fe_cli = pv_total - ve_importe
@@ -485,7 +501,7 @@ def app():
         )
 
         ff_block = f"""
-            <div style="background:#eef7ff;border:1px solid #d9eaff;border-radius:8px;padding:10px;margin-bottom:8px;color:#000;">
+            <div style="background:{block_bg};border:1px solid {lighten_hex(base_color, 0.75)};border-radius:8px;padding:10px;margin-bottom:8px;color:{text_color};">
                 <div style="font-weight:900;margin-bottom:4px">Facturación Ficticia</div>
                 <div style="font-weight:700">Registros: <b>{int(pv['pv_regs'])}</b></div>
                 <div style="font-weight:700">Pendiente: <b>{euro_es(pv['pv_pend'])}</b></div>
@@ -494,7 +510,7 @@ def app():
         """
 
         clientify_block = f"""
-            <div style="background:{clientify_bg};border:1px solid #e5e5e5;border-radius:8px;padding:10px;margin-bottom:8px;color:{'#000' if tiene_clientify else '#fff'};">
+            <div style="background:#f6f7f9;border:1px solid #e5e5e5;border-radius:8px;padding:10px;margin-bottom:8px;color:{text_color};">
                 <div style="font-weight:900;margin-bottom:6px">Clientify</div>
                 <div style="margin-bottom:6px">
                     <div style="font-weight:800">Ventas</div>
@@ -515,9 +531,9 @@ def app():
 
         card_html = f"""
         <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif;">
-          <div style="background:{card_bg};border:3px solid {ring_color};border-radius:12px;padding:14px;color:{text_color};
+          <div style="background:#fff;border:3px solid {ring_color};border-radius:12px;padding:14px;color:{text_color};
                       box-shadow:0 2px 6px rgba(0,0,0,.06); overflow:hidden;">
-            <div style="background:{ring_color};color:#fff;border-radius:10px;padding:10px 12px;
+            <div style="background:{header_bg};color:#111827;border-radius:10px;padding:10px 12px;
                         font-weight:900;margin:-6px -6px 12px -6px;display:flex;align-items:center;gap:6px;">
               <span>{owner_name}</span>{diff_badge}
             </div>

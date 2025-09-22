@@ -12,8 +12,29 @@ LEADS_GENERADOS_FILE = os.path.join(UPLOAD_FOLDER, "leads_generados.xlsx")
 VENTAS_FILE = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
 SITUACION_2025_FILE = os.path.join(UPLOAD_FOLDER, "matricula_programas_25.xlsx")  # para Origen de la venta
 
-# Paleta base
+# Paleta base (fallback)
 COLORWAY = px.colors.qualitative.Plotly
+
+# ==== COLORES CONFIGURABLES (EDITA AQUÍ) ====
+# Colores (más llamativos) para el gráfico "Total de clientes potenciales por mes"
+MES_COLORS_BAR = {
+    "Enero": "#1e88e5",
+    "Febrero": "#fb8c00",
+    "Marzo": "#43a047",
+    "Abril": "#e53935",
+    "Mayo": "#8e24aa",
+    "Junio": "#6d4c41",
+    "Julio": "#ec407a",
+    "Agosto": "#9e9e9e",
+    "Septiembre": "#c0ca33",
+    "Octubre": "#00acc1",
+    "Noviembre": "#5c6bc0",
+    "Diciembre": "#f4511e",
+}
+
+# Para las tarjetas de "Ventas por Propietario"
+USE_SAME_COLORS_FOR_CARDS = False   # True = usa MES_COLORS_BAR tal cual; False = usa versión aclarada
+CARDS_LIGHTEN_FACTOR = 0.83         # 0..1 (más alto = más claro) cuando USE_SAME_COLORS_FOR_CARDS = False
 
 
 def app():
@@ -24,6 +45,7 @@ def app():
         1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
         7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
     }
+    MESES_ORDEN = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
 
     # ---------- helpers ----------
     def normalizar(texto: str) -> str:
@@ -50,12 +72,25 @@ def app():
         return df
 
     def header_with_total(label: str, total: int):
-        """Muestra el encabezado y debajo el TOTAL formateado."""
         st.markdown(f"#### {label}")
         st.markdown(
             f"<div style='margin:-6px 0 10px 0; font-weight:700'>TOTAL: {format(total, ',').replace(',', '.')}</div>",
             unsafe_allow_html=True
         )
+
+    def lighten_hex(hex_color: str, factor: float = 0.85) -> str:
+        """Aclara un color hex mezclándolo con blanco. factor 0..1 (más alto = más claro)."""
+        try:
+            hex_color = hex_color.lstrip('#')
+            r = int(hex_color[0:2], 16)
+            g = int(hex_color[2:4], 16)
+            b = int(hex_color[4:6], 16)
+        except Exception:
+            return "#f3f4f6"
+        r_l = int(r + (255 - r) * factor)
+        g_l = int(g + (255 - g) * factor)
+        b_l = int(b + (255 - b) * factor)
+        return f"#{r_l:02x}{g_l:02x}{b_l:02x}"
 
     CATEGORIAS_EXACTAS = {
         "MÁSTER IA": [
@@ -194,64 +229,48 @@ def app():
     if programa_seleccionado != "Todos":
         df_filtrado = df_filtrado[df_filtrado["programa_final"] == programa_seleccionado]
 
-    # ===== COLOR POR MES =====
+    # ===== ORDEN Y COLORES POR MES =====
     orden_meses = (
         df_filtrado[["mes_anio", "anio", "mes_num"]]
         .drop_duplicates().sort_values(["anio", "mes_num"])["mes_anio"].tolist()
     )
     if not orden_meses:
         orden_meses = meses_disponibles["mes_anio"].tolist()
-    color_map_mes = {mes: COLORWAY[i % len(COLORWAY)] for i, mes in enumerate(orden_meses)}
 
-    # ===== GRÁFICO 📆 Total de clientes potenciales por mes =====
+    # Colores para el gráfico (vivos)
+    color_map_mes_chart = {}
+    for mes in orden_meses:
+        base = mes.split(" ")[0]  # "Enero", etc.
+        color_map_mes_chart[mes] = MES_COLORS_BAR.get(base, "#4c78a8")
+
+    # Colores para las tarjetas (claros o mismos)
+    if USE_SAME_COLORS_FOR_CARDS:
+        color_map_cards = color_map_mes_chart.copy()
+    else:
+        color_map_cards = {}
+        for mes in orden_meses:
+            base = mes.split(" ")[0]
+            color_map_cards[mes] = lighten_hex(MES_COLORS_BAR.get(base, "#4c78a8"), CARDS_LIGHTEN_FACTOR)
+
+    # ===== GRÁFICO 📆 Total de clientes potenciales por mes (barras horizontales) =====
     st.subheader("📅 Total de clientes potenciales por mes")
     leads_por_mes = (
         df_filtrado.groupby(["mes_anio", "mes_num", "anio"]).size().reset_index(name="Cantidad")
         .sort_values(["anio", "mes_num"])
     )
     leads_por_mes["Mes"] = leads_por_mes["mes_anio"]
-    leads_por_mes["Etiqueta"] = leads_por_mes.apply(lambda r: f"{r['Mes']} - {r['Cantidad']}", axis=1)
 
-    if is_mobile:
-        fig_leads = px.bar(
-            leads_por_mes, x="Cantidad", y="Mes", orientation="h", text="Cantidad",
-            height=420, color="Mes", color_discrete_map=color_map_mes
-        )
-        fig_leads.update_traces(textposition="outside")
-    else:
-        # ======= NUEVO: leyenda con % y número dentro del donut =======
-        total_leads = int(leads_por_mes["Cantidad"].sum()) if not leads_por_mes.empty else 0
-        if total_leads > 0:
-            leads_por_mes["Porcentaje"] = leads_por_mes["Cantidad"] / total_leads * 100
-        else:
-            leads_por_mes["Porcentaje"] = 0.0
-
-        # Leyenda "Mes — 12.3%"
-        leads_por_mes["Leyenda"] = leads_por_mes.apply(
-            lambda r: f"{r['Mes']} — {r['Porcentaje']:.1f}%", axis=1
-        )
-
-        # Mapeo de colores estable por Mes
-        color_map_leyenda = {
-            row["Leyenda"]: color_map_mes[row["Mes"]]
-            for _, row in leads_por_mes.iterrows()
-        }
-
-        fig_leads = px.pie(
-            leads_por_mes,
-            names="Leyenda",          # leyenda con porcentaje
-            values="Cantidad",        # el número real determina el tamaño
-            color="Leyenda",
-            color_discrete_map=color_map_leyenda,
-            hole=0.4
-        )
-
-        # Mostrar SOLO el número dentro del sector
-        fig_leads.update_traces(
-            texttemplate="%{value:,}",   # número en el sector
-            textposition="inside"
-        )
-        fig_leads.update_layout(showlegend=True)
+    fig_leads = px.bar(
+        leads_por_mes,
+        x="Cantidad",
+        y="Mes",
+        orientation="h",
+        text="Cantidad",
+        color="Mes",
+        color_discrete_map=color_map_mes_chart,
+    )
+    fig_leads.update_traces(textposition="outside")
+    fig_leads.update_layout(xaxis_title="Cantidad", yaxis_title=None, showlegend=False, height=420 if is_mobile else None)
     st.plotly_chart(fig_leads, use_container_width=True)
 
     # ===========================================================
@@ -371,8 +390,6 @@ def app():
         .size().reset_index(name="leads")
         .sort_values(["anio", "mes_num", "propietario"])
     )
-
-    # Filtra tarjetas según "Propietario (tablas)"
     if propietario_tablas != "Todos":
         df_mes_prop = df_mes_prop[df_mes_prop["propietario"] == propietario_tablas]
 
@@ -423,33 +440,34 @@ def app():
         <style>
         .cards-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 14px;
         }
         .card {
-            background: #f7fafc;
-            border: 1px solid #e2e8f0;
+            background: #ffffff;
+            border: 1px solid #edf2f7;
             border-radius: 12px;
             padding: 14px 14px 10px 14px;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
         .card h4 { margin: 0 0 6px 0; font-size: 16px; color: #1a202c; }
         .row { display:flex; gap:12px; margin: 6px 0 10px 0; }
-        .pill { background:#edf2f7; border-radius:8px; padding:4px 8px; font-size:12px; font-weight:700; color:#2d3748; }
+        .pill { background:#f3f4f6; border-radius:8px; padding:4px 8px; font-size:12px; font-weight:700; color:#111827; }
         .chips { display:flex; flex-wrap:wrap; gap:6px; }
         .chip {
             display:inline-flex; align-items:center; flex-wrap:wrap;
             gap:6px; height:auto; padding:6px 8px;
-            border-radius:8px; font-size:13px; font-weight:700; color:white;
-            box-shadow: inset 0 -1px 0 rgba(0,0,0,0.12);
+            border-radius:8px; font-size:13px; font-weight:700; color:#111827;
+            box-shadow: inset 0 -1px 0 rgba(0,0,0,0.04);
+            border: 1px solid rgba(0,0,0,0.04);
         }
         .chip .count, .chip .count-alt {
-            background: rgba(0,0,0,0.28);
+            background: rgba(0,0,0,0.06);
             padding: 2px 6px;
             border-radius: 6px;
             font-weight: 800;
         }
-        .chip .count-alt { background: rgba(255,255,255,0.18); }
+        .chip .count-alt { background: rgba(0,0,0,0.10); }
         </style>
         """,
         unsafe_allow_html=True
@@ -478,7 +496,7 @@ def app():
             v = int(ventas_prop_mes.loc[propietario, mes]) if mes in ventas_prop_mes.columns else 0
             r = float(ratio_prop_mes.loc[propietario, mes]) if mes in ratio_prop_mes.columns else 0.0
             if (l > 0) or (v > 0):
-                bg = color_map_mes.get(mes, "#718096")
+                bg = color_map_cards.get(mes, "#718096")
                 tarjetas_html.append(
                     f'<span class="chip" style="background:{bg}">'
                     f'{mes}'
