@@ -432,7 +432,8 @@ def app():
     else:
         ventas_prop_mes = leads_prop_mes.copy() * 0  # todo a cero si no hay ventas/mes
 
-    ratio_prop_mes = (ventas_prop_mes / leads_prop_mes.replace(0, pd.NA) * 100).fillna(0).round(1)
+    # -------- RATIO EN "PUNTOS" (ventas/leads*100), SIN % --------
+    ratio_prop_mes = (ventas_prop_mes / leads_prop_mes.replace(0, pd.NA) * 100).fillna(0).round(2)
 
     # ====== ESTILOS CSS ======
     st.markdown(
@@ -477,8 +478,9 @@ def app():
     tarjetas_html = ['<div class="cards-grid">']
     for propietario, leads_total in totales_leads_prop.items():
         ventas_total = int(ventas_prop_mes.loc[propietario].sum()) if ventas_prop_mes.shape[0] else 0
+        # -------- ratio global en puntos (ventas/leads*100), SIN % --------
         ratio_global = (ventas_total / leads_total * 100.0) if leads_total > 0 else None
-        ratio_global_txt = f"{ratio_global:.1f}%" if ratio_global is not None else "—"
+        ratio_global_txt = f"{ratio_global:.2f}" if ratio_global is not None else "—"
 
         tarjetas_html.append('<div class="card">')
         tarjetas_html.append(f'<h4>{propietario}</h4>')
@@ -502,7 +504,7 @@ def app():
                     f'{mes}'
                     f'<span class="count">L: {l}</span>'
                     f'<span class="count">V: {v}</span>'
-                    f'<span class="count-alt">{r:.1f}%</span>'
+                    f'<span class="count-alt">{r:.2f}</span>'
                     f'</span>'
                 )
         if (leads_prop_mes.loc[propietario].sum() == 0) and (ventas_prop_mes.loc[propietario].sum() == 0):
