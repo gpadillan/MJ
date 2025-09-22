@@ -219,10 +219,39 @@ def app():
         )
         fig_leads.update_traces(textposition="outside")
     else:
-        fig_leads = px.pie(
-            leads_por_mes, names="Etiqueta", values="Cantidad",
-            hole=0.4, color="Mes", color_discrete_map=color_map_mes
+        # ======= NUEVO: leyenda con % y número dentro del donut =======
+        total_leads = int(leads_por_mes["Cantidad"].sum()) if not leads_por_mes.empty else 0
+        if total_leads > 0:
+            leads_por_mes["Porcentaje"] = leads_por_mes["Cantidad"] / total_leads * 100
+        else:
+            leads_por_mes["Porcentaje"] = 0.0
+
+        # Leyenda "Mes — 12.3%"
+        leads_por_mes["Leyenda"] = leads_por_mes.apply(
+            lambda r: f"{r['Mes']} — {r['Porcentaje']:.1f}%", axis=1
         )
+
+        # Mapeo de colores estable por Mes
+        color_map_leyenda = {
+            row["Leyenda"]: color_map_mes[row["Mes"]]
+            for _, row in leads_por_mes.iterrows()
+        }
+
+        fig_leads = px.pie(
+            leads_por_mes,
+            names="Leyenda",          # leyenda con porcentaje
+            values="Cantidad",        # el número real determina el tamaño
+            color="Leyenda",
+            color_discrete_map=color_map_leyenda,
+            hole=0.4
+        )
+
+        # Mostrar SOLO el número dentro del sector
+        fig_leads.update_traces(
+            texttemplate="%{value:,}",   # número en el sector
+            textposition="inside"
+        )
+        fig_leads.update_layout(showlegend=True)
     st.plotly_chart(fig_leads, use_container_width=True)
 
     # ===========================================================
@@ -343,7 +372,7 @@ def app():
         .sort_values(["anio", "mes_num", "propietario"])
     )
 
-    # >>> ÚNICO CAMBIO: filtrar las tarjetas según "Propietario (tablas)"
+    # Filtra tarjetas según "Propietario (tablas)"
     if propietario_tablas != "Todos":
         df_mes_prop = df_mes_prop[df_mes_prop["propietario"] == propietario_tablas]
 
@@ -360,7 +389,6 @@ def app():
             ventas_filtrado_cards = ventas_filtrado_cards[ventas_filtrado_cards["mes_anio"] == mes_seleccionado]
         if programa_seleccionado != "Todos":
             ventas_filtrado_cards = ventas_filtrado_cards[ventas_filtrado_cards["programa_final"] == programa_seleccionado]
-        # >>> y aquí también filtramos ventas por ese propietario si procede
         if propietario_tablas != "Todos" and "propietario" in ventas_filtrado_cards.columns:
             ventas_filtrado_cards = ventas_filtrado_cards[ventas_filtrado_cards["propietario"] == propietario_tablas]
 
