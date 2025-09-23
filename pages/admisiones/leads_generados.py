@@ -26,7 +26,7 @@ MES_COLORS_BAR = {
     "Junio": "#6d4c41",
     "Julio": "#ec407a",
     "Agosto": "#9e9e9e",
-    "Septiembre": "#c0ca33",
+    "Septiembre": "#3fca33",
     "Octubre": "#00acc1",
     "Noviembre": "#5c6bc0",
     "Diciembre": "#f4511e",
@@ -207,7 +207,6 @@ def app():
     # =========================
     # FILTROS ARRIBA (SIN propietario)
     # =========================
-    st.subheader("Filtros")
 
     meses_disponibles = (
         df[["mes_anio", "mes_num", "anio"]]
@@ -253,7 +252,7 @@ def app():
             color_map_cards[mes] = lighten_hex(MES_COLORS_BAR.get(base, "#4c78a8"), CARDS_LIGHTEN_FACTOR)
 
     # ===== GRÁFICO 📆 Total de clientes potenciales por mes (barras horizontales) =====
-    st.subheader("📅 Total de clientes potenciales por mes")
+    st.subheader("📅 Total Leads por mes")
     leads_por_mes = (
         df_filtrado.groupby(["mes_anio", "mes_num", "anio"]).size().reset_index(name="Cantidad")
         .sort_values(["anio", "mes_num"])
@@ -276,7 +275,7 @@ def app():
     # ===========================================================
     #   TABLAS (selector de propietario SOLO para las tablas)
     # ===========================================================
-    st.markdown("### Selecciona un Propietario (para las tablas):")
+    st.markdown("### Selecciona un Propietario:")
 
     df_tablas_global = df.copy()
     if mes_seleccionado != "Todos":
@@ -285,7 +284,7 @@ def app():
         df_tablas_global = df_tablas_global[df_tablas_global["programa_final"] == programa_seleccionado]
 
     propietarios_tablas = ["Todos"] + sorted(df_tablas_global["propietario"].unique().tolist())
-    propietario_tablas = st.selectbox("Propietario (tablas)", propietarios_tablas, key="prop_tabs")
+    propietario_tablas = st.selectbox("Propietario", propietarios_tablas, key="prop_tabs")
 
     df_tablas = df_tablas_global.copy()
     if propietario_tablas != "Todos":
@@ -327,7 +326,7 @@ def app():
             .rename_axis("Programa").reset_index(name="Cantidad")
         )
         total1 = int(t1["Cantidad"].sum()) if not t1.empty else 0
-        header_with_total("📘 Total de Leads por Programa", total1)
+        header_with_total("📘 Total Leads por Programa", total1)
         if propietario_tablas != "Todos" and total1 > 0:
             t1 = pd.concat(
                 [pd.DataFrame([{"Programa": f"TOTAL {propietario_tablas}", "Cantidad": total1}]), t1],
@@ -350,7 +349,7 @@ def app():
             conteo_origen = pd.DataFrame(columns=["Origen Lead", "Cantidad"])
 
         total2 = int(conteo_origen["Cantidad"].sum()) if not conteo_origen.empty else 0
-        header_with_total("📄 Origen de los Leads", total2)
+        header_with_total("📄 Origen Leads", total2)
         if propietario_tablas != "Todos" and total2 > 0:
             conteo_origen = pd.concat(
                 [pd.DataFrame([{"Origen Lead": f"TOTAL — {propietario_tablas}", "Cantidad": total2}]), conteo_origen],
@@ -372,7 +371,7 @@ def app():
             conteo_origen_v = pd.DataFrame(columns=["Origen", "Cantidad"])
 
         total3 = int(conteo_origen_v["Cantidad"].sum()) if not conteo_origen_v.empty else 0
-        header_with_total("💶 Origen de la venta", total3)
+        header_with_total("💶 Leads - Venta", total3)
         if propietario_tablas != "Todos" and total3 > 0:
             conteo_origen_v = pd.concat(
                 [pd.DataFrame([{"Origen": f"TOTAL — {propietario_tablas}", "Cantidad": total3}]), conteo_origen_v],
@@ -383,7 +382,7 @@ def app():
     # =========================
     # TARJETAS POR PROPIETARIO (con VENTAS y RATIO por mes)
     # =========================
-    st.subheader(" Ventas por Propietario")
+    st.subheader("Desglose por Propietario")
 
     df_mes_prop = (
         df_filtrado.groupby(["anio", "mes_num", "mes_anio", "propietario"])

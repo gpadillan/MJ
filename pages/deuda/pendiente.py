@@ -199,7 +199,14 @@ def vista_clientes_pendientes():
     # ---------------- DETALLE: AG Grid sin hueco a la derecha ----------------
     st.markdown("### 📋 Detalle de deuda por cliente")
 
+    # Detectar columnas de contacto si existen
+    email_col = next((c for c in ["Email", "Correo", "E-mail"] if c in df_pendiente.columns), None)
+    tel_col   = next((c for c in ["Teléfono", "Telefono", "Tel"] if c in df_pendiente.columns), None)
+
     columnas_info = ["Cliente", "Proyecto", "Curso", "Comercial", "Forma Pago"]
+    if email_col: columnas_info.append(email_col)
+    if tel_col:   columnas_info.append(tel_col)
+
     columnas_sumatorias = cols_18_21 + cols_22_25
 
     if columnas_sumatorias:
@@ -208,15 +215,27 @@ def vista_clientes_pendientes():
         ].copy()
         df_detalle[columnas_sumatorias] = df_detalle[columnas_sumatorias].apply(pd.to_numeric, errors="coerce").fillna(0)
         df_detalle["Total deuda"] = df_detalle[columnas_sumatorias].sum(axis=1)
+
+        # Función para unir valores únicos (ignorando NaN y cadenas vacías)
+        def _join_unique(series):
+            vals = [str(v).strip() for v in series if pd.notna(v) and str(v).strip()]
+            return ", ".join(sorted(set(vals)))
+
+        agg_dict = {
+            "Proyecto": _join_unique,
+            "Curso": _join_unique,
+            "Comercial": _join_unique,
+            "Forma Pago": lambda x: ", ".join(sorted(set(str(i) for i in x if pd.notna(i) and str(i).strip()))),
+            "Total deuda": "sum",
+        }
+        if email_col:
+            agg_dict[email_col] = _join_unique
+        if tel_col:
+            agg_dict[tel_col] = _join_unique
+
         df_detalle = (
             df_detalle.groupby(["Cliente"], as_index=False)
-            .agg({
-                "Proyecto": lambda x: ", ".join(sorted(set(x))),
-                "Curso": lambda x: ", ".join(sorted(set(x))),
-                "Comercial": lambda x: ", ".join(sorted(set(x))),
-                "Forma Pago": lambda x: ", ".join(sorted(set(str(i) for i in x if pd.notna(i)))),
-                "Total deuda": "sum"
-            })
+            .agg(agg_dict)
             .sort_values(by="Total deuda", ascending=False)
         )
 
@@ -241,6 +260,10 @@ def vista_clientes_pendientes():
         gb.configure_column("Curso",     flex=2, min_width=300)
         gb.configure_column("Comercial", flex=1, min_width=180)
         gb.configure_column("Forma Pago",flex=1, min_width=200)
+        if email_col:
+            gb.configure_column(email_col, flex=2, min_width=240)
+        if tel_col:
+            gb.configure_column(tel_col, flex=1, min_width=180)
         gb.configure_column("Total deuda", type=["numericColumn","rightAligned"], flex=1, min_width=140)
 
         AgGrid(

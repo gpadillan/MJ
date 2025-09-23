@@ -1,6 +1,6 @@
 import streamlit as st
 
-# Base de datos simulada de usuarios
+# Base de datos de usuarios
 USUARIOS = {
     "admin": {"password": "admin", "role": "admin"},
     "AntonioM": {"password": "Mainjobs=50-", "role": "viewer"},
@@ -14,6 +14,8 @@ USUARIOS = {
     "IsabelJ": {"password": "Mainjobs$22-", "role": "viewer"},
     "RobertoA": {"password": "Mainjobs$16-", "role": "viewer"},
     "RemeC": {"password": "Mainjobs$74-", "role": "viewer"},
+    "MamenM": {"password": "Mainjobs$50-", "role": "viewer"},
+    "AnaM": {"password": "Mainjobs$10-", "role": "viewer"},
 }
 
 # Función para verificar credenciales

@@ -219,7 +219,7 @@ def render(df):
                 c3.markdown(render_card(f"Prácticas {anio_txt}", tot_emp_pr, "#f3e5f5"), unsafe_allow_html=True)
 
     # Pie: cierres por consultor
-    st.markdown("### Cierres gestionados por Consultor")
+    st.markdown("")
     df_cierre = pd.concat([
         df_f[df_f["CONSECUCION_BOOL"]][["CONSULTOR EIP","NOMBRE","APELLIDOS"]].assign(CIERRE="CONSECUCIÓN"),
         df_f[df_f["INAPLICACION_BOOL"]][["CONSULTOR EIP","NOMBRE","APELLIDOS"]].assign(CIERRE="INAPLICACIÓN"),
@@ -227,20 +227,20 @@ def render(df):
     resumen = df_cierre.groupby("CONSULTOR EIP").size().reset_index(name="TOTAL_CIERRES")
     if not resumen.empty:
         fig = px.pie(resumen, names="CONSULTOR EIP", values="TOTAL_CIERRES",
-                     title=f"Distribución de cierres por Consultor ({opcion})")
+                     title=f"")
         fig.update_traces(textinfo="label+value")
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No hay cierres para los filtros seleccionados.")
 
     # Empresas por área: selector
-    st.markdown("### Empresas por ÁREA")
+    st.markdown("")
     areas = ['TODAS'] + sorted(df_f["AREA_N"].unique())
-    area_sel = st.selectbox("Filtrar empresas por área:", areas)
+    area_sel = st.selectbox(" Empresas por área:", areas)
     df_emp = df_f if area_sel == 'TODAS' else df_f[df_f["AREA_N"] == area_sel].copy()
 
     # -------- Resumen por ÁREA (siempre muestra todas las áreas; índice nombrado) --------
-    st.markdown("### Resumen por ÁREA")
+    st.markdown("")
 
     df_tmp = df_emp.copy()
     if "AREA_N" not in df_tmp:
@@ -289,13 +289,13 @@ def render(df):
     # Tablas de empresas
     cemp1, cemp2 = st.columns(2)
     with cemp1:
-        st.markdown("#### Tabla: EMPRESA GE")
+        st.markdown("#### EMPRESAS GE")
         s_ge = _clean_series(df_emp["EMPRESA GE"])
         emp_ge = s_ge.value_counts().reset_index()
         emp_ge.columns = ["EMPRESA GE", "EMPLEOS"]
         st.dataframe(emp_ge.style.background_gradient(subset=["EMPLEOS"], cmap="YlOrBr"), use_container_width=True)
     with cemp2:
-        st.markdown("#### Tabla: EMPRESA PRÁCT.")
+        st.markdown("#### EMPRESAS PRÁCTICAS")
         s_pr = _clean_series(df_emp["EMPRESA PRACT"])
         emp_pr = s_pr.value_counts().reset_index()
         emp_pr.columns = ["EMPRESA PRÁCT.", "EMPLEOS"]
@@ -305,10 +305,10 @@ def render(df):
     df_valid = df[(df["NOMBRE"].str.upper()!="NO ENCONTRADO") & (df["APELLIDOS"].str.upper()!="NO ENCONTRADO")].copy()
     total_al = df_valid[["NOMBRE","APELLIDOS"]].drop_duplicates().shape[0]
 
-    st.markdown("## 👥 Total Alumnado")
+    st.markdown("## 👥 OBJETIVOS")
     st.markdown(render_card("", int(total_al), "#bbdefb"), unsafe_allow_html=True)
 
-    st.markdown("## 🎯 OBJETIVOS %")
+    st.markdown("")
 
     df_valid["EMP_PRACT_N"] = df_valid["EMPRESA PRACT"].apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True))
     df_valid["EMP_GE_N"]    = df_valid["EMPRESA GE"].apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True))
