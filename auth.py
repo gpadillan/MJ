@@ -16,6 +16,7 @@ USUARIOS = {
     "RemeC": {"password": "Mainjobs$74-", "role": "viewer"},
     "MamenM": {"password": "Mainjobs$50-", "role": "viewer"},
     "AnaM": {"password": "Mainjobs$10-", "role": "viewer"},
+    "Juanantonio": {"password": "Mainjobs=50-", "role": "viewer"},
 }
 
 # Función para verificar credenciales

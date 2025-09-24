@@ -35,7 +35,6 @@ def _norm_colname(s: str) -> str:
     return s
 
 def _norm_text_cell(x: object, upper: bool = False, deaccent: bool = False) -> str:
-    """Limpia NBSP, colapsa espacios, trim; opcional quitar acentos y poner MAYÚSCULAS."""
     if pd.isna(x):
         s = ""
     else:
@@ -90,7 +89,6 @@ def _clean_series(s: pd.Series) -> pd.Series:
     return s[~s.isin(INVALID_TXT)]
 
 def _parse_fecha_es(value):
-    # Acepta '1 de enero de 2024', '1 enero 2024', dd/mm/aaaa, serial Excel…
     if pd.isna(value): return None
     if isinstance(value, (int, float)): return value
     s = str(value).strip()
@@ -163,18 +161,19 @@ def render(df):
     opcion = st.selectbox("Selecciona el tipo de informe:", opciones)
     df_base = df.copy() if "Total" in opcion else df[df["AÑO_CIERRE"]==int(opcion.split()[-1])].copy()
 
-    # Filtro consultor
+    # Filtro consultor (todo se construye sobre df_f)
     consultores = df_base["CONSULTOR EIP"].dropna().apply(_norm_text_cell)
     consultores = consultores[~consultores.str.upper().isin(list(INVALID_TXT))]
     consultores_unicos = sorted(consultores.unique())
     sel = st.multiselect("Filtrar por Consultor:", options=consultores_unicos, default=consultores_unicos)
+
     df_f = df_base[df_base["CONSULTOR EIP"].isin(sel)].copy()
 
-    # Área normalizada para todo el dataset filtrado (ano+consultores)
+    # Área normalizada para el dataset filtrado por consultores/año
     df_f["AREA_N"] = df_f["AREA"].apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True))
     df_f.loc[df_f["AREA_N"] == "", "AREA_N"] = "SIN ÁREA"
 
-    # Flag de prácticas en curso (NO se usa para TOTAL PRÁCTICAS por área)
+    # Flag de prácticas en curso
     df_f["PRACTICAS_BOOL"] = (
         (df_f["PRACTICAS_GE"].str.upper()=="GE") &
         (~df_f["EMPRESA PRACT"].str.upper().isin(["","NO ENCONTRADO"])) &
@@ -183,7 +182,7 @@ def render(df):
         (~df_f["INAPLICACION_BOOL"])
     )
 
-    # Totales tarjetas
+    # Totales tarjetas (ligados a consultor)
     tot_con = int(df_f["CONSECUCION_BOOL"].sum())
     tot_inap = int(df_f["INAPLICACION_BOOL"].sum())
     tot_emp_ge = int(_clean_series(df_f["EMPRESA GE"]).shape[0])
@@ -203,7 +202,8 @@ def render(df):
                 c2.markdown(render_card("INAPLICACIÓN 2025", tot_inap, "#fce4ec"), unsafe_allow_html=True)
                 c3.markdown(render_card("Prácticas 2025", tot_emp_pr, "#f3e5f5"), unsafe_allow_html=True)
 
-                df_cons = df[df["CONSULTOR EIP"].isin(sel)].copy()
+                # ✅ ahora en curso también filtra por consultor (df_f)
+                df_cons = df_f.copy()
                 m_sin_fecha = df_cons["FECHA CIERRE"].isna()
                 emp = df_cons["EMPRESA PRACT"].apply(_norm_text_cell)
                 m_emp_ok = ~(emp.eq("") | emp.str.upper().isin(list(INVALID_TXT)))
@@ -218,7 +218,7 @@ def render(df):
                 c2.markdown(render_card(f"INAPLICACIÓN {anio_txt}", tot_inap, "#fce4ec"), unsafe_allow_html=True)
                 c3.markdown(render_card(f"Prácticas {anio_txt}", tot_emp_pr, "#f3e5f5"), unsafe_allow_html=True)
 
-    # Pie: cierres por consultor
+    # Pie: cierres por consultor (usa df_f)
     st.markdown("")
     df_cierre = pd.concat([
         df_f[df_f["CONSECUCION_BOOL"]][["CONSULTOR EIP","NOMBRE","APELLIDOS"]].assign(CIERRE="CONSECUCIÓN"),
@@ -226,20 +226,19 @@ def render(df):
     ], ignore_index=True)
     resumen = df_cierre.groupby("CONSULTOR EIP").size().reset_index(name="TOTAL_CIERRES")
     if not resumen.empty:
-        fig = px.pie(resumen, names="CONSULTOR EIP", values="TOTAL_CIERRES",
-                     title=f"")
+        fig = px.pie(resumen, names="CONSULTOR EIP", values="TOTAL_CIERRES", title=f"")
         fig.update_traces(textinfo="label+value")
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No hay cierres para los filtros seleccionados.")
 
-    # Empresas por área: selector
+    # Empresas por área: selector (parte ya filtrada por consultor)
     st.markdown("")
     areas = ['TODAS'] + sorted(df_f["AREA_N"].unique())
     area_sel = st.selectbox(" Empresas por área:", areas)
     df_emp = df_f if area_sel == 'TODAS' else df_f[df_f["AREA_N"] == area_sel].copy()
 
-    # -------- Resumen por ÁREA (siempre muestra todas las áreas; índice nombrado) --------
+    # -------- Resumen por área + Tablas en la misma fila (todo ligado a consultor/área) --------
     st.markdown("")
 
     df_tmp = df_emp.copy()
@@ -247,8 +246,7 @@ def render(df):
         df_tmp["AREA_N"] = df_tmp["AREA"].apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True))
         df_tmp.loc[df_tmp["AREA_N"] == "", "AREA_N"] = "SIN ÁREA"
 
-    # Lista maestra de áreas tras filtros de año+consultores (asegura LOGISTICA, BIM, etc.)
-    areas_idx = sorted(df_f["AREA_N"].unique())
+    areas_idx = sorted(df_emp["AREA_N"].unique())
 
     con_area  = df_tmp[df_tmp["CONSECUCION_BOOL"]].groupby("AREA_N").size()
     inap_area = df_tmp[df_tmp["INAPLICACION_BOOL"]].groupby("AREA_N").size()
@@ -257,7 +255,6 @@ def render(df):
     mask_pract  = ~emp_pr_norm.isin(INVALID_TXT)
     prac_area   = df_tmp[mask_pract].groupby("AREA_N").size()
 
-    # Resumen reindexado y con nombre de índice -> columna 'AREA' (evita 'index' y AREA=None)
     resumen_area = pd.DataFrame(index=areas_idx)
     resumen_area["TOTAL CONSECUCIÓN"]  = con_area.reindex(areas_idx, fill_value=0)
     resumen_area["TOTAL INAPLICACIÓN"] = inap_area.reindex(areas_idx, fill_value=0)
@@ -284,25 +281,39 @@ def render(df):
         .background_gradient(subset=["TOTAL INAPLICACIÓN"], cmap="Reds")
         .background_gradient(subset=["TOTAL PRÁCTICAS"], cmap="Blues")
     )
-    st.dataframe(styled, use_container_width=True)
 
-    # Tablas de empresas
-    cemp1, cemp2 = st.columns(2)
-    with cemp1:
+    # Tablas de empresas con el filtro actual
+    s_ge = _clean_series(df_emp["EMPRESA GE"])
+    emp_ge = s_ge.value_counts().reset_index()
+    emp_ge.columns = ["EMPRESA GE", "EMPLEOS"]
+
+    s_pr = _clean_series(df_emp["EMPRESA PRACT"])
+    emp_pr = s_pr.value_counts().reset_index()
+    emp_pr.columns = ["EMPRESA PRÁCT.", "EMPLEOS"]
+
+    # Tres tablas en la misma fila
+    col_res, col_ge, col_pr = st.columns([1.6, 1, 1])
+
+    with col_res:
+        st.markdown("#### Empresas por área (resumen)")
+        st.dataframe(styled, use_container_width=True)
+
+    with col_ge:
         st.markdown("#### EMPRESAS GE")
-        s_ge = _clean_series(df_emp["EMPRESA GE"])
-        emp_ge = s_ge.value_counts().reset_index()
-        emp_ge.columns = ["EMPRESA GE", "EMPLEOS"]
-        st.dataframe(emp_ge.style.background_gradient(subset=["EMPLEOS"], cmap="YlOrBr"), use_container_width=True)
-    with cemp2:
-        st.markdown("#### EMPRESAS PRÁCTICAS")
-        s_pr = _clean_series(df_emp["EMPRESA PRACT"])
-        emp_pr = s_pr.value_counts().reset_index()
-        emp_pr.columns = ["EMPRESA PRÁCT.", "EMPLEOS"]
-        st.dataframe(emp_pr.style.background_gradient(subset=["EMPLEOS"], cmap="PuBu"), use_container_width=True)
+        st.dataframe(
+            emp_ge.style.background_gradient(subset=["EMPLEOS"], cmap="YlOrBr"),
+            use_container_width=True
+        )
 
-    # KPIs (👥 y 🎯)
-    df_valid = df[(df["NOMBRE"].str.upper()!="NO ENCONTRADO") & (df["APELLIDOS"].str.upper()!="NO ENCONTRADO")].copy()
+    with col_pr:
+        st.markdown("#### EMPRESAS PRÁCTICAS")
+        st.dataframe(
+            emp_pr.style.background_gradient(subset=["EMPLEOS"], cmap="PuBu"),
+            use_container_width=True
+        )
+
+    # ---------------- KPIs (ligados al filtro de consultor) ----------------
+    df_valid = df_f[(df_f["NOMBRE"].str.upper()!="NO ENCONTRADO") & (df_f["APELLIDOS"].str.upper()!="NO ENCONTRADO")].copy()
     total_al = df_valid[["NOMBRE","APELLIDOS"]].drop_duplicates().shape[0]
 
     st.markdown("## 👥 OBJETIVOS")
