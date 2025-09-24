@@ -10,13 +10,11 @@ from responsive import get_screen_size
 UPLOAD_FOLDER = "uploaded_admisiones"
 LEADS_GENERADOS_FILE = os.path.join(UPLOAD_FOLDER, "leads_generados.xlsx")
 VENTAS_FILE = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
-SITUACION_2025_FILE = os.path.join(UPLOAD_FOLDER, "matricula_programas_25.xlsx")  # para Origen de la venta
 
 # Paleta base (fallback)
 COLORWAY = px.colors.qualitative.Plotly
 
 # ==== COLORES CONFIGURABLES (EDITA AQUÍ) ====
-# Colores (más llamativos) para el gráfico "Total de clientes potenciales por mes"
 MES_COLORS_BAR = {
     "Enero": "#1e88e5",
     "Febrero": "#fb8c00",
@@ -31,11 +29,8 @@ MES_COLORS_BAR = {
     "Noviembre": "#5c6bc0",
     "Diciembre": "#f4511e",
 }
-
-# Para las tarjetas de "Ventas por Propietario"
-USE_SAME_COLORS_FOR_CARDS = False   # True = usa MES_COLORS_BAR tal cual; False = usa versión aclarada
-CARDS_LIGHTEN_FACTOR = 0.83         # 0..1 (más alto = más claro) cuando USE_SAME_COLORS_FOR_CARDS = False
-
+USE_SAME_COLORS_FOR_CARDS = False
+CARDS_LIGHTEN_FACTOR = 0.83
 
 def app():
     width, height = get_screen_size()
@@ -171,7 +166,7 @@ def app():
         lambda r: r["programa"] if r["programa_categoria"] == "SIN CLASIFICAR" else r["programa_categoria"], axis=1
     )
 
-    # ===== CARGA / PREP VENTAS (para tarjetas) =====
+    # ===== CARGA / PREP VENTAS =====
     ventas_ok = os.path.exists(VENTAS_FILE)
     df_ventas = pd.DataFrame()
     if ventas_ok:
@@ -207,7 +202,6 @@ def app():
     # =========================
     # FILTROS ARRIBA (SIN propietario)
     # =========================
-
     meses_disponibles = (
         df[["mes_anio", "mes_num", "anio"]]
         .dropna().drop_duplicates()
@@ -236,13 +230,11 @@ def app():
     if not orden_meses:
         orden_meses = meses_disponibles["mes_anio"].tolist()
 
-    # Colores para el gráfico (vivos)
     color_map_mes_chart = {}
     for mes in orden_meses:
-        base = mes.split(" ")[0]  # "Enero", etc.
+        base = mes.split(" ")[0]
         color_map_mes_chart[mes] = MES_COLORS_BAR.get(base, "#4c78a8")
 
-    # Colores para las tarjetas (claros o mismos)
     if USE_SAME_COLORS_FOR_CARDS:
         color_map_cards = color_map_mes_chart.copy()
     else:
@@ -251,7 +243,7 @@ def app():
             base = mes.split(" ")[0]
             color_map_cards[mes] = lighten_hex(MES_COLORS_BAR.get(base, "#4c78a8"), CARDS_LIGHTEN_FACTOR)
 
-    # ===== GRÁFICO 📆 Total de clientes potenciales por mes (barras horizontales) =====
+    # ===== GRÁFICO 📆 Total de clientes potenciales por mes =====
     st.subheader("📅 Total Leads por mes")
     leads_por_mes = (
         df_filtrado.groupby(["mes_anio", "mes_num", "anio"]).size().reset_index(name="Cantidad")
@@ -260,13 +252,8 @@ def app():
     leads_por_mes["Mes"] = leads_por_mes["mes_anio"]
 
     fig_leads = px.bar(
-        leads_por_mes,
-        x="Cantidad",
-        y="Mes",
-        orientation="h",
-        text="Cantidad",
-        color="Mes",
-        color_discrete_map=color_map_mes_chart,
+        leads_por_mes, x="Cantidad", y="Mes", orientation="h",
+        text="Cantidad", color="Mes", color_discrete_map=color_map_mes_chart,
     )
     fig_leads.update_traces(textposition="outside")
     fig_leads.update_layout(xaxis_title="Cantidad", yaxis_title=None, showlegend=False, height=420 if is_mobile else None)
@@ -289,33 +276,6 @@ def app():
     df_tablas = df_tablas_global.copy()
     if propietario_tablas != "Todos":
         df_tablas = df_tablas[df_tablas["propietario"] == propietario_tablas]
-
-    # ====== CARGA SITUACIÓN 2025 para "Origen de la venta" ======
-    df_sit = pd.DataFrame()
-    if os.path.exists(SITUACION_2025_FILE):
-        try:
-            df_sit = pd.read_excel(SITUACION_2025_FILE, sheet_name="Contactos")
-            df_sit.columns = df_sit.columns.str.strip().str.lower()
-
-            if "programa" in df_sit.columns:
-                df_sit["programa"] = df_sit["programa"].astype(str).str.strip()
-                df_sit["programa_final"] = df_sit["programa"].apply(clasificar_programa)
-            else:
-                df_sit["programa_final"] = "(Desconocido)"
-
-            if "propietario" in df_sit.columns:
-                df_sit["propietario"] = df_sit["propietario"].astype(str).str.strip()
-            else:
-                df_sit["propietario"] = "(En Blanco)"
-
-            if programa_seleccionado != "Todos":
-                df_sit = df_sit[df_sit["programa_final"] == programa_seleccionado]
-            if propietario_tablas != "Todos":
-                df_sit = df_sit[df_sit["propietario"] == propietario_tablas]
-
-        except Exception as e:
-            st.warning(f"⚠️ No se pudo leer 'matricula_programas_25.xlsx' (Contactos): {e}")
-            df_sit = pd.DataFrame()
 
     colA, colB, colC = st.columns(3)
 
@@ -357,16 +317,32 @@ def app():
             )
         st.dataframe(conteo_origen.style.background_gradient(cmap="Greens"), use_container_width=True)
 
-    # ------- Tabla 3: Origen de la venta (desde matricula_programas_25.xlsx) -------
+    # ------- Tabla 3: 💶 Leads - Venta (DESDE ventas.xlsx) -------
     with colC:
-        if not df_sit.empty and "origen" in df_sit.columns:
-            ventas_g = df_sit.copy()
-            ventas_g["origen"] = (
-                ventas_g["origen"].astype(str).str.strip()
-                .replace(["nan", "None", ""], "(En Blanco)").fillna("(En Blanco)")
-            )
-            conteo_origen_v = ventas_g["origen"].value_counts().reset_index()
-            conteo_origen_v.columns = ["Origen", "Cantidad"]
+        if ventas_ok and not df_ventas.empty:
+            ventas_tablas = df_ventas.copy()
+            # filtros iguales a las otras tablas
+            if mes_seleccionado != "Todos":
+                ventas_tablas = ventas_tablas[ventas_tablas["mes_anio"] == mes_seleccionado]
+            if programa_seleccionado != "Todos":
+                ventas_tablas = ventas_tablas[ventas_tablas["programa_final"] == programa_seleccionado]
+            if propietario_tablas != "Todos" and "propietario" in ventas_tablas.columns:
+                ventas_tablas = ventas_tablas[ventas_tablas["propietario"] == propietario_tablas]
+
+            # origen en ventas
+            origen_cols_posibles = ["origen", "origen de la venta", "origen venta", "source"]
+            origen_col_v = next((c for c in origen_cols_posibles if c in ventas_tablas.columns), None)
+
+            if origen_col_v:
+                tmpv = ventas_tablas.copy()
+                tmpv[origen_col_v] = (
+                    tmpv[origen_col_v].astype(str).str.strip()
+                    .replace(["nan", "None", ""], "(En Blanco)").fillna("(En Blanco)")
+                )
+                conteo_origen_v = tmpv[origen_col_v].value_counts().reset_index()
+                conteo_origen_v.columns = ["Origen", "Cantidad"]
+            else:
+                conteo_origen_v = pd.DataFrame(columns=["Origen", "Cantidad"])
         else:
             conteo_origen_v = pd.DataFrame(columns=["Origen", "Cantidad"])
 
@@ -380,7 +356,7 @@ def app():
         st.dataframe(conteo_origen_v.style.background_gradient(cmap="Purples"), use_container_width=True)
 
     # =========================
-    # TARJETAS POR PROPIETARIO (con VENTAS y RATIO por mes)
+    # TARJETAS POR PROPIETARIO
     # =========================
     st.subheader("Desglose por Propietario")
 
@@ -408,7 +384,6 @@ def app():
         if propietario_tablas != "Todos" and "propietario" in ventas_filtrado_cards.columns:
             ventas_filtrado_cards = ventas_filtrado_cards[ventas_filtrado_cards["propietario"] == propietario_tablas]
 
-    # Matriz LEADS por propietario x mes
     leads_prop_mes = (
         df_mes_prop.pivot_table(index="propietario", columns="mes_anio", values="leads",
                                 aggfunc="sum", fill_value=0)
@@ -416,7 +391,6 @@ def app():
         .reindex(columns=orden_meses, fill_value=0)
     )
 
-    # Matriz VENTAS por propietario x mes
     if (
         ventas_ok
         and not ventas_filtrado_cards.empty
@@ -429,9 +403,8 @@ def app():
             .reindex(columns=orden_meses, fill_value=0)
         )
     else:
-        ventas_prop_mes = leads_prop_mes.copy() * 0  # todo a cero si no hay ventas/mes
+        ventas_prop_mes = leads_prop_mes.copy() * 0
 
-    # -------- RATIO EN "PUNTOS" (ventas/leads*100), SIN % --------
     ratio_prop_mes = (ventas_prop_mes / leads_prop_mes.replace(0, pd.NA) * 100).fillna(0).round(2)
 
     # ====== ESTILOS CSS ======
@@ -477,7 +450,6 @@ def app():
     tarjetas_html = ['<div class="cards-grid">']
     for propietario, leads_total in totales_leads_prop.items():
         ventas_total = int(ventas_prop_mes.loc[propietario].sum()) if ventas_prop_mes.shape[0] else 0
-        # -------- ratio global en puntos (ventas/leads*100), SIN % --------
         ratio_global = (ventas_total / leads_total * 100.0) if leads_total > 0 else None
         ratio_global_txt = f"{ratio_global:.2f}" if ratio_global is not None else "—"
 
@@ -514,7 +486,6 @@ def app():
 
     tarjetas_html.append('</div>')      # grid
     st.markdown("\n".join(tarjetas_html), unsafe_allow_html=True)
-
 
 # Ejecución directa
 if __name__ == "__main__":
