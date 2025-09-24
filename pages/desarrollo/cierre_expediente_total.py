@@ -248,7 +248,7 @@ def render(df):
             c1, c2, c3 = st.columns(3)
             c1.markdown(render_card("CONSECUCIÓN", tot_con, "#e3f2fd"), unsafe_allow_html=True)
             c2.markdown(render_card("INAPLICACIÓN", tot_inap, "#fce4ec"), unsafe_allow_html=True)
-            c3.markdown(render_card("Alumnado total en PRÁCTICAS", tot_emp_ge, "#ede7f6"), unsafe_allow_html=True)
+            c3.markdown(render_card("TOTAL PRÁCTICAS", tot_emp_ge, "#ede7f6"), unsafe_allow_html=True)
         else:
             anio_txt = opcion.split()[-1]
             if anio_txt == "2025":
@@ -267,7 +267,7 @@ def render(df):
                 m_dev_blank  = df_cons["DEVOLUCION GE"].apply(_is_blank)
                 en_curso = int((m_sin_fecha & m_emp_ok & m_con_blank & m_inap_blank & m_dev_blank).sum())
 
-                c4.markdown(render_card("Prácticas en curso 2025", en_curso, "#fff3e0"), unsafe_allow_html=True)
+                c4.markdown(render_card("Prácticas en curso", en_curso, "#fff3e0"), unsafe_allow_html=True)
             else:
                 c1, c2, c3 = st.columns(3)
                 c1.markdown(render_card(f"CONSECUCIÓN {anio_txt}", tot_con, "#e3f2fd"), unsafe_allow_html=True)
