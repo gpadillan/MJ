@@ -137,7 +137,7 @@ def render(df):
 
         # Detalle devoluciones
         st.markdown("### 🔴 Detalle de alumnos con DEVOLUCIÓN GE")
-        columnas_devolucion = ['NOMBRE', 'APELLIDOS', 'AREA', 'RIESGO ECONÓMICO', 'FECHA CIERRE']
+        columnas_devolucion = ['NOMBRE', 'APELLIDOS','CONSULTOR EIP', 'AREA', 'RIESGO ECONÓMICO', 'FECHA CIERRE']
         df_devolucion_vista = df_devolucion[columnas_devolucion].copy()
         df_devolucion_vista['RIESGO ECONÓMICO'] = df_devolucion_vista['RIESGO ECONÓMICO'].apply(
             lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"

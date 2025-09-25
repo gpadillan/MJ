@@ -16,30 +16,53 @@ def render_card(title, value, color):
     """
 
 def _tiles_html_from_series(series: pd.Series) -> str:
-    """Crea los 'cuadraditos' por área, con orden fijo y resto al final."""
+    """
+    Crea los 'cuadraditos' por área en UNA sola fila, SIN scroll horizontal.
+    Se usa CSS Grid con tantas columnas como áreas. Cada tile se encoge
+    de forma proporcional para caber, manteniendo un mínimo visual.
+    """
     if series is None or series.empty:
         return "<div style='color:#0b2e6b'>Sin áreas</div>"
 
+    # Orden preferente y resto al final
     orden = ["RRHH", "SAP", "DPO", "EERR", "IA", "PYTHON", "FULL STACK", "BIM", "LOGISTICA"]
     s = series.copy()
     presentes = [a for a in orden if a in s.index]
     resto = [a for a in s.sort_values(ascending=False).index if a not in presentes]
     indices = presentes + resto
+    n = max(1, len(indices))
+
+    # Contenedor grid: una fila con n columnas
+    # minmax(90px, 1fr) asegura que, si hay muchas áreas o la pantalla es estrecha,
+    # se reduzcan los anchos pero sigan cabiendo en una sola fila.
+    container_open = f"""
+      <div style="
+        display:grid; grid-auto-flow:column;
+        grid-template-columns: repeat({n}, minmax(90px, 1fr));
+        gap:8px; width:100%;
+      ">
+    """
 
     tiles = []
     for area in indices:
         cnt = int(s.get(area, 0))
         tiles.append(f"""
         <div style="
-            flex:1 1 220px; min-width:220px;
             background:rgba(255,255,255,.55);
             border:1px solid #9ec5fe; border-radius:10px;
-            padding:10px 12px; display:flex; flex-direction:column; gap:6px;">
-          <div style="font-weight:700; color:#0b2e6b; font-size:14px;">{area}</div>
-          <div style="font-size:22px; font-weight:900; color:#00335c; line-height:1;">{cnt}</div>
+            padding:8px 10px; display:flex; flex-direction:column; gap:4px;
+            min-width:0; /* permite que el contenido se reduzca */
+        ">
+          <div style="font-weight:700; color:#0b2e6b; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+            {area}
+          </div>
+          <div style="font-size:18px; font-weight:900; color:#00335c; line-height:1;">
+            {cnt}
+          </div>
         </div>
         """)
-    return "<div style='display:flex; gap:12px; flex-wrap:wrap; width:100%;'>" + "".join(tiles) + "</div>"
+
+    return container_open + "".join(tiles) + "</div>"
 
 def render_objectives_card(total_alumnos: int, area_counts: pd.Series) -> str:
     tiles_html = _tiles_html_from_series(area_counts)
@@ -258,7 +281,7 @@ def render(df):
                 c3.markdown(render_card("Prácticas 2025", tot_emp_pr, "#f3e5f5"), unsafe_allow_html=True)
 
                 # >>> NO TOCAR: cálculo clásico que te funcionaba <<<
-                df_cons = df[df["CONSULTOR EIP"].isin(sel)].copy()   # usa df completo + filtro consultor
+                df_cons = df[df["CONSULTOR EIP"].isin(sel)].copy()
                 m_sin_fecha = df_cons["FECHA CIERRE"].isna()
                 emp = df_cons["EMPRESA PRACT"].apply(_norm_text_cell)
                 m_emp_ok = ~(emp.eq("") | emp.str.upper().isin(list(INVALID_TXT)))
@@ -388,6 +411,6 @@ def render(df):
 
     c1, c2, c3, c4 = st.columns(4)
     c1.markdown(render_card("Inserción laboral Empleo", f"{pct_empleo}%", "#c8e6c9"), unsafe_allow_html=True)
-    c2.markdown(render_card("Cierre de expediente Desarrollo Profesional", f"{pct_cierre_dp}%", "#b2dfdb"), unsafe_allow_html=True)
+    c2.markdown(render_card("Cierre expediente Desarrollo Profesional", f"{pct_cierre_dp}%", "#dfcbb2"), unsafe_allow_html=True)
     c3.markdown(render_card("Inserción Laboral Prácticas", f"{pct_practicas}%", "#ffe082"), unsafe_allow_html=True)
     c4.markdown(render_card("Conversión prácticas a empresa", f"{pct_conversion}%", "#f8bbd0"), unsafe_allow_html=True)
