@@ -153,53 +153,132 @@ def vista_clientes_pendientes():
     else:
         _FIG_22_25 = None
 
-    # ---------------- Cards por año (solo mostrar años con total > 0) ----------------
-    columnas_totales = [c for c in df_pendiente.columns
-                        if c.startswith("Total ") and c.split()[-1].isdigit()
-                        and int(c.split()[-1]) <= año_actual]
-    df_pendiente[columnas_totales] = df_pendiente[columnas_totales].apply(pd.to_numeric, errors="coerce").fillna(0)
-    resumen_total = pd.DataFrame({
-        "Año": [c.split()[-1] for c in columnas_totales],
-        "Suma_Total": [df_pendiente[c].sum() for c in columnas_totales],
-        "Num_Clientes": [(df_pendiente.groupby("Cliente")[c].sum() > 0).sum() for c in columnas_totales],
-    })
-    # ⛔️ Ocultar años con total 0
-    resumen_total = resumen_total[resumen_total["Suma_Total"] != 0].reset_index(drop=True)
+    # ---------------- Cards por año (con lógica año actual y futuros) ----------------
+    def _year_from_total(col):
+        try:
+            return int(col.split()[-1])
+        except Exception:
+            return None
 
-    def _card(title, amount, ncli):
-        return f"""
-        <div style="background:#f1f9ff;border:1px solid #dbe9ff;border-radius:12px;
-                    padding:14px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);
-                    display:flex;flex-direction:column;gap:6px;min-height:92px">
-          <div style="font-weight:700;color:#0b5394">{title}</div>
-          <div style="display:flex;gap:12px;align-items:baseline;">
-            <div style="font-size:26px;font-weight:800;color:#00335c">€ {_eu(amount)}</div>
-            <div style="font-size:14px;color:#2a6aa5">👥 {int(ncli)}</div>
-          </div>
-        </div>
-        """
+    all_cols = list(df_pendiente.columns)
 
-    # Solo mostrar el bloque si hay años con total > 0
-    if not resumen_total.empty:
+    col_totales = [c for c in all_cols if c.startswith("Total ") and c.split()[-1].isdigit()]
+    years_totales = sorted({_year_from_total(c) for c in col_totales if _year_from_total(c) is not None})
+
+    meses_por_año = {}
+    for c in all_cols:
+        for i, m in enumerate(meses, start=1):
+            if c.startswith(f"{m} "):
+                try:
+                    y = int(c.split()[-1])
+                except Exception:
+                    continue
+                meses_por_año.setdefault(y, []).append((i, c))
+
+    numeric_cols = col_totales[:]
+    for y, lst in meses_por_año.items():
+        numeric_cols += [col for _, col in lst]
+    if numeric_cols:
+        df_pendiente[numeric_cols] = df_pendiente[numeric_cols].apply(pd.to_numeric, errors="coerce").fillna(0)
+
+    def _sum_and_clients(cols):
+        if not cols:
+            return 0.0, 0
+        tmp = df_pendiente[["Cliente"] + cols].copy()
+        g = tmp.groupby("Cliente", as_index=False)[cols].sum()
+        total = float(g[cols].sum().sum())
+        ncli = int((g[cols].sum(axis=1) > 0).sum())
+        return total, ncli
+
+    tarjetas = []
+
+    years_meses = sorted(meses_por_año.keys())
+    all_years_present = sorted(set(years_totales) | set(years_meses))
+
+    # Pasados
+    for y in [yy for yy in all_years_present if yy < año_actual]:
+        cols = []
+        if f"Total {y}" in df_pendiente.columns:
+            cols = [f"Total {y}"]
+        elif y in meses_por_año:
+            cols = [col for _, col in sorted(meses_por_año[y])]
+        total, ncli = _sum_and_clients(cols)
+        if total != 0:
+            tarjetas.append(("Total "+str(y), total, ncli))
+
+    # Año actual → dividir meses
+    if año_actual in all_years_present:
+        cols_aa = [col for _, col in sorted(meses_por_año.get(año_actual, []))]
+        cols_actual = [f"{m} {año_actual}" for m in meses[:mes_actual] if f"{m} {año_actual}" in df_pendiente.columns]
+        cols_futuro = [f"{m} {año_actual}" for m in meses[mes_actual:] if f"{m} {año_actual}" in df_pendiente.columns]
+
+        if not cols_aa and f"Total {año_actual}" in df_pendiente.columns:
+            total, ncli = _sum_and_clients([f"Total {año_actual}"])
+            if total != 0:
+                tarjetas.append(("Pendiente actual", total, ncli))
+        else:
+            total_act, ncli_act = _sum_and_clients(cols_actual)
+            total_fut, ncli_fut = _sum_and_clients(cols_futuro)
+            if total_act != 0:
+                tarjetas.append(("Pendiente actual", total_act, ncli_act))
+            if total_fut != 0:
+                tarjetas.append((f"Pendiente {año_actual} futuro", total_fut, ncli_fut))
+
+    # Futuros
+    for y in [yy for yy in all_years_present if yy > año_actual]:
+        cols = []
+        if y in meses_por_año:
+            cols += [col for _, col in sorted(meses_por_año[y])]
+        if f"Total {y}" in df_pendiente.columns:
+            cols.append(f"Total {y}")
+        total, ncli = _sum_and_clients(cols)
+        if total != 0:
+            tarjetas.append((f"Pendiente {y}", total, ncli))
+
+    # Render tarjetas
+    if tarjetas:
         st.markdown("## 🧮 Pendiente TOTAL (por año)")
-        for i in range(0, len(resumen_total), 4):
-            cols = st.columns(4)
-            for j, c in enumerate(cols):
-                if i + j >= len(resumen_total): break
-                row = resumen_total.iloc[i + j]
-                c.markdown(_card(f"Total {row['Año']}", row["Suma_Total"], row["Num_Clientes"]), unsafe_allow_html=True)
+        for i in range(0, len(tarjetas), 4):
+            cols_stream = st.columns(4)
+            for j, col in enumerate(cols_stream):
+                if i + j >= len(tarjetas): break
+                title, amount, ncli = tarjetas[i + j]
+                col.markdown(_card(title, amount, ncli), unsafe_allow_html=True)
 
-    # ---------------- Totales consolidados ----------------
+    # ---------------- Totales consolidados + desgloses solicitados ----------------
+    total_clientes_unicos |= set(df_pendiente["Cliente"].unique())
     num_clientes_total = len(total_clientes_unicos)
-    deuda_total_acumulada = total_deuda_18_21 + total_deuda_22_25
-    st.markdown(f"**👥 Total clientes con deuda en 2018–{año_actual}:** {num_clientes_total} – 🏅 Total deuda: {_eu(deuda_total_acumulada)} €")
-    st.session_state["total_clientes_unicos"] = num_clientes_total
-    st.session_state["total_deuda_acumulada"] = deuda_total_acumulada
 
-    # ---------------- DETALLE: AG Grid sin hueco a la derecha ----------------
+    # Sumas a partir de las tarjetas renderizadas
+    suma_tarjetas = sum(amount for _, amount, __ in tarjetas)
+
+    # Pendiente con deuda = Pasado (Total YYYY) + Pendiente actual
+    pendiente_con_deuda = sum(
+        amount for title, amount, __ in tarjetas
+        if title.startswith("Total ") or title == "Pendiente actual"
+    )
+
+    # Pendiente futuro = resto de "Pendiente ..." que no sea "Pendiente actual"
+    pendiente_futuro = sum(
+        amount for title, amount, __ in tarjetas
+        if title.startswith("Pendiente ") and title != "Pendiente actual"
+    )
+
+    total_pendiente = pendiente_con_deuda + pendiente_futuro
+
+    # 👇 Quitado el resumen clásico de clientes + total deuda y dejamos solo el nuevo desglose
+    st.markdown(
+        f"**📌 Pendiente con deuda:** {_eu(pendiente_con_deuda)} €  &nbsp;&nbsp;|&nbsp;&nbsp; "
+        f"**🔮 Pendiente futuro:** {_eu(pendiente_futuro)} €  &nbsp;&nbsp;|&nbsp;&nbsp; "
+        f"**🧮 TOTAL pendiente:** {_eu(total_pendiente)} €"
+    )
+
+    st.session_state["total_clientes_unicos"] = num_clientes_total
+    st.session_state["total_deuda_acumulada"] = suma_tarjetas
+
+    # ---------------- DETALLE: AG Grid ----------------
     st.markdown("### 📋 Detalle de deuda por cliente")
 
-    # Detectar columnas de contacto si existen
     email_col = next((c for c in ["Email", "Correo", "E-mail"] if c in df_pendiente.columns), None)
     tel_col   = next((c for c in ["Teléfono", "Telefono", "Tel"] if c in df_pendiente.columns), None)
 
@@ -207,16 +286,17 @@ def vista_clientes_pendientes():
     if email_col: columnas_info.append(email_col)
     if tel_col:   columnas_info.append(tel_col)
 
-    columnas_sumatorias = cols_18_21 + cols_22_25
+    columnas_sumatorias = []
+    columnas_sumatorias += [f"Total {a}" for a in range(2018, 2022) if f"Total {a}" in df_pendiente.columns]
+    columnas_sumatorias += cols_22_25
 
     if columnas_sumatorias:
         df_detalle = df_pendiente[df_pendiente["Cliente"].isin(total_clientes_unicos)][
-            columnas_info + columnas_sumatorias
+            list(dict.fromkeys(columnas_info + columnas_sumatorias))
         ].copy()
         df_detalle[columnas_sumatorias] = df_detalle[columnas_sumatorias].apply(pd.to_numeric, errors="coerce").fillna(0)
         df_detalle["Total deuda"] = df_detalle[columnas_sumatorias].sum(axis=1)
 
-        # Función para unir valores únicos (ignorando NaN y cadenas vacías)
         def _join_unique(series):
             vals = [str(v).strip() for v in series if pd.notna(v) and str(v).strip()]
             return ", ".join(sorted(set(vals)))
@@ -239,7 +319,6 @@ def vista_clientes_pendientes():
             .sort_values(by="Total deuda", ascending=False)
         )
 
-        # 👉 Ajuste automático de columnas SIEMPRE que cambie el tamaño del grid
         auto_fit = JsCode("function(p){ p.api.sizeColumnsToFit(); }")
 
         gb = GridOptionsBuilder.from_dataframe(df_detalle)
@@ -254,7 +333,6 @@ def vista_clientes_pendientes():
             onGridSizeChanged=auto_fit,
         )
 
-        # Reparto de ancho por importancia + mínimos
         gb.configure_column("Cliente",   flex=2, min_width=260)
         gb.configure_column("Proyecto",  flex=2, min_width=220)
         gb.configure_column("Curso",     flex=2, min_width=300)
@@ -272,7 +350,6 @@ def vista_clientes_pendientes():
             update_mode=GridUpdateMode.NO_UPDATE,
             allow_unsafe_jscode=True,
             theme="streamlit",
-            # ojo: SIN fit_columns_on_grid_load para no pisar los eventos
             height=600,
             use_container_width=True
         )
@@ -281,6 +358,20 @@ def vista_clientes_pendientes():
         st.session_state["detalle_filtrado"] = df_detalle
 
     st.markdown("---")
+
+
+def _card(title, amount, ncli):
+    return f"""
+    <div style="background:#f1f9ff;border:1px solid #dbe9ff;border-radius:12px;
+                padding:14px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);
+                display:flex;flex-direction:column;gap:6px;min-height:92px">
+      <div style="font-weight:700;color:#0b5394">{title}</div>
+      <div style="display:flex;gap:12px;align-items:baseline;">
+        <div style="font-size:26px;font-weight:800;color:#00335c">€ {_eu(amount)}</div>
+        <div style="font-size:14px;color:#2a6aa5">👥 {int(ncli)}</div>
+      </div>
+    </div>
+    """
 
 
 def vista_año_2025():
@@ -312,8 +403,9 @@ def render():
     vista_clientes_pendientes()
     vista_año_2025()
 
-    total_global = st.session_state.get("total_deuda_barras", 0)
-    st.markdown(f"### 🧮 TOTAL desde gráfico anual: 🏅 {_eu(total_global)} €")
+    # 👇 Quitada la línea del TOTAL desde gráfico anual en la vista
+    # total_global = st.session_state.get("total_deuda_barras", 0)
+    # st.markdown(f"### 🧮 TOTAL desde gráfico anual: 🏅 {_eu(total_global)} €")
 
     if resultado_exportacion:
         st.session_state["descarga_pendiente_total"] = resultado_exportacion
@@ -332,7 +424,7 @@ def render():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-        # HTML
+        # HTML (también quitado el TOTAL desde gráfico anual)
         html_buffer = io.StringIO()
         html_buffer.write("<html><head><meta charset='utf-8'><title>Exportación</title></head><body>")
         if "2018_2021" in resultado_exportacion:
@@ -346,7 +438,7 @@ def render():
         if "Totales_Años_Meses" in resultado_exportacion:
             html_buffer.write("<h2>Totales por año (deuda anual)</h2>")
             html_buffer.write(resultado_exportacion["Totales_Años_Meses"].to_html(index=False))
-        html_buffer.write(f"<h2>🧮 TOTAL desde gráfico anual: {_eu(st.session_state.get('total_deuda_barras', 0))} €</h2>")
+        # ❌ Quitado: html_buffer.write(f"<h2>🧮 TOTAL desde gráfico anual: {_eu(st.session_state.get('total_deuda_barras', 0))} €</h2>")
         html_buffer.write("</body></html>")
         st.download_button(
             label="🌐 Descargar reporte HTML completo",

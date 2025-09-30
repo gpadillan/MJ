@@ -231,6 +231,89 @@ def load_empleo_df_raw():
         st.exception(e)
         return pd.DataFrame()
 
+# ===================== PENDIENTE (mismo criterio que páginas de Deuda) =====================
+
+MESES_NOMBRE = {
+    1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
+    7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
+}
+
+def _split_pending_like_deuda(df_gestion: pd.DataFrame, anio_actual: int) -> tuple[float,float,float]:
+    """Devuelve (pendiente_con_deuda, pendiente_futuro, total_pendiente)
+    replicando la lógica de pages/deuda/pendiente.py para EIP.
+    """
+    if df_gestion is None or df_gestion.empty or ("Estado" not in df_gestion.columns):
+        return 0.0, 0.0, 0.0
+
+    df = df_gestion.copy()
+    df.columns = [c.strip() for c in df.columns]
+    df["Estado"] = df["Estado"].astype(str).str.replace(r"\s+", " ", regex=True).str.strip().str.upper()
+    df_p = df[df["Estado"] == "PENDIENTE"].copy()
+    if df_p.empty:
+        return 0.0, 0.0, 0.0
+
+    # detectar columnas
+    all_cols = list(df_p.columns)
+    cols_totales = [c for c in all_cols if c.startswith("Total ") and c.split()[-1].isdigit()]
+    # meses por año
+    meses_por_anio = {}
+    for c in all_cols:
+        for m in MESES_NOMBRE.values():
+            if c.startswith(f"{m} "):
+                try:
+                    y = int(c.split()[-1])
+                except Exception:
+                    continue
+                meses_por_anio.setdefault(y, []).append(c)
+
+    # a números
+    num_cols = cols_totales[:]
+    for lst in meses_por_anio.values():
+        num_cols += lst
+    num_cols = list(dict.fromkeys(num_cols))
+    if num_cols:
+        df_p[num_cols] = df_p[num_cols].apply(pd.to_numeric, errors="coerce").fillna(0)
+
+    def _sum_cols(cols):
+        if not cols:
+            return 0.0
+        return float(df_p[cols].sum().sum())
+
+    # Pendiente con deuda (pasados + meses del año actual hasta mes; si solo hay 'Total año actual', va aquí)
+    mes_actual = datetime.now().month
+    con_deuda = 0.0
+    futuro = 0.0
+
+    # pasados
+    for y in range(2018, anio_actual):
+        if f"Total {y}" in df_p.columns:
+            con_deuda += _sum_cols([f"Total {y}"])
+        elif y in meses_por_anio:
+            con_deuda += _sum_cols(meses_por_anio[y])
+
+    # año actual
+    meses_aa = meses_por_anio.get(anio_actual, [])
+    if meses_aa:
+        cols_act = [f"{MESES_NOMBRE[m]} {anio_actual}" for m in range(1, mes_actual+1) if f"{MESES_NOMBRE[m]} {anio_actual}" in df_p.columns]
+        cols_fut = [f"{MESES_NOMBRE[m]} {anio_actual}" for m in range(mes_actual+1, 13) if f"{MESES_NOMBRE[m]} {anio_actual}" in df_p.columns]
+        con_deuda += _sum_cols(cols_act)
+        futuro    += _sum_cols(cols_fut)
+    elif f"Total {anio_actual}" in df_p.columns:
+        # sin meses, sólo total -> lo consideramos "actual" (con deuda)
+        con_deuda += _sum_cols([f"Total {anio_actual}"])
+
+    # años futuros
+    for y in range(anio_actual+1, anio_actual+10):  # margen
+        cols = []
+        if y in meses_por_anio:
+            cols += meses_por_anio[y]
+        if f"Total {y}" in df_p.columns:
+            cols.append(f"Total {y}")
+        futuro += _sum_cols(cols)
+
+    total = con_deuda + futuro
+    return con_deuda, futuro, total
+
 # ===================== PÁGINA PRINCIPAL =====================
 
 def principal_page():
@@ -343,11 +426,21 @@ def principal_page():
 
                 cobrado          = tot_por_estado.get("COBRADO", 0.0)
                 domic_confirmada = tot_por_estado.get("DOMICILIACION CONFIRMADA", 0.0)
-                domic_emitida    = tot_por_estado.get("DOMICILIACION EMITIDA", 0.0)  # ← añadida a fila 1
-                pendiente        = tot_por_estado.get("PENDIENTE", 0.0)
+                domic_emitida    = tot_por_estado.get("DOMICILIACION EMITIDA", 0.0)
                 dudoso           = tot_por_estado.get("DUDOSO COBRO", 0.0)
                 incobrable       = tot_por_estado.get("INCROBRABLE", tot_por_estado.get("INCOBRABLE", 0.0))
                 no_cobrado       = tot_por_estado.get("NO COBRADO", 0.0)
+
+                # ===== Pendiente (con deuda / futuro) =====
+                # 1) Si venimos de la página de Deuda, usa su cálculo exacto
+                pending_ss = st.session_state.get("EIP_PENDIENTE")
+                if pending_ss:
+                    pend_con_deuda = float(pending_ss.get("con_deuda", 0.0))
+                    pend_futuro    = float(pending_ss.get("futuro", 0.0))
+                    total_pend     = float(pending_ss.get("total", pend_con_deuda + pend_futuro))
+                else:
+                    # 2) Calcula aquí con la misma lógica
+                    pend_con_deuda, pend_futuro, total_pend = _split_pending_like_deuda(df_gestion, anio_actual)
 
                 # ✅ Total Generado = Cobrado + Confirmada + Emitida
                 total_generado = cobrado + domic_confirmada + domic_emitida
@@ -371,12 +464,19 @@ def principal_page():
                 c3.markdown(render_bar_card("Domiciliación Emitida", domic_emitida, COLORS["EMITIDA"], "📤"), unsafe_allow_html=True)
                 c4.markdown(render_bar_card("Total Generado", total_generado, COLORS["TOTAL"], "💰"), unsafe_allow_html=True)
 
-                # ===== Fila 2: Pendiente | Dudoso | Incobrable | No Cobrado =====
+                # ===== Fila 2: Pendiente (CON DEUDA) | Dudoso | Incobrable | No Cobrado =====
                 b1, b2, b3, b4 = st.columns(4)
-                b1.markdown(render_bar_card("Pendiente", pendiente, COLORS["PENDIENTE"], "⏳"), unsafe_allow_html=True)
+                b1.markdown(render_bar_card("Pendiente", pend_con_deuda, COLORS["PENDIENTE"], "⏳"), unsafe_allow_html=True)
                 b2.markdown(render_bar_card("Dudoso Cobro", dudoso, COLORS["DUDOSO"], "❗"), unsafe_allow_html=True)
                 b3.markdown(render_bar_card("Incobrable", incobrable, COLORS["INCOBRABLE"], "⛔"), unsafe_allow_html=True)
                 b4.markdown(render_bar_card("No Cobrado", no_cobrado, COLORS["NOCOBRADO"], "🧾"), unsafe_allow_html=True)
+
+                # Línea resumen como en Deuda
+                st.markdown(
+                    f"**📌 Pendiente con deuda (EIP):** {format_euro(pend_con_deuda)} €  &nbsp;|&nbsp; "
+                    f"**🔮 Pendiente futuro (EIP):** {format_euro(pend_futuro)} €  &nbsp;|&nbsp; "
+                    f"**🧮 TOTAL pendiente (EIP):** {format_euro(total_pend)} €"
+                )
 
     # ===== ADMISIONES =====
     st.markdown("## 📥 Admisiones")

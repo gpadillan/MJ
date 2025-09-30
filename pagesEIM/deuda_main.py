@@ -14,9 +14,11 @@ UPLOAD_FOLDER_EIM   = "uploaded_eim"
 EXCEL_FILENAME_EIM  = os.path.join(UPLOAD_FOLDER_EIM, "archivo_cargado.xlsx")
 TIEMPO_FILENAME_EIM = os.path.join(UPLOAD_FOLDER_EIM, "ultima_subida.txt")
 
+
 def _guardar_excel_eim(df: pd.DataFrame):
     os.makedirs(UPLOAD_FOLDER_EIM, exist_ok=True)
     df.to_excel(EXCEL_FILENAME_EIM, index=False)
+
 
 def _guardar_marca_tiempo_eim():
     os.makedirs(UPLOAD_FOLDER_EIM, exist_ok=True)
@@ -26,16 +28,19 @@ def _guardar_marca_tiempo_eim():
         f.write(hora_local)
     return hora_local
 
+
 def _cargar_excel_guardado_eim():
     if os.path.exists(EXCEL_FILENAME_EIM):
         return pd.read_excel(EXCEL_FILENAME_EIM, dtype=str)
     return None
+
 
 def _cargar_marca_tiempo_eim():
     if os.path.exists(TIEMPO_FILENAME_EIM):
         with open(TIEMPO_FILENAME_EIM, "r", encoding="utf-8") as f:
             return f.read().strip()
     return "Fecha no disponible"
+
 
 def deuda_eim_page():
     """Página principal: Gestión de Cobro · EIM"""
@@ -125,6 +130,7 @@ def deuda_eim_page():
         global_eim.render()
     elif seccion == "Pendiente Total":
         pendiente_eim.render()
+
 
 # Alias para routers antiguos
 def deuda_page():
