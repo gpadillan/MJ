@@ -1,4 +1,4 @@
-import os
+import os 
 from datetime import datetime
 
 import pandas as pd
@@ -17,7 +17,6 @@ def _parse_excel_serial_to_datetime(val):
     Si no es numérico, devuelve NaT.
     """
     try:
-        # Excel serial puede venir como '44562' o '44562.0' (str)
         if isinstance(val, str):
             v = val.strip().replace(",", ".")
             if v == "":
@@ -39,13 +38,10 @@ def _to_year(series_like: pd.Series) -> pd.Series:
     """
     s = series_like
 
-    # 1) Si ya son datetimes
     if pd.api.types.is_datetime64_any_dtype(s):
         return pd.to_datetime(s, errors="coerce").dt.year
 
-    # 2) Intento rápido de parseo de texto (dayfirst=True)
     dt_try = pd.to_datetime(s, errors="coerce", dayfirst=True)
-    # 3) Para lo que quedó NaT: probar como serial Excel
     mask_nat = dt_try.isna()
     if mask_nat.any():
         dt_serial = s[mask_nat].apply(_parse_excel_serial_to_datetime)
@@ -92,7 +88,7 @@ def app():
 
     st.markdown(f"<h1>Matrículas por Programa y Propietario - {mes_actual}</h1>", unsafe_allow_html=True)
 
-    # Carga estable del Excel (sin UI extra)
+    # Carga
     try:
         if not os.path.exists(EXCEL_FILE):
             raise FileNotFoundError(f"No existe el archivo: {EXCEL_FILE}")
@@ -106,7 +102,7 @@ def app():
         st.error("Faltan columnas requeridas: 'Programa' o 'propietario'")
         return
 
-    # Normalización sin perder filas
+    # Normalización
     df["Programa"] = _fill_blank(df["Programa"])
     df["propietario"] = _fill_blank(df["propietario"])
 
@@ -128,7 +124,7 @@ def app():
     }
     df["programa_categoria"] = df["Programa"].map(programa_mapping).fillna(df["Programa"])
 
-    # Selector de Año (sin "Todos")
+    # Columna 'último contacto'
     col_ultimo = (
         "último contacto"
         if "último contacto" in df.columns
@@ -138,31 +134,93 @@ def app():
         st.error("No se encontró la columna 'último contacto' / 'Último contacto'.")
         return
 
-    # Año robusto (texto/fecha/serial)
+    # Año robusto
     df["_anio"] = _to_year(df[col_ultimo])
-    df = df[df["_anio"].notna()].copy()
 
-    anios_disponibles = sorted(df["_anio"].unique().tolist(), reverse=True)
-    if not anios_disponibles:
-        st.info("No hay años disponibles en la columna de último contacto.")
-        return
-
+    # =========================
+    # NUEVOS CONTROLES “COMO EN EL EXCEL”
+    # =========================
     st.subheader("")
-    anio_sel = st.selectbox("Año", [str(int(a)) for a in anios_disponibles], index=0)
-    df = df[df["_anio"] == int(anio_sel)]
-    titulo_anio = anio_sel
+    left, right = st.columns(2)
+    with left:
+        modo_todos_anios = st.checkbox(
+            "Contar TODOS los años (ignorar el filtro de año)",
+            value=False,
+            help="Si marcas esto, el total y el gráfico incluyen registros de todos los años."
+        )
+    with right:
+        incluir_sin_fecha = st.checkbox(
+            "Incluir filas sin 'último contacto'",
+            value=True,
+            help="Incluye registros con 'último contacto' en blanco o inválido."
+        )
 
-    # Filtro por programa
+    # (Opcional) incluir programas en blanco tal como hace tu Excel
+    incluir_programa_blanco = st.checkbox(
+        "Incluir Programas en blanco",
+        value=True,
+        help="Si tu Excel cuenta los '(En Blanco)', márcalo."
+    )
+
+    # Selector de año (solo si NO se marcan todos los años)
+    if not modo_todos_anios:
+        anios_disponibles = sorted(df["_anio"].dropna().unique().tolist(), reverse=True)
+        if not anios_disponibles and not incluir_sin_fecha:
+            st.info("No hay años disponibles en la columna de último contacto.")
+            return
+
+        anio_sel = None
+        if anios_disponibles:
+            anio_sel = st.selectbox("Año (último contacto)", [str(int(a)) for a in anios_disponibles], index=0)
+            anio_sel_int = int(anio_sel)
+        else:
+            # No hay años (todo NaN), trabajaremos solo con sin fecha si se permite
+            anio_sel_int = None
+    else:
+        anio_sel = "Todos"
+        anio_sel_int = None
+
+    # Construcción del DataFrame base según controles
+    base = df.copy()
+
+    # Filtrado por 'Programa' en blanco o no
+    if not incluir_programa_blanco:
+        base = base[~_is_blank_series(base["Programa"])].copy()
+
+    # Filtrado por año / sin fecha
+    if modo_todos_anios:
+        # No filtramos por año; opcionalmente incluimos o excluimos NaN de _anio
+        if not incluir_sin_fecha:
+            base = base[base["_anio"].notna()].copy()
+    else:
+        # Solo año seleccionado
+        mask_year = pd.Series(False, index=base.index)
+        if anio_sel_int is not None:
+            mask_year |= (base["_anio"] == anio_sel_int)
+        if incluir_sin_fecha:
+            mask_year |= base["_anio"].isna()
+        base = base[mask_year].copy()
+
+    # Filtro por programa (como ya tenías)
     st.subheader("Selecciona un programa")
-    programas_unicos = sorted(df["programa_categoria"].unique())
+    programas_unicos = sorted(base["programa_categoria"].unique())
     programa_seleccionado = st.selectbox("Programa", ["Todos"] + programas_unicos)
-    df_filtrado = df if programa_seleccionado == "Todos" else df[df["programa_categoria"] == programa_seleccionado]
+    df_filtrado = base if programa_seleccionado == "Todos" else base[base["programa_categoria"] == programa_seleccionado]
 
     # UI
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader(f"Total matrículas — {titulo_anio}")
+        # === KPI TOTAL (respeta los controles “como en el Excel”) ===
+        titulo_anio = anio_sel if anio_sel else "—"
+        st.metric(f"Total matrículas — {titulo_anio}", value=int(base.shape[0]))
+
+        # === Gráfico por programa (respeta “Todos los años” y “sin fecha”) ===
+        if not modo_todos_anios:
+            graf_title = f"Total matrículas por programa — {titulo_anio}"
+        else:
+            graf_title = "Total matrículas por programa — Todos los años"
+
         conteo_programa = df_filtrado["programa_categoria"].value_counts().reset_index()
         conteo_programa.columns = ["programa", "cantidad"]
 
@@ -174,7 +232,8 @@ def app():
             fig1 = px.bar(
                 conteo_programa, x="programa", y="cantidad",
                 color="programa", text="cantidad",
-                color_discrete_map=color_map
+                color_discrete_map=color_map,
+                title=graf_title
             )
             fig1.update_layout(
                 xaxis_title=None, yaxis_title="Cantidad",
@@ -201,9 +260,13 @@ def app():
 
         df_final = df_filtrado if propietario_seleccionado == "Todos" else df_filtrado[df_filtrado["propietario"] == propietario_seleccionado]
 
-        # Métrica principal: label dinámico según año seleccionado
         current_year = datetime.now().year
-        label_kpi = "Matrícula en curso" if int(anio_sel) == current_year else f"Matrícula {anio_sel}"
+        # Si estás en “Todos los años”, el KPI de propietario indica TOTAL con el mismo ámbito:
+        if modo_todos_anios:
+            label_kpi = "Matrículas (todos los años)"
+        else:
+            label_kpi = "Matrícula en curso" if (anio_sel_int == current_year) else f"Matrícula {anio_sel}"
+
         st.metric(label=label_kpi, value=df_final.shape[0])
 
         if propietario_seleccionado == "Todos":
@@ -226,12 +289,12 @@ def app():
             else:
                 st.info("Este propietario no tiene registros para el filtro actual.")
 
-    # --- Promedio de PVP (suma / nº filas) ---
+    # --- Promedio de PVP ---
     st.markdown("---")
     if "PVP" in df_final.columns and not df_final.empty:
         df_final = df_final.copy()
         df_final["PVP"] = pd.to_numeric(df_final["PVP"], errors="coerce").fillna(0)
-        promedio_pvp = df_final["PVP"].sum() / df_final.shape[0]
+        promedio_pvp = df_final["PVP"].sum() / df_final.shape[0] if df_final.shape[0] else 0
         st.metric(label="Promedio de PVP", value=f"{promedio_pvp:,.0f} €")
     else:
         st.metric(label="Promedio de PVP", value="0 €")
@@ -244,7 +307,6 @@ def app():
         st.subheader("Forma de Pago")
         if "Forma de Pago" in df_final.columns and not df_final.empty:
             tmp = df_final.copy()
-            # Para el gráfico: visualizamos con "(En Blanco)"
             forma_pago_str = tmp["Forma de Pago"].astype(str).str.strip()
             tmp["Forma de Pago (vist)"] = forma_pago_str.replace(["", "nan", "NaN", "NONE", "None"], "(En Blanco)")
             conteo_pago = tmp["Forma de Pago (vist)"].value_counts().reset_index()
@@ -279,28 +341,21 @@ def app():
         else:
             st.info("No hay datos suficientes para mostrar el embudo de PVP por forma de pago.")
 
-    # ======= TABLA A PANTALLA COMPLETA (sin 'Motivo' y PVP en blanco como texto) =======
+    # ======= TABLA FALTANTES =======
     st.markdown("---")
     st.subheader("Registros con PVP o Forma de Pago en blanco")
 
     if "PVP" in df_final.columns and "Forma de Pago" in df_final.columns and not df_final.empty:
         tmp = df_final.copy()
-
-        # Flags de blanco (sin reemplazar por '(En Blanco)' aún)
         fp_blank_flag = _is_blank_series(tmp["Forma de Pago"])
         pvp_blank_flag = _is_blank_series(tmp["PVP"])
-
-        # PVP numérico para los que NO están en blanco (para formatear)
         tmp["PVP_NUM"] = pd.to_numeric(tmp["PVP"], errors="coerce")
 
-        # Filtrar registros donde falta FP o PVP
         faltantes = tmp[fp_blank_flag | pvp_blank_flag].copy()
         if not faltantes.empty:
-            # Forma de pago visible
             faltantes["Forma de Pago"] = faltantes["Forma de Pago"].astype(str).str.strip().replace(
                 ["", "nan", "NaN", "NONE", "None"], "(En Blanco)"
             )
-            # PVP visible: si estaba blanco -> "(En Blanco)", si no -> formato €
             def _pvp_display(row):
                 val_raw = str(row["PVP"]).strip()
                 if val_raw in ["", "nan", "NaN", "NONE", "None"]:
