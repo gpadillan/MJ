@@ -138,29 +138,61 @@ def app():
     df["_anio"] = _to_year(df[col_ultimo])
 
     # =========================
-    # NUEVOS CONTROLES “COMO EN EL EXCEL”
+    # CONTROLES con visibilidad por rol
     # =========================
+    def _is_current_user_admin() -> bool:
+        # 1) Query param ?admin=1|true|yes
+        try:
+            qp = st.experimental_get_query_params()
+            flag = str(qp.get("admin", ["0"])[0]).strip().lower()
+            if flag in ("1", "true", "yes"):
+                return True
+        except Exception:
+            pass
+        # 2) Session state
+        if st.session_state.get("is_admin", False):
+            return True
+        # 3) Secrets
+        try:
+            admins = set(st.secrets.get("APP_ADMINS", []))
+            current_user = str(st.secrets.get("APP_CURRENT_USER", "")).strip()
+            if current_user and current_user in admins:
+                return True
+        except Exception:
+            pass
+        return False
+
+    is_admin = _is_current_user_admin()
+
     st.subheader("")
-    left, right = st.columns(2)
-    with left:
+    if is_admin:
+        left, right = st.columns(2)
+        with left:
+            modo_todos_anios = st.checkbox(
+                "Contar TODOS los años (ignorar el filtro de año)",
+                value=False,
+                help="Si marcas esto, el total y el gráfico incluyen registros de todos los años."
+            )
+        with right:
+            incluir_sin_fecha = st.checkbox(
+                "Incluir filas sin 'último contacto'",
+                value=True,
+                help="Incluye registros con 'último contacto' en blanco o inválido."
+            )
+        incluir_programa_blanco = st.checkbox(
+            "Incluir Programas en blanco",
+            value=True,
+            help="Si tu Excel cuenta los '(En Blanco)', márcalo."
+        )
+    else:
+        # No admin: solo muestra 'Todos los años'; el resto siempre activo
         modo_todos_anios = st.checkbox(
             "Contar TODOS los años (ignorar el filtro de año)",
             value=False,
             help="Si marcas esto, el total y el gráfico incluyen registros de todos los años."
         )
-    with right:
-        incluir_sin_fecha = st.checkbox(
-            "Incluir filas sin 'último contacto'",
-            value=True,
-            help="Incluye registros con 'último contacto' en blanco o inválido."
-        )
-
-    # (Opcional) incluir programas en blanco tal como hace tu Excel
-    incluir_programa_blanco = st.checkbox(
-        "Incluir Programas en blanco",
-        value=True,
-        help="Si tu Excel cuenta los '(En Blanco)', márcalo."
-    )
+        incluir_sin_fecha = True
+        incluir_programa_blanco = True
 
     # Selector de año (solo si NO se marcan todos los años)
     if not modo_todos_anios:
@@ -211,7 +243,7 @@ def app():
     col1, col2 = st.columns(2)
 
     with col1:
-        # === KPI TOTAL (respeta los controles “como en el Excel”) ===
+        # === KPI TOTAL (respeta los controles) ===
         titulo_anio = anio_sel if anio_sel else "—"
         st.metric(f"Total matrículas — {titulo_anio}", value=int(base.shape[0]))
 
@@ -343,35 +375,63 @@ def app():
 
     # ======= TABLA FALTANTES =======
     st.markdown("---")
-    st.subheader("Registros con PVP o Forma de Pago en blanco")
+    st.subheader("Registros con PVP, Forma de Pago o Programa en blanco")
 
     if "PVP" in df_final.columns and "Forma de Pago" in df_final.columns and not df_final.empty:
         tmp = df_final.copy()
-        fp_blank_flag = _is_blank_series(tmp["Forma de Pago"])
-        pvp_blank_flag = _is_blank_series(tmp["PVP"])
-        tmp["PVP_NUM"] = pd.to_numeric(tmp["PVP"], errors="coerce")
 
-        faltantes = tmp[fp_blank_flag | pvp_blank_flag].copy()
+        # Flags de blanco SIN convertir aún a "(En Blanco)"
+        fp_blank_flag  = _is_blank_series(tmp["Forma de Pago"])
+        prog_blank_flag = _is_blank_series(tmp["Programa"]) | (
+            tmp["Programa"].astype(str).str.strip().str.lower() == "(en blanco)"
+        )
+
+        # PVP numérico y flags (en blanco o cero)
+        tmp["PVP_NUM"] = pd.to_numeric(tmp["PVP"], errors="coerce")
+        pvp_blank_text_flag = _is_blank_series(tmp["PVP"])
+        pvp_zero_flag = tmp["PVP_NUM"].fillna(0) == 0
+        pvp_blank_flag = pvp_blank_text_flag | pvp_zero_flag
+
+        # Filtrar registros donde falte cualquiera de los tres campos
+        faltantes = tmp[fp_blank_flag | pvp_blank_flag | prog_blank_flag].copy()
+
         if not faltantes.empty:
+            # Normalización visual
             faltantes["Forma de Pago"] = faltantes["Forma de Pago"].astype(str).str.strip().replace(
                 ["", "nan", "NaN", "NONE", "None"], "(En Blanco)"
             )
+            faltantes["Programa"] = faltantes["Programa"].astype(str).str.strip().replace(
+                ["", "nan", "NaN", "NONE", "None"], "(En Blanco)"
+            )
+
+            # Formateo PVP visible: NaN o <= 0 -> "(En Blanco)"
             def _pvp_display(row):
-                val_raw = str(row["PVP"]).strip()
-                if val_raw in ["", "nan", "NaN", "NONE", "None"]:
+                val_num = pd.to_numeric(row.get("PVP_NUM"), errors="coerce")
+                if pd.isna(val_num) or val_num <= 0:
                     return "(En Blanco)"
-                val = pd.to_numeric(row["PVP_NUM"], errors="coerce")
-                if pd.isna(val):
-                    return "(En Blanco)"
-                return f"{val:,.0f} €".replace(",", ".")
+                return f"{val_num:,.0f} €".replace(",", ".")
             faltantes["PVP"] = faltantes.apply(_pvp_display, axis=1)
 
+            # Columna informativa de qué campo(s) faltan
+            def _faltan(row):
+                missing = []
+                if str(row["Programa"]).strip().lower() == "(en blanco)":
+                    missing.append("Programa")
+                if str(row["Forma de Pago"]).strip().lower() == "(en blanco)":
+                    missing.append("Forma de Pago")
+                val_num = pd.to_numeric(row.get("PVP_NUM"), errors="coerce")
+                if pd.isna(val_num) or val_num <= 0:
+                    missing.append("PVP")
+                return ", ".join(missing) if missing else ""
+            faltantes["Campos en blanco"] = faltantes.apply(_faltan, axis=1)
+
+            # 🚫 Sin 'programa_categoria'
             st.dataframe(
-                faltantes[["propietario", "Programa", "programa_categoria", "Forma de Pago", "PVP"]]
+                faltantes[["propietario", "Programa", "Forma de Pago", "PVP", "Campos en blanco"]]
                 .reset_index(drop=True),
                 use_container_width=True
             )
         else:
-            st.info("No hay registros con PVP o Forma de Pago en blanco para este filtro.")
+            st.info("No hay registros con PVP, Forma de Pago o Programa en blanco para este filtro.")
     else:
         st.info("No hay datos suficientes para mostrar el detalle de faltantes.")
