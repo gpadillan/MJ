@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit as st 
 import streamlit.components.v1 as components
 import pandas as pd
 import plotly.express as px
@@ -409,7 +409,7 @@ def app():
                 fechas = gg["_fecha"].dropna().dt.strftime("%d/%m/%Y").tolist()
                 fechas_text = " / ".join(fechas)
                 proyecto = _join_unique(gg[cols["proy"]].dropna()) if cols["proy"] else ""
-                pend = gg["_pend"].max() if cols["pend"] else 0
+                pend = gg["_pend"].sum() if cols["pend"] else 0   # ← CAMBIO: sum() para cuadrar con la tarjeta
                 totals_text = _fmt_totals(gg["_total"]) if cols["total"] else ""
                 estado = _join_estado(gg[cols["estado"]]) if cols["estado"] else ""
                 rows.append((razon, proyecto, fechas_text, pend, totals_text, estado))
@@ -479,11 +479,10 @@ def app():
     for alias in ordered_aliases:
         owner_name = alias_to_owner.get(alias, alias)
         base_color = owner_color_map.get(owner_name, "#1f77b4") if owner_name in owners_in_chart else "#888"
-        # pastel a juego con el gráfico anual
         header_bg = lighten_hex(base_color, OWNER_HEADER_LIGHTEN)
         block_bg  = lighten_hex(base_color, OWNER_BLOCK_LIGHTEN)
         ring_color = base_color
-        text_color = "#111827"  # negro
+        text_color = "#111827"
 
         pv = pvfe_summary.get(alias, {"pv_regs":0,"pv_pend":0,"pv_total":0})
         ve = ventas_by_alias.get(alias, {"ventas_count":0,"ventas_importe":0})
@@ -597,7 +596,7 @@ def app():
                 proyecto = _join_unique(g[cols["proy"]].dropna()) if cols["proy"] else ""
                 fechas = g["Fecha Factura"].dropna().tolist()
                 fechas_text = " / ".join(sorted(set([f for f in fechas if f])))
-                pendiente = g["Pendiente"].max()
+                pendiente = g["Pendiente"].sum()   # ← CAMBIO: sum() para cuadrar con la tarjeta
                 totales = g["_total_num"].dropna().tolist()
                 if totales:
                     suma = sum(totales)
