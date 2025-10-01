@@ -286,17 +286,26 @@ def vista_clientes_pendientes():
     if email_col: columnas_info.append(email_col)
     if tel_col:   columnas_info.append(tel_col)
 
+    # Columnas numéricas candidatas
     columnas_sumatorias = []
     columnas_sumatorias += [f"Total {a}" for a in range(2018, 2022) if f"Total {a}" in df_pendiente.columns]
     columnas_sumatorias += cols_22_25
 
+    # Usar solo las columnas que realmente existan
+    columnas_sumatorias = [c for c in columnas_sumatorias if c in df_pendiente.columns]
+
     if columnas_sumatorias:
-        df_detalle = df_pendiente[df_pendiente["Cliente"].isin(total_clientes_unicos)][
-            list(dict.fromkeys(columnas_info + columnas_sumatorias))
-        ].copy()
+        # 1) Armamos el DF de detalle SIN filtrar por sets externos
+        columnas_finales = list(dict.fromkeys(columnas_info + columnas_sumatorias))
+        df_detalle = df_pendiente[columnas_finales].copy()
+
+        # 2) A números y NaN->0
         df_detalle[columnas_sumatorias] = df_detalle[columnas_sumatorias].apply(pd.to_numeric, errors="coerce").fillna(0)
+
+        # 3) Total deuda por fila
         df_detalle["Total deuda"] = df_detalle[columnas_sumatorias].sum(axis=1)
 
+        # 4) Agrupar por cliente (texto -> conjuntos únicos; totales -> suma)
         def _join_unique(series):
             vals = [str(v).strip() for v in series if pd.notna(v) and str(v).strip()]
             return ", ".join(sorted(set(vals)))
@@ -319,6 +328,10 @@ def vista_clientes_pendientes():
             .sort_values(by="Total deuda", ascending=False)
         )
 
+        # 5) Mostrar sólo clientes con deuda > 0
+        df_detalle = df_detalle[df_detalle["Total deuda"] > 0].reset_index(drop=True)
+
+        # --- Render AG Grid ---
         auto_fit = JsCode("function(p){ p.api.sizeColumnsToFit(); }")
 
         gb = GridOptionsBuilder.from_dataframe(df_detalle)
@@ -334,15 +347,28 @@ def vista_clientes_pendientes():
         )
 
         gb.configure_column("Cliente",   flex=2, min_width=260)
-        gb.configure_column("Proyecto",  flex=2, min_width=220)
-        gb.configure_column("Curso",     flex=2, min_width=300)
-        gb.configure_column("Comercial", flex=1, min_width=180)
-        gb.configure_column("Forma Pago",flex=1, min_width=200)
-        if email_col:
+        if "Proyecto" in df_detalle.columns:  gb.configure_column("Proyecto",  flex=2, min_width=220)
+        if "Curso" in df_detalle.columns:     gb.configure_column("Curso",     flex=2, min_width=300)
+        if "Comercial" in df_detalle.columns: gb.configure_column("Comercial", flex=1, min_width=180)
+        if "Forma Pago" in df_detalle.columns:gb.configure_column("Forma Pago",flex=1, min_width=200)
+        if email_col and email_col in df_detalle.columns:
             gb.configure_column(email_col, flex=2, min_width=240)
-        if tel_col:
+        if tel_col and tel_col in df_detalle.columns:
             gb.configure_column(tel_col, flex=1, min_width=180)
-        gb.configure_column("Total deuda", type=["numericColumn","rightAligned"], flex=1, min_width=140)
+
+        gb.configure_column(
+            "Total deuda",
+            type=["numericColumn", "rightAligned"],
+            flex=1, min_width=140,
+            valueFormatter=JsCode("""
+                function(params) {
+                    try {
+                        const v = Number(params.value || 0).toFixed(2);
+                        return v.replace('.', ',').replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.') + ' €';
+                    } catch(e) { return params.value; }
+                }
+            """)
+        )
 
         AgGrid(
             df_detalle,
@@ -356,6 +382,8 @@ def vista_clientes_pendientes():
 
         resultado_exportacion["ResumenClientes"] = df_detalle
         st.session_state["detalle_filtrado"] = df_detalle
+    else:
+        st.info("No hay columnas seleccionadas o disponibles para calcular el detalle.")
 
     st.markdown("---")
 
