@@ -1,27 +1,81 @@
-import streamlit as st
-import pandas as pd
 import os
-import plotly.express as px
 from datetime import datetime
+
+import pandas as pd
+import plotly.express as px
+import streamlit as st
 from responsive import get_screen_size
 
 UPLOAD_FOLDER = "uploaded_admisiones"
 EXCEL_FILE = os.path.join(UPLOAD_FOLDER, "matricula_programas_25.xlsx")
 
+
 # ----------------- Helpers -----------------
-def _to_year(series_like):
-    dt = pd.to_datetime(series_like, errors="coerce", dayfirst=True)
-    return dt.dt.year
+def _parse_excel_serial_to_datetime(val):
+    """
+    Convierte un serial numérico de Excel a datetime (origen 1899-12-30).
+    Si no es numérico, devuelve NaT.
+    """
+    try:
+        # Excel serial puede venir como '44562' o '44562.0' (str)
+        if isinstance(val, str):
+            v = val.strip().replace(",", ".")
+            if v == "":
+                return pd.NaT
+            v = float(v)
+        else:
+            v = float(val)
+        return pd.to_datetime(v, unit="D", origin="1899-12-30", errors="coerce")
+    except Exception:
+        return pd.NaT
+
+
+def _to_year(series_like: pd.Series) -> pd.Series:
+    """
+    Devuelve el año robustamente:
+    - Si ya es datetime -> extrae año.
+    - Si es número (o str numérico) -> interpreta como serial Excel.
+    - Si es texto -> parseo con dayfirst=True.
+    """
+    s = series_like
+
+    # 1) Si ya son datetimes
+    if pd.api.types.is_datetime64_any_dtype(s):
+        return pd.to_datetime(s, errors="coerce").dt.year
+
+    # 2) Intento rápido de parseo de texto (dayfirst=True)
+    dt_try = pd.to_datetime(s, errors="coerce", dayfirst=True)
+    # 3) Para lo que quedó NaT: probar como serial Excel
+    mask_nat = dt_try.isna()
+    if mask_nat.any():
+        dt_serial = s[mask_nat].apply(_parse_excel_serial_to_datetime)
+        dt_try.loc[mask_nat] = dt_serial
+
+    return dt_try.dt.year
+
 
 def _fill_blank(s: pd.Series, blank_label="(En Blanco)"):
     out = s.astype(str).str.strip()
     out = out.replace(["", "nan", "NaN", "NONE", "None"], blank_label)
     return out.fillna(blank_label)
 
+
 def _is_blank_series(s: pd.Series):
     """Detecta si el valor está en 'blanco' (sin tocar a '(En Blanco)')"""
     s2 = s.astype(str).str.strip()
     return s2.isin(["", "nan", "NaN", "NONE", "None"])
+
+
+@st.cache_data(show_spinner=False)
+def _read_excel_cached(path: str, mtime: float, sheet_name="Contactos") -> pd.DataFrame:
+    """
+    Lectura estable:
+    - engine='openpyxl'
+    - dtype=str para evitar inferencias diferentes entre entornos
+    Cacheada por mtime del archivo.
+    """
+    return pd.read_excel(path, sheet_name=sheet_name, engine="openpyxl", dtype=str)
+
 
 # ----------------- APP -----------------
 def app():
@@ -38,9 +92,12 @@ def app():
 
     st.markdown(f"<h1>Matrículas por Programa y Propietario - {mes_actual}</h1>", unsafe_allow_html=True)
 
-    # Carga
+    # Carga estable del Excel (sin UI extra)
     try:
-        df = pd.read_excel(EXCEL_FILE, sheet_name="Contactos")
+        if not os.path.exists(EXCEL_FILE):
+            raise FileNotFoundError(f"No existe el archivo: {EXCEL_FILE}")
+        mtime = os.path.getmtime(EXCEL_FILE)
+        df = _read_excel_cached(EXCEL_FILE, mtime, sheet_name="Contactos")
     except Exception as e:
         st.error(f"No se pudo cargar el archivo: {e}")
         return
@@ -72,13 +129,19 @@ def app():
     df["programa_categoria"] = df["Programa"].map(programa_mapping).fillna(df["Programa"])
 
     # Selector de Año (sin "Todos")
-    col_ultimo = "último contacto" if "último contacto" in df.columns else ("Último contacto" if "Último contacto" in df.columns else None)
+    col_ultimo = (
+        "último contacto"
+        if "último contacto" in df.columns
+        else ("Último contacto" if "Último contacto" in df.columns else None)
+    )
     if not col_ultimo:
         st.error("No se encontró la columna 'último contacto' / 'Último contacto'.")
         return
 
+    # Año robusto (texto/fecha/serial)
     df["_anio"] = _to_year(df[col_ultimo])
     df = df[df["_anio"].notna()].copy()
+
     anios_disponibles = sorted(df["_anio"].unique().tolist(), reverse=True)
     if not anios_disponibles:
         st.info("No hay años disponibles en la columna de último contacto.")
