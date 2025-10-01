@@ -17,3 +17,4 @@ pytz
 streamlit-folium
 geopy
 pycountry
+requests
