@@ -206,7 +206,7 @@ def render(df: pd.DataFrame | None = None):
     )
 
     df_tabla = df_filtrado[df_filtrado["CONSULTOR EIP"].isin(sel_detalle)][
-        ["CONSULTOR EIP", "NOMBRE", "APELLIDOS", "AREA"]
+        ["CONSULTOR EIP", "NOMBRE", "APELLIDOS", "AREA", "FIN CONV"]
     ].drop_duplicates().sort_values(["CONSULTOR EIP", "APELLIDOS", "NOMBRE"]).reset_index(drop=True)
 
     st.dataframe(df_tabla, use_container_width=True)
