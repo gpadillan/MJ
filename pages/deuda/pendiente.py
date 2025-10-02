@@ -1,4 +1,4 @@
-﻿# pages/deuda/pendiente.py  (Pendiente Total)
+﻿# pages/deuda/pendiente.py  (Pendiente Total - versión sin AG Grid)
 
 import io
 from datetime import datetime
@@ -7,7 +7,6 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 from plotly.io import to_html
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 
 # ======================================================
 # Utilidades
@@ -32,6 +31,7 @@ def vista_clientes_pendientes():
     st.markdown("""
     <style>
       .block-container {max-width: 100% !important; padding-left: 1rem; padding-right: 1rem;}
+      .stDataFrame { font-size: 14px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -266,7 +266,6 @@ def vista_clientes_pendientes():
 
     total_pendiente = pendiente_con_deuda + pendiente_futuro
 
-    # 👇 Quitado el resumen clásico de clientes + total deuda y dejamos solo el nuevo desglose
     st.markdown(
         f"**📌 Pendiente con deuda:** {_eu(pendiente_con_deuda)} €  &nbsp;&nbsp;|&nbsp;&nbsp; "
         f"**🔮 Pendiente futuro:** {_eu(pendiente_futuro)} €  &nbsp;&nbsp;|&nbsp;&nbsp; "
@@ -276,7 +275,7 @@ def vista_clientes_pendientes():
     st.session_state["total_clientes_unicos"] = num_clientes_total
     st.session_state["total_deuda_acumulada"] = suma_tarjetas
 
-    # ---------------- DETALLE: AG Grid ----------------
+    # ---------------- DETALLE: TABLA SIMPLE (con filtros) ----------------
     st.markdown("### 📋 Detalle de deuda por cliente")
 
     email_col = next((c for c in ["Email", "Correo", "E-mail"] if c in df_pendiente.columns), None)
@@ -290,22 +289,15 @@ def vista_clientes_pendientes():
     columnas_sumatorias = []
     columnas_sumatorias += [f"Total {a}" for a in range(2018, 2022) if f"Total {a}" in df_pendiente.columns]
     columnas_sumatorias += cols_22_25
-
-    # Usar solo las columnas que realmente existan
     columnas_sumatorias = [c for c in columnas_sumatorias if c in df_pendiente.columns]
 
     if columnas_sumatorias:
-        # 1) Armamos el DF de detalle SIN filtrar por sets externos
         columnas_finales = list(dict.fromkeys(columnas_info + columnas_sumatorias))
         df_detalle = df_pendiente[columnas_finales].copy()
-
-        # 2) A números y NaN->0
         df_detalle[columnas_sumatorias] = df_detalle[columnas_sumatorias].apply(pd.to_numeric, errors="coerce").fillna(0)
-
-        # 3) Total deuda por fila
         df_detalle["Total deuda"] = df_detalle[columnas_sumatorias].sum(axis=1)
 
-        # 4) Agrupar por cliente (texto -> conjuntos únicos; totales -> suma)
+        # Agrupar por cliente
         def _join_unique(series):
             vals = [str(v).strip() for v in series if pd.notna(v) and str(v).strip()]
             return ", ".join(sorted(set(vals)))
@@ -326,74 +318,38 @@ def vista_clientes_pendientes():
             df_detalle.groupby(["Cliente"], as_index=False)
             .agg(agg_dict)
             .sort_values(by="Total deuda", ascending=False)
+            .reset_index(drop=True)
         )
 
-        # 5) Mostrar sólo clientes con deuda > 0
-        df_detalle = df_detalle[df_detalle["Total deuda"] > 0].reset_index(drop=True)
+        # ===== Filtros ligeros =====
+        with st.expander("🔎 Filtros del detalle"):
+            col_f1, col_f2, col_f3 = st.columns([1.2, 1, 1])
+            texto_cliente = col_f1.text_input("Buscar cliente contiene...", "")
+            lista_comerciales = sorted({c.strip() for s in df_detalle["Comercial"].dropna().astype(str)
+                                        for c in s.split(",") if c.strip()})
+            sel_comerciales = col_f2.multiselect("Comercial", options=lista_comerciales)
+            max_total = float(df_detalle["Total deuda"].max()) if not df_detalle.empty else 0.0
+            rango = col_f3.slider("Rango Total deuda (€)", 0.0, max_total, (0.0, max_total), step=max(1.0, max_total/100))
 
-        # --- Render AG Grid (con fallback seguro) ---
-        auto_fit = JsCode("function(p){ try { p.api.sizeColumnsToFit(); } catch(e) {} }")
+        if texto_cliente:
+            df_detalle = df_detalle[df_detalle["Cliente"].str.contains(texto_cliente, case=False, na=False)]
+        if sel_comerciales:
+            df_detalle = df_detalle[df_detalle["Comercial"].apply(
+                lambda s: any(c in [x.strip() for x in str(s).split(",")] for c in sel_comerciales)
+            )]
+        if rango:
+            df_detalle = df_detalle[(df_detalle["Total deuda"] >= rango[0]) & (df_detalle["Total deuda"] <= rango[1])]
 
-        gb = GridOptionsBuilder.from_dataframe(df_detalle)
-        gb.configure_default_column(
-            filter=True, sortable=True, resizable=True, wrapText=False,  # evita celdas infinitas
-            autoHeight=False, flex=1
+        # Mostrar tabla nativa con formato €
+        column_config = {
+            "Total deuda": st.column_config.NumberColumn("Total deuda", format="€ %.2f", help="Suma de todas las columnas de deuda seleccionadas"),
+        }
+        st.dataframe(
+            df_detalle,
+            use_container_width=True,
+            hide_index=True,
+            column_config=column_config
         )
-        gb.configure_grid_options(
-            domLayout='autoHeight',                  # deja que el grid crezca con el contenido
-            suppressRowClickSelection=True,
-            pagination=False,
-            onFirstDataRendered=auto_fit,
-            onGridSizeChanged=auto_fit
-        )
-
-        gb.configure_column("Cliente",   flex=2, min_width=260)
-        if "Proyecto" in df_detalle.columns:  gb.configure_column("Proyecto",  flex=2, min_width=220)
-        if "Curso" in df_detalle.columns:     gb.configure_column("Curso",     flex=2, min_width=300)
-        if "Comercial" in df_detalle.columns: gb.configure_column("Comercial", flex=1, min_width=180)
-        if "Forma Pago" in df_detalle.columns:gb.configure_column("Forma Pago",flex=1, min_width=200)
-        if email_col and email_col in df_detalle.columns:
-            gb.configure_column(email_col, flex=2, min_width=240)
-        if tel_col and tel_col in df_detalle.columns:
-            gb.configure_column(tel_col, flex=1, min_width=180)
-
-        gb.configure_column(
-            "Total deuda",
-            type=["numericColumn", "rightAligned"],
-            flex=1, min_width=140,
-            valueFormatter=JsCode("""
-                function(params) {
-                    try {
-                        const v = Number(params.value || 0).toFixed(2);
-                        return v.replace('.', ',').replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.') + ' €';
-                    } catch(e) { return params.value; }
-                }
-            """)
-        )
-
-        # Intento de render con AG Grid + fallback a st.dataframe si algo falla o no pinta
-        try:
-            grid_return = AgGrid(
-                df_detalle,
-                gridOptions=gb.build(),
-                update_mode=GridUpdateMode.NO_UPDATE,
-                allow_unsafe_jscode=True,
-                theme="balham",              # tema más estable en cloud
-                # height=600,                # NO altura fija si usamos autoHeight
-                fit_columns_on_grid_load=True,
-                reload_data=True,
-                enable_enterprise_modules=False,
-                use_container_width=True
-            )
-
-            # Si por lo que sea no se pintó, mostramos fallback
-            if grid_return is None or not isinstance(grid_return, dict) or df_detalle.empty:
-                st.warning("AG Grid no pudo renderizarse aquí. Mostrando tabla estándar.")
-                st.dataframe(df_detalle, use_container_width=True)
-
-        except Exception as e:
-            st.warning(f"AG Grid dio un problema en este entorno ({type(e).__name__}). Mostrando tabla estándar.")
-            st.dataframe(df_detalle, use_container_width=True)
 
         resultado_exportacion["ResumenClientes"] = df_detalle
         st.session_state["detalle_filtrado"] = df_detalle
@@ -446,10 +402,6 @@ def render():
     vista_clientes_pendientes()
     vista_año_2025()
 
-    # 👇 Quitada la línea del TOTAL desde gráfico anual en la vista
-    # total_global = st.session_state.get("total_deuda_barras", 0)
-    # st.markdown(f"### 🧮 TOTAL desde gráfico anual: 🏅 {_eu(total_global)} €")
-
     if resultado_exportacion:
         st.session_state["descarga_pendiente_total"] = resultado_exportacion
 
@@ -467,7 +419,7 @@ def render():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-        # HTML (también quitado el TOTAL desde gráfico anual)
+        # HTML
         html_buffer = io.StringIO()
         html_buffer.write("<html><head><meta charset='utf-8'><title>Exportación</title></head><body>")
         if "2018_2021" in resultado_exportacion:
@@ -481,7 +433,6 @@ def render():
         if "Totales_Años_Meses" in resultado_exportacion:
             html_buffer.write("<h2>Totales por año (deuda anual)</h2>")
             html_buffer.write(resultado_exportacion["Totales_Años_Meses"].to_html(index=False))
-        # ❌ Quitado: html_buffer.write(f"<h2>🧮 TOTAL desde gráfico anual: {_eu(st.session_state.get('total_deuda_barras', 0))} €</h2>")
         html_buffer.write("</body></html>")
         st.download_button(
             label="🌐 Descargar reporte HTML completo",
