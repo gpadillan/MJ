@@ -349,9 +349,12 @@ def app():
         # Suma de importes por mes y programa
         g = (df_ventas.groupby(["mes","nombre_unificado"], dropna=False)["importe"]
                       .sum().reset_index())
-        # Etiqueta de mes con total € del mes
+        # Totales € por mes
         tot_mes_imp = g.groupby("mes")["importe"].sum().to_dict()
+        # Etiqueta de mes con total € del mes
         g["mes_etiqueta"] = g["mes"].apply(lambda m: f"{m} ({euro_es(tot_mes_imp.get(m,0))})" if pd.notna(m) else m)
+        # Orden fijo Enero→Diciembre con etiqueta (€)
+        orden_mes_etiqueta = [f"{m} ({euro_es(tot_mes_imp[m])})" for m in orden_meses if m in tot_mes_imp]
 
         # Leyenda con total por programa (en todo el año)
         tot_prog = g.groupby("nombre_unificado")["importe"].sum().reset_index()
@@ -361,7 +364,7 @@ def app():
         # Texto en cada barra
         g["importe_text"] = g["importe"].apply(euro_es)
 
-        # 🔧 FIX: construir el mapa de colores usando 'tot_prog' directamente (sin merge consigo mismo)
+        # Mapa de colores para la leyenda
         color_map_for_legend = {
             row["nombre_display"]: prog_color_map[row["nombre_unificado"]]
             for _, row in tot_prog.iterrows()
@@ -380,7 +383,8 @@ def app():
             xaxis_title="Mes",
             yaxis_title="Importe (€)",
             margin=dict(l=20,r=20,t=60,b=140),
-            legend=dict(orientation="h", yanchor="bottom", y=-0.45, xanchor="center", x=0.5)
+            legend=dict(orientation="h", yanchor="bottom", y=-0.45, xanchor="center", x=0.5),
+            xaxis=dict(categoryorder="array", categoryarray=orden_mes_etiqueta)
         )
         st.plotly_chart(fig_imp, use_container_width=True)
 
@@ -411,8 +415,8 @@ def app():
         )
         st.plotly_chart(fig_imp, use_container_width=True)
 
-        # ======================================================================
-    #        FACTURACIÓN FICTICIA + CLIENTIFY POR COMERCIAL (PASTELES)
+    # ======================================================================
+    # FACTURACIÓN FICTICIA + CLIENTIFY POR COMERCIAL  (con "Ver más")
     # ======================================================================
     st.markdown("---")
     st.markdown("#### Facturación Ficticia + Clientify por Comercial")
@@ -426,7 +430,6 @@ def app():
             st.error(f"No se pudo leer Facturación Ficticia: {e}")
 
     pvfe_summary, pvfe_details_html, details_rows = {}, {}, {}
-    export_rows = []  # ← para la exportación a Excel (resumen por comercial)
 
     if df_pvfe_all is not None and not df_pvfe_all.empty:
         cols = _resolver_columnas(df_pvfe_all.columns)
@@ -558,83 +561,19 @@ def app():
     aliases_solo_pvfe = [a for a in all_aliases if a not in aliases_clientify]
     ordered_aliases = aliases_clientify + aliases_solo_pvfe
 
-    # ======= TARJETAS (UNA POR FILA) =======
+    # ======= Construcción del RESUMEN exportable (independiente del render) =======
+    export_rows = []
     for alias in ordered_aliases:
         owner_name = alias_to_owner.get(alias, alias)
-        base_color = owner_color_map.get(owner_name, "#1f77b4") if owner_name in owners_in_chart else "#888"
-        header_bg = lighten_hex(base_color, OWNER_HEADER_LIGHTEN)
-        block_bg  = lighten_hex(base_color, OWNER_BLOCK_LIGHTEN)
-        ring_color = base_color
-        text_color = "#111827"
-
         pv = pvfe_summary.get(alias, {"pv_regs":0,"pv_pend":0,"pv_total":0,"pv_cifra":0})
         ve = ventas_by_alias.get(alias, {"ventas_count":0,"ventas_importe":0})
         pr = preventas_by_alias.get(alias, {"prev_count":0,"prev_importe":0})
-        detail_html = pvfe_details_html.get(alias, "<i>Sin registros</i>")
-        nrows = details_rows.get(alias, 1)
 
-        pv_total = float(pv.get("pv_total", 0) or 0)   # Importe total FE (pos + neg)
-        pv_cifra = float(pv.get("pv_cifra", 0) or 0)   # Cifra de negocio (solo positivos)
+        pv_total = float(pv.get("pv_total", 0) or 0)
+        pv_cifra = float(pv.get("pv_cifra", 0) or 0)
         ve_importe = float(ve.get("ventas_importe", 0) or 0)
-
         diff_fe_cli = pv_total - ve_importe
-        diff_badge = (
-            f"<span style='margin-left:10px;background:#000;color:#fff;"
-            f"border-radius:8px;padding:3px 8px;font-weight:800;white-space:nowrap;'>"
-            f"FE−Clientify: {euro_es(diff_fe_cli)}</span>"
-        )
 
-        ff_block = f"""
-            <div style="background:{block_bg};border:1px solid {lighten_hex(base_color, 0.75)};border-radius:8px;padding:10px;margin-bottom:8px;color:{text_color};">
-                <div style="font-weight:900;margin-bottom:4px">Facturación Ficticia</div>
-                <div style="font-weight:700">Registros: <b>{int(pv['pv_regs'])}</b></div>
-                <div style="font-weight:700">Pendiente: <b>{euro_es(pv['pv_pend'])}</b></div>
-                <div style="font-weight:700">Cifra de negocio: <b>{euro_es(pv_cifra)}</b></div>
-                <div style="font-weight:700">Importe total FE: <b>{euro_es(pv_total)}</b></div>
-            </div>
-        """
-
-        clientify_block = f"""
-            <div style="background:#f6f7f9;border:1px solid #e5e5e5;border-radius:8px;padding:10px;margin-bottom:8px;color:{text_color};">
-                <div style="font-weight:900;margin-bottom:6px">Clientify</div>
-                <div style="margin-bottom:6px">
-                    <div style="font-weight:800">Ventas</div>
-                    <div style="font-weight:700">Matrículas: <b>{int(ve['ventas_count'])}</b></div>
-                    <div style="font-weight:700">Importe: <b>{euro_es(ve_importe)}</b></div>
-                </div>
-                <div>
-                    <div style="font-weight:800">Preventas</div>
-                    <div style="font-weight:700">Oportunidades: <b>{int(pr['prev_count'])}</b></div>
-                    <div style="font-weight:700">Importe: <b>{euro_es(pr['prev_importe'])}</b></div>
-                </div>
-            </div>
-        """
-
-        base_h = 260
-        rows_h = 22 * int(nrows)
-        height_guess = min(560, base_h + rows_h)
-
-        card_html = f"""
-        <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif;">
-          <div style="background:#fff;border:3px solid {ring_color};border-radius:12px;padding:14px;color:{text_color};
-                      box-shadow:0 2px 6px rgba(0,0,0,.06); overflow:hidden;">
-            <div style="background:{header_bg};color:#111827;border-radius:10px;padding:10px 12px;
-                        font-weight:900;margin:-6px -6px 12px -6px;display:flex;align-items:center;gap:6px;">
-              <span>{owner_name}</span>{diff_badge}
-            </div>
-            {ff_block}
-            {clientify_block}
-            <div style="background:#fafafa;border:1px solid #eee;border-radius:8px;padding:8px;color:#000;
-                        max-height:320px; overflow-y:auto; overflow-x:hidden;
-                        -webkit-overflow-scrolling: touch; overscroll-behavior: contain;">
-              {detail_html}
-            </div>
-          </div>
-        </div>
-        """
-        components.html(card_html, height=height_guess, scrolling=True)
-
-        # ---- fila para exportación
         export_rows.append({
             "Comercial": owner_name,
             "FE - Registros": int(pv.get("pv_regs", 0)),
@@ -649,9 +588,103 @@ def app():
             "Periodo": titulo_periodo,
         })
 
-    # =========================
-    # VISTA RÁPIDA PV-FE (blindada)
-    # =========================
+    # ======= Descargar Excel SIEMPRE visible =======
+    if export_rows:
+        df_export = pd.DataFrame(export_rows)
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+            df_export.to_excel(writer, index=False, sheet_name="Resumen")
+        st.download_button(
+            label="⬇️ Descargar resumen por comercial (Excel)",
+            data=buffer.getvalue(),
+            file_name="FacturacionFicticia_Clientify_por_comercial.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    else:
+        st.info("📭 No hay datos para exportar en este periodo.")
+
+    # ======= "Ver más" (expander) para MOSTRAR/OCULTAR tarjetas =======
+    with st.expander("Ver más: tarjetas por comercial (Facturación Ficticia + Clientify)", expanded=False):
+        if not ordered_aliases:
+            st.info("Sin comerciales que mostrar para el periodo seleccionado.")
+        else:
+            st.caption(f"Mostrando {len(ordered_aliases)} comercial(es).")
+            for alias in ordered_aliases:
+                owner_name = alias_to_owner.get(alias, alias)
+                base_color = owner_color_map.get(owner_name, "#1f77b4") if owner_name in owners_in_chart else "#888"
+                header_bg = lighten_hex(base_color, OWNER_HEADER_LIGHTEN)
+                block_bg  = lighten_hex(base_color, OWNER_BLOCK_LIGHTEN)
+                ring_color = base_color
+                text_color = "#111827"
+
+                pv = pvfe_summary.get(alias, {"pv_regs":0,"pv_pend":0,"pv_total":0,"pv_cifra":0})
+                ve = ventas_by_alias.get(alias, {"ventas_count":0,"ventas_importe":0})
+                pr = preventas_by_alias.get(alias, {"prev_count":0,"prev_importe":0})
+                detail_html = pvfe_details_html.get(alias, "<i>Sin registros</i>")
+                nrows = details_rows.get(alias, 1)
+
+                pv_total = float(pv.get("pv_total", 0) or 0)   # Importe total FE (pos + neg)
+                pv_cifra = float(pv.get("pv_cifra", 0) or 0)   # Cifra de negocio (solo positivos)
+                ve_importe = float(ve.get("ventas_importe", 0) or 0)
+
+                diff_fe_cli = pv_total - ve_importe
+                diff_badge = (
+                    f"<span style='margin-left:10px;background:#000;color:#fff;"
+                    f"border-radius:8px;padding:3px 8px;font-weight:800;white-space:nowrap;'>"
+                    f"FE−Clientify: {euro_es(diff_fe_cli)}</span>"
+                )
+
+                ff_block = f"""
+                    <div style="background:{block_bg};border:1px solid {lighten_hex(base_color, 0.75)};border-radius:8px;padding:10px;margin-bottom:8px;color:{text_color};">
+                        <div style="font-weight:900;margin-bottom:4px">Facturación Ficticia</div>
+                        <div style="font-weight:700">Registros: <b>{int(pv['pv_regs'])}</b></div>
+                        <div style="font-weight:700">Pendiente: <b>{euro_es(pv['pv_pend'])}</b></div>
+                        <div style="font-weight:700">Cifra de negocio: <b>{euro_es(pv_cifra)}</b></div>
+                        <div style="font-weight:700">Importe total FE: <b>{euro_es(pv_total)}</b></div>
+                    </div>
+                """
+
+                clientify_block = f"""
+                    <div style="background:#f6f7f9;border:1px solid #e5e5e5;border-radius:8px;padding:10px;margin-bottom:8px;color:{text_color};">
+                        <div style="font-weight:900;margin-bottom:6px">Clientify</div>
+                        <div style="margin-bottom:6px">
+                            <div style="font-weight:800">Ventas</div>
+                            <div style="font-weight:700">Matrículas: <b>{int(ve['ventas_count'])}</b></div>
+                            <div style="font-weight:700">Importe: <b>{euro_es(ve_importe)}</b></div>
+                        </div>
+                        <div>
+                            <div style="font-weight:800">Preventas</div>
+                            <div style="font-weight:700">Oportunidades: <b>{int(pr['prev_count'])}</b></div>
+                            <div style="font-weight:700">Importe: <b>{euro_es(pr['prev_importe'])}</b></div>
+                        </div>
+                    </div>
+                """
+
+                base_h = 260
+                rows_h = 22 * int(nrows)
+                height_guess = min(560, base_h + rows_h)
+
+                card_html = f"""
+                <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Helvetica,Arial,sans-serif;">
+                  <div style="background:#fff;border:3px solid {ring_color};border-radius:12px;padding:14px;color:{text_color};
+                              box-shadow:0 2px 6px rgba(0,0,0,.06); overflow:hidden;">
+                    <div style="background:{header_bg};color:#111827;border-radius:10px;padding:10px 12px;
+                                font-weight:900;margin:-6px -6px 12px -6px;display:flex;align-items:center;gap:6px;">
+                      <span>{owner_name}</span>{diff_badge}
+                    </div>
+                    {ff_block}
+                    {clientify_block}
+                    <div style="background:#fafafa;border:1px solid #eee;border-radius:8px;padding:8px;color:#000;
+                                max-height:320px; overflow-y:auto; overflow-x:hidden;
+                                -webkit-overflow-scrolling: touch; overscroll-behavior: contain;">
+                      {detail_html}
+                    </div>
+                  </div>
+                </div>
+                """
+                components.html(card_html, height=height_guess, scrolling=True)
+
+    # ================= VISTA RÁPIDA PV-FE (blindada) =================
     st.markdown("---")
     st.subheader("📄 Facturación Ficticia — Vista rápida")
 
@@ -732,19 +765,6 @@ def app():
             st.error(f"No se pudo procesar Facturación Ficticia: {e}")
     else:
         st.info("📭 No hay archivo de Facturación Ficticia en la carpeta.")
-
-    # ================= EXPORTACIÓN A EXCEL (resumen por comercial) =================
-    if export_rows:
-        df_export = pd.DataFrame(export_rows)
-        buffer = BytesIO()
-        with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-            df_export.to_excel(writer, index=False, sheet_name="Resumen")
-        st.download_button(
-            label="⬇️ Descargar resumen por comercial (Excel)",
-            data=buffer.getvalue(),
-            file_name="FacturacionFicticia_Clientify_por_comercial.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
 
 # Para ejecución directa
 if __name__ == "__main__":

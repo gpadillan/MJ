@@ -4,6 +4,7 @@ import os
 import plotly.express as px
 import unicodedata
 from datetime import datetime
+from io import BytesIO
 from responsive import get_screen_size
 
 # ==== RUTAS ====
@@ -354,6 +355,73 @@ def app():
                 ignore_index=True
             )
         st.dataframe(conteo_origen_v.style.background_gradient(cmap="Purples"), use_container_width=True)
+
+    # ===========================================================
+    #  ⬇️ EXPORTAR EXCEL DETALLE DE LAS 3 TABLAS (mismo filtro)
+    # ===========================================================
+    # Funciones auxiliares para detectar columnas de nombre/apellidos
+    def _find_col(cols, candidates):
+        return next((c for c in candidates if c in cols), None)
+
+    # ---- Detalle LEADS (para hojas 1 y 2)
+    leads_detalle = df_tablas.copy()
+    # nombre y apellidos en leads
+    nombre_col_L = _find_col(leads_detalle.columns, ["nombre", "first name", "firstname"])
+    apell_col_L  = _find_col(leads_detalle.columns, ["apellidos", "apellido", "last name", "lastname"])
+    # origen lead
+    origen_col_L = _find_col(leads_detalle.columns, ["origen", "origen lead"])
+
+    leads_export_cols = pd.DataFrame({
+        "Propietario": leads_detalle.get("propietario", pd.Series(dtype=str)),
+        "Nombre": leads_detalle.get(nombre_col_L, pd.Series(dtype=str)),
+        "Apellidos": leads_detalle.get(apell_col_L, pd.Series(dtype=str)),
+        "Programa": leads_detalle.get("programa_final", pd.Series(dtype=str)),
+        "Origen Lead": leads_detalle.get(origen_col_L, pd.Series(dtype=str)) if origen_col_L else "",
+        "Origen": ""  # vacío en leads
+    })
+
+    # ---- Detalle VENTAS (para hoja 3)
+    if ventas_ok and not df_ventas.empty:
+        ventas_detalle = df_ventas.copy()
+        if mes_seleccionado != "Todos":
+            ventas_detalle = ventas_detalle[ventas_detalle["mes_anio"] == mes_seleccionado]
+        if programa_seleccionado != "Todos":
+            ventas_detalle = ventas_detalle[ventas_detalle["programa_final"] == programa_seleccionado]
+        if propietario_tablas != "Todos" and "propietario" in ventas_detalle.columns:
+            ventas_detalle = ventas_detalle[ventas_detalle["propietario"] == propietario_tablas]
+    else:
+        ventas_detalle = pd.DataFrame(columns=["propietario","programa_final"])
+
+    nombre_col_V = _find_col(ventas_detalle.columns, ["nombre", "first name", "firstname"])
+    apell_col_V  = _find_col(ventas_detalle.columns, ["apellidos", "apellido", "last name", "lastname"])
+    origen_col_V = _find_col(ventas_detalle.columns, ["origen", "origen de la venta", "origen venta", "source"])
+
+    ventas_export_cols = pd.DataFrame({
+        "Propietario": ventas_detalle.get("propietario", pd.Series(dtype=str)),
+        "Nombre": ventas_detalle.get(nombre_col_V, pd.Series(dtype=str)),
+        "Apellidos": ventas_detalle.get(apell_col_V, pd.Series(dtype=str)),
+        "Programa": ventas_detalle.get("programa_final", pd.Series(dtype=str)),
+        "Origen Lead": "",  # vacío en ventas
+        "Origen": ventas_detalle.get(origen_col_V, pd.Series(dtype=str)) if origen_col_V else ""
+    })
+
+    # Construir y mostrar botón de descarga
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+        # Hoja 1: detalle que alimenta "Total Leads por Programa"
+        leads_export_cols.to_excel(writer, index=False, sheet_name="Leads por Programa")
+        # Hoja 2: detalle que alimenta "Origen Leads"
+        leads_export_cols.to_excel(writer, index=False, sheet_name="Origen Leads")
+        # Hoja 3: detalle que alimenta "Leads - Venta"
+        ventas_export_cols.to_excel(writer, index=False, sheet_name="Leads-Venta")
+
+    st.download_button(
+        label="⬇️ Descargar detalle (Excel) de las 3 tablas",
+        data=buffer.getvalue(),
+        file_name="detalle_leads_y_ventas.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        help="Descarga los datos en bruto con columnas: Propietario, Nombre, Apellidos, Programa, Origen Lead y Origen."
+    )
 
     # =========================
     # TARJETAS POR PROPIETARIO

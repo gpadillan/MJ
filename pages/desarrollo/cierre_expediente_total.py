@@ -4,6 +4,7 @@ import plotly.express as px
 import unicodedata
 import re
 from datetime import datetime
+import html
 
 # ---------- UI ----------
 def render_card(title, value, color):
@@ -16,15 +17,9 @@ def render_card(title, value, color):
     """
 
 def _tiles_html_from_series(series: pd.Series) -> str:
-    """
-    Crea los 'cuadraditos' por área en UNA sola fila, SIN scroll horizontal.
-    Se usa CSS Grid con tantas columnas como áreas. Cada tile se encoge
-    de forma proporcional para caber, manteniendo un mínimo visual.
-    """
     if series is None or series.empty:
         return "<div style='color:#0b2e6b'>Sin áreas</div>"
 
-    # Orden preferente y resto al final
     orden = ["RRHH", "SAP", "DPO", "EERR", "IA", "PYTHON", "FULL STACK", "BIM", "LOGISTICA"]
     s = series.copy()
     presentes = [a for a in orden if a in s.index]
@@ -32,9 +27,6 @@ def _tiles_html_from_series(series: pd.Series) -> str:
     indices = presentes + resto
     n = max(1, len(indices))
 
-    # Contenedor grid: una fila con n columnas
-    # minmax(90px, 1fr) asegura que, si hay muchas áreas o la pantalla es estrecha,
-    # se reduzcan los anchos pero sigan cabiendo en una sola fila.
     container_open = f"""
       <div style="
         display:grid; grid-auto-flow:column;
@@ -51,10 +43,10 @@ def _tiles_html_from_series(series: pd.Series) -> str:
             background:rgba(255,255,255,.55);
             border:1px solid #9ec5fe; border-radius:10px;
             padding:8px 10px; display:flex; flex-direction:column; gap:4px;
-            min-width:0; /* permite que el contenido se reduzca */
+            min-width:0;
         ">
           <div style="font-weight:700; color:#0b2e6b; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-            {area}
+            {html.escape(str(area))}
           </div>
           <div style="font-size:18px; font-weight:900; color:#00335c; line-height:1;">
             {cnt}
@@ -133,16 +125,20 @@ def _build_colmap(cols):
         "NOMBRE": ["NOMBRE"],
         "APELLIDOS": ["APELLIDOS"],
         "FECHA CIERRE": ["FECHA CIERRE", "FECHA_CIERRE", "F CIERRE"],
+        # Provincias
+        "PROVINCIA 1": ["PROVINCIA 1", "PROVINCIA1", "PROVINCIA_1", "PROVINCIA UNO"],
+        "PROVINCIA 2": ["PROVINCIA 2", "PROVINCIA2", "PROVINCIA_2", "PROVINCIA DOS"],
     }
     norm_lookup = { _norm_colname(c): c for c in cols }
     colmap = {}
     for canon, aliases in expected.items():
         found = None
+        alias_norm = None
         for alias in aliases:
             alias_norm = _norm_colname(alias)
             if alias_norm in norm_lookup:
                 found = norm_lookup[alias_norm]; break
-        if not found:
+        if not found and alias_norm is not None:
             for norm_key, real in norm_lookup.items():
                 if alias_norm in norm_key:
                     found = real; break
@@ -183,6 +179,142 @@ def _is_blank(x) -> bool:
     if isinstance(x, str) and x.strip() == "": return True
     return pd.isna(x)
 
+# ---------- HTML tables (fixed layout, no horizontal scroll) ----------
+def _html_table(df: pd.DataFrame, col_widths: list[str], align_nums: bool = True, small: bool = True) -> str:
+    """Render a fixed-layout responsive table to avoid horizontal scroll."""
+    if df is None or df.empty:
+        return "<div style='color:#5f6368'>Sin datos</div>"
+
+    cols = list(df.columns)
+    widths = col_widths if (col_widths and len(col_widths) == len(cols)) else [f"{100//len(cols)}%"] * len(cols)
+
+    ths = []
+    for c, w in zip(cols, widths):
+        ths.append(
+            f"<th style='width:{w}; padding:8px 8px; text-align:left; "
+            f"white-space:normal; overflow-wrap:break-word;'>{html.escape(str(c))}</th>"
+        )
+
+    rows_html = []
+    for _, row in df.iterrows():
+        tds = []
+        for c, w in zip(cols, widths):
+            val = row[c]
+            if isinstance(val, (int,)):
+                txt = f"{val:,}".replace(",", ".")
+            elif isinstance(val, float):
+                txt = f"{val:,.0f}".replace(",", ".")
+            else:
+                txt = str(val)
+            txt = html.escape(txt)
+            style_num = "text-align:center;" if align_nums and c != cols[0] else "text-align:left;"
+            tds.append(
+                f"<td style='width:{w}; padding:6px 8px; {style_num} "
+                f"white-space:normal; overflow-wrap:break-word;'>{txt}</td>"
+            )
+        rows_html.append("<tr>" + "".join(tds) + "</tr>")
+
+    font_size = "12px" if small else "14px"
+    table = f"""
+    <div style="width:100%;">
+      <table style="width:100%; border-collapse:collapse; table-layout:fixed; font-size:{font_size};">
+        <thead style="background:#f3f6fb;">
+          <tr>{''.join(ths)}</tr>
+        </thead>
+        <tbody>
+          {''.join(rows_html)}
+        </tbody>
+      </table>
+    </div>
+    """
+    return table
+
+def _mix_color(c1, c2, t: float):
+    """Mezcla c1->c2 con t in [0,1] y devuelve hex."""
+    t = max(0.0, min(1.0, float(t)))
+    r = int(round(c1[0]*(1-t) + c2[0]*t))
+    g = int(round(c1[1]*(1-t) + c2[1]*t))
+    b = int(round(c1[2]*(1-t) + c2[2]*t))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+def _html_table_grad(df: pd.DataFrame, col_widths: list[str],
+                     grad_cols: dict) -> str:
+    """
+    Tabla HTML sin scroll con degradado por columna.
+    grad_cols = {
+        "TOTAL CONSECUCIÓN": ( (r,g,b), strength ),
+        "TOTAL INAPLICACIÓN": ( (r,g,b), strength ),
+        "TOTAL PRÁCTICAS": ( (r,g,b), strength ),
+    }
+    strength ~ cuánto se acerca al color base (0..1).
+    """
+    if df is None or df.empty:
+        return "<div style='color:#5f6368'>Sin datos</div>"
+
+    cols = list(df.columns)
+    widths = col_widths if (col_widths and len(col_widths) == len(cols)) else [f"{100//len(cols)}%"] * len(cols)
+
+    # vmax por columna numérica con degradado
+    vmax = {}
+    for c in grad_cols.keys():
+        if c in df.columns:
+            vmax[c] = max(1, float(pd.to_numeric(df[c], errors="coerce").fillna(0).max()))
+        else:
+            vmax[c] = 1.0
+
+    white = (255, 255, 255)
+
+    ths = []
+    for c, w in zip(cols, widths):
+        ths.append(
+            f"<th style='width:{w}; padding:8px 8px; text-align:left; "
+            f"white-space:normal; overflow-wrap:break-word;'>{html.escape(str(c))}</th>"
+        )
+
+    rows_html = []
+    for _, row in df.iterrows():
+        tds = []
+        for c, w in zip(cols, widths):
+            val = row[c]
+            # Texto
+            if isinstance(val, (int,)):
+                txt = f"{val:,}".replace(",", ".")
+            elif isinstance(val, float):
+                txt = f"{val:,.0f}".replace(",", ".")
+            else:
+                txt = str(val)
+            txt = html.escape(txt)
+
+            # Estilo
+            base_style = f"width:{w}; padding:6px 8px; white-space:normal; overflow-wrap:break-word;"
+            align = "text-align:center;" if (c != cols[0]) else "text-align:left;"
+            bg_style = ""
+            if c in grad_cols:
+                color, strength = grad_cols[c]
+                try:
+                    num = float(val)
+                except:
+                    num = 0.0
+                t = (num / vmax[c]) * strength  # 0..strength
+                bg = _mix_color(white, color, t)
+                bg_style = f"background:{bg};"
+            tds.append(f"<td style='{base_style} {align} {bg_style}'>{txt}</td>")
+        rows_html.append("<tr>" + "".join(tds) + "</tr>")
+
+    table = f"""
+    <div style="width:100%;">
+      <table style="width:100%; border-collapse:collapse; table-layout:fixed; font-size:12px;">
+        <thead style="background:#f3f6fb;">
+          <tr>{''.join(ths)}</tr>
+        </thead>
+        <tbody>
+          {''.join(rows_html)}
+        </tbody>
+      </table>
+    </div>
+    """
+    return table
+
 # ---------- App ----------
 def render(df):
     st.title("Informe de Cierre de Expedientes")
@@ -200,7 +332,7 @@ def render(df):
     # Renombra
     df = df.rename(columns={colmap[k]:k for k in colmap})
 
-    # Limpieza valores
+    # Limpieza
     df["AREA"] = df["AREA"].apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True))
     for c in ["PRACTICAS_GE","EMPRESA PRACT","EMPRESA GE","NOMBRE","APELLIDOS"]:
         df[c] = df[c].apply(_norm_text_cell)
@@ -246,12 +378,12 @@ def render(df):
     df_f["AREA_N"] = df_f["AREA"].apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True))
     df_f.loc[df_f["AREA_N"] == "", "AREA_N"] = "SIN ÁREA"
 
-    # Selector de área (condiciona TODO lo de abajo)
+    # Selector de área
     areas = ['TODAS'] + sorted(df_f["AREA_N"].unique())
     area_sel = st.selectbox(" Empresas por área:", areas)
     df_scope = df_f if area_sel == 'TODAS' else df_f[df_f["AREA_N"] == area_sel].copy()
 
-    # Flag de prácticas en curso (para otros usos; el KPI 2025 se calcula por df + sel)
+    # Flag prácticas
     df_scope["PRACTICAS_BOOL"] = (
         (df_scope["PRACTICAS_GE"].str.upper()=="GE") &
         (~df_scope["EMPRESA PRACT"].str.upper().isin(["","NO ENCONTRADO"])) &
@@ -260,7 +392,7 @@ def render(df):
         (~df_scope["INAPLICACION_BOOL"])
     )
 
-    # ---------- Tarjetas principales (ligadas a df_scope)
+    # Tarjetas
     tot_con = int(df_scope["CONSECUCION_BOOL"].sum())
     tot_inap = int(df_scope["INAPLICACION_BOOL"].sum())
     tot_emp_ge = int(_clean_series(df_scope["EMPRESA GE"]).shape[0])
@@ -280,7 +412,6 @@ def render(df):
                 c2.markdown(render_card("INAPLICACIÓN 2025", tot_inap, "#fce4ec"), unsafe_allow_html=True)
                 c3.markdown(render_card("Prácticas 2025", tot_emp_pr, "#f3e5f5"), unsafe_allow_html=True)
 
-                # >>> NO TOCAR: cálculo clásico que te funcionaba <<<
                 df_cons = df[df["CONSULTOR EIP"].isin(sel)].copy()
                 m_sin_fecha = df_cons["FECHA CIERRE"].isna()
                 emp = df_cons["EMPRESA PRACT"].apply(_norm_text_cell)
@@ -297,7 +428,7 @@ def render(df):
                 c2.markdown(render_card(f"INAPLICACIÓN {anio_txt}", tot_inap, "#fce4ec"), unsafe_allow_html=True)
                 c3.markdown(render_card(f"Prácticas {anio_txt}", tot_emp_pr, "#f3e5f5"), unsafe_allow_html=True)
 
-    # ---------- Pie: cierres por consultor (ligado a df_scope)
+    # Pie: cierres por consultor
     st.markdown("")
     df_cierre = pd.concat([
         df_scope[df_scope["CONSECUCION_BOOL"]][["CONSULTOR EIP","NOMBRE","APELLIDOS"]].assign(CIERRE="CONSECUCIÓN"),
@@ -311,7 +442,7 @@ def render(df):
     else:
         st.info("No hay cierres para los filtros seleccionados.")
 
-    # ---------- Resumen por área + Listados de empresas (todo ligado a df_scope)
+    # Resumen por área + listados
     st.markdown("")
     df_tmp = df_scope.copy()
     if "AREA_N" not in df_tmp:
@@ -347,12 +478,6 @@ def render(df):
     }
     resumen_area = pd.concat([resumen_area, pd.DataFrame([total_row])], ignore_index=True)
 
-    styled = (resumen_area.style
-        .background_gradient(subset=["TOTAL CONSECUCIÓN"], cmap="Greens")
-        .background_gradient(subset=["TOTAL INAPLICACIÓN"], cmap="Reds")
-        .background_gradient(subset=["TOTAL PRÁCTICAS"], cmap="Blues")
-    )
-
     s_ge = _clean_series(df_scope["EMPRESA GE"])
     emp_ge = s_ge.value_counts().reset_index()
     emp_ge.columns = ["EMPRESA GE", "EMPLEOS"]
@@ -363,18 +488,38 @@ def render(df):
 
     col_res, col_ge, col_pr = st.columns([1.6, 1, 1])
     with col_res:
-        st.markdown("#### Empresas por área (resumen)")
-        st.dataframe(styled, use_container_width=True)
+        st.markdown("#### Empresas por área")
+        # HTML sin scroll horizontal + degradado por columna
+        # Colores base (suaves):
+        GREEN = (76, 175, 80)    # Consecu.
+        RED   = (239, 83, 80)    # Inaplic.
+        BLUE  = (66, 165, 245)   # Prácticas
+        st.markdown(
+            _html_table_grad(
+                resumen_area,
+                col_widths=["36%", "21%", "21%", "22%"],  # AREA + 3 totales
+                grad_cols={
+                    "TOTAL CONSECUCIÓN":  (GREEN, 0.75),
+                    "TOTAL INAPLICACIÓN": (RED,   0.75),
+                    "TOTAL PRÁCTICAS":    (BLUE,  0.75),
+                }
+            ),
+            unsafe_allow_html=True
+        )
     with col_ge:
         st.markdown("#### EMPRESAS GE")
-        st.dataframe(emp_ge.style.background_gradient(subset=["EMPLEOS"], cmap="YlOrBr"),
-                     use_container_width=True)
+        st.dataframe(
+            emp_ge.style.background_gradient(subset=["EMPLEOS"], cmap="YlOrBr"),
+            use_container_width=True
+        )
     with col_pr:
         st.markdown("#### EMPRESAS PRÁCTICAS")
-        st.dataframe(emp_pr.style.background_gradient(subset=["EMPLEOS"], cmap="PuBu"),
-                     use_container_width=True)
+        st.dataframe(
+            emp_pr.style.background_gradient(subset=["EMPLEOS"], cmap="PuBu"),
+            use_container_width=True
+        )
 
-    # ---------- OBJETIVOS + tiles de alumnado por área (todo ligado a df_scope)
+    # OBJETIVOS + tiles
     df_valid = df_scope[(df_scope["NOMBRE"].str.upper()!="NO ENCONTRADO") &
                         (df_scope["APELLIDOS"].str.upper()!="NO ENCONTRADO")].copy()
     total_al = df_valid[["NOMBRE","APELLIDOS"]].drop_duplicates().shape[0]
@@ -391,7 +536,7 @@ def render(df):
     st.markdown("## 👥 OBJETIVOS")
     st.markdown(render_objectives_card(total_al, area_counts), unsafe_allow_html=True)
 
-    # KPIs (empleo, cierre DP, prácticas, conversión) ligados a df_scope
+    # KPIs
     st.markdown("")
     df_valid["EMP_PRACT_N"] = df_valid["EMPRESA PRACT"].apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True))
     df_valid["EMP_GE_N"]    = df_valid["EMPRESA GE"].apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True))
@@ -414,3 +559,77 @@ def render(df):
     c2.markdown(render_card("Cierre expediente Desarrollo Profesional", f"{pct_cierre_dp}%", "#dfcbb2"), unsafe_allow_html=True)
     c3.markdown(render_card("Inserción Laboral Prácticas", f"{pct_practicas}%", "#ffe082"), unsafe_allow_html=True)
     c4.markdown(render_card("Conversión prácticas a empresa", f"{pct_conversion}%", "#f8bbd0"), unsafe_allow_html=True)
+
+    # ==============================
+    # Resumen por PROVINCIA (HTML sin scroll)
+    # ==============================
+    st.markdown("---")
+    st.markdown("### 📍 Resumen por Provincia y Estado (alumnado único)")
+
+    prov1_exists = "PROVINCIA 1" in df.columns
+    prov2_exists = "PROVINCIA 2" in df.columns
+
+    def _norm_prov_col(series):
+        s = series.apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True))
+        s = s.replace("", "SIN PROVINCIA")
+        return s
+
+    def _tabla_provincias_df(df_in: pd.DataFrame, prov_col: str) -> pd.DataFrame:
+        tmp = df_in.copy()
+        tmp[prov_col] = _norm_prov_col(tmp[prov_col])
+
+        def estado_row(r):
+            if bool(r.get("CONSECUCION_BOOL", False)):  return "CONSECUCIÓN"
+            if bool(r.get("INAPLICACION_BOOL", False)): return "INAPLICACIÓN"
+            if bool(r.get("DEVOLUCION_BOOL", False)):   return "DEVOLUCIÓN"
+            return "SIN ESTADO"
+
+        tmp["ESTADO"] = tmp.apply(estado_row, axis=1)
+        tmp["ALUMNO_KEY"] = (tmp["NOMBRE"].str.upper().str.strip() + "|" +
+                             tmp["APELLIDOS"].str.upper().str.strip())
+        tmp = tmp[tmp["ALUMNO_KEY"] != "|"]
+
+        base = tmp.drop_duplicates(subset=[prov_col, "ALUMNO_KEY"])
+        tabla = (base.groupby([prov_col, "ESTADO"]).size()
+                     .unstack(fill_value=0)
+                     .reset_index()
+                     .rename(columns={prov_col: "PROVINCIA"}))
+
+        for col in ["CONSECUCIÓN","INAPLICACIÓN","DEVOLUCIÓN","SIN ESTADO"]:
+            if col not in tabla.columns:
+                tabla[col] = 0
+
+        tabla["TOTAL ALUMNOS"] = tabla[["CONSECUCIÓN","INAPLICACIÓN","DEVOLUCIÓN","SIN ESTADO"]].sum(axis=1)
+        tabla = tabla.sort_values(by="TOTAL ALUMNOS", ascending=False)
+        return tabla
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        if prov1_exists:
+            tabla1 = _tabla_provincias_df(df_scope, "PROVINCIA 1")
+            st.markdown("**Provincia 1**")
+            st.markdown(
+                _html_table(
+                    tabla1,
+                    # PROVINCIA, CONS, INAP, DEV, SIN, TOTAL
+                    col_widths=["34%", "13%", "13%", "13%", "13%", "14%"],
+                    align_nums=True, small=True
+                ),
+                unsafe_allow_html=True
+            )
+        else:
+            st.info("No se encontró **PROVINCIA 1**.")
+    with col_b:
+        if prov2_exists:
+            tabla2 = _tabla_provincias_df(df_scope, "PROVINCIA 2")
+            st.markdown("**Provincia 2**")
+            st.markdown(
+                _html_table(
+                    tabla2,
+                    col_widths=["34%", "13%", "13%", "13%", "13%", "14%"],
+                    align_nums=True, small=True
+                ),
+                unsafe_allow_html=True
+            )
+        else:
+            st.info("No se encontró **PROVINCIA 2**.")

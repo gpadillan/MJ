@@ -331,19 +331,20 @@ def vista_clientes_pendientes():
         # 5) Mostrar sólo clientes con deuda > 0
         df_detalle = df_detalle[df_detalle["Total deuda"] > 0].reset_index(drop=True)
 
-        # --- Render AG Grid ---
-        auto_fit = JsCode("function(p){ p.api.sizeColumnsToFit(); }")
+        # --- Render AG Grid (con fallback seguro) ---
+        auto_fit = JsCode("function(p){ try { p.api.sizeColumnsToFit(); } catch(e) {} }")
 
         gb = GridOptionsBuilder.from_dataframe(df_detalle)
         gb.configure_default_column(
-            filter=True, sortable=True, resizable=True, wrapText=True, autoHeight=True, flex=1
+            filter=True, sortable=True, resizable=True, wrapText=False,  # evita celdas infinitas
+            autoHeight=False, flex=1
         )
         gb.configure_grid_options(
-            domLayout='normal',
+            domLayout='autoHeight',                  # deja que el grid crezca con el contenido
             suppressRowClickSelection=True,
             pagination=False,
             onFirstDataRendered=auto_fit,
-            onGridSizeChanged=auto_fit,
+            onGridSizeChanged=auto_fit
         )
 
         gb.configure_column("Cliente",   flex=2, min_width=260)
@@ -370,15 +371,29 @@ def vista_clientes_pendientes():
             """)
         )
 
-        AgGrid(
-            df_detalle,
-            gridOptions=gb.build(),
-            update_mode=GridUpdateMode.NO_UPDATE,
-            allow_unsafe_jscode=True,
-            theme="streamlit",
-            height=600,
-            use_container_width=True
-        )
+        # Intento de render con AG Grid + fallback a st.dataframe si algo falla o no pinta
+        try:
+            grid_return = AgGrid(
+                df_detalle,
+                gridOptions=gb.build(),
+                update_mode=GridUpdateMode.NO_UPDATE,
+                allow_unsafe_jscode=True,
+                theme="balham",              # tema más estable en cloud
+                # height=600,                # NO altura fija si usamos autoHeight
+                fit_columns_on_grid_load=True,
+                reload_data=True,
+                enable_enterprise_modules=False,
+                use_container_width=True
+            )
+
+            # Si por lo que sea no se pintó, mostramos fallback
+            if grid_return is None or not isinstance(grid_return, dict) or df_detalle.empty:
+                st.warning("AG Grid no pudo renderizarse aquí. Mostrando tabla estándar.")
+                st.dataframe(df_detalle, use_container_width=True)
+
+        except Exception as e:
+            st.warning(f"AG Grid dio un problema en este entorno ({type(e).__name__}). Mostrando tabla estándar.")
+            st.dataframe(df_detalle, use_container_width=True)
 
         resultado_exportacion["ResumenClientes"] = df_detalle
         st.session_state["detalle_filtrado"] = df_detalle
