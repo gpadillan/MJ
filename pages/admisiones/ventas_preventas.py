@@ -1,4 +1,4 @@
-import streamlit as st 
+import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 import plotly.express as px
@@ -6,6 +6,7 @@ import os
 import unicodedata
 import re
 from datetime import datetime
+from io import BytesIO
 from responsive import get_screen_size
 
 # =========================
@@ -52,17 +53,15 @@ def month_label(ts: pd.Timestamp | None) -> str:
     return f"{meses[ts.month]} {ts.year}"
 
 def euro_es(n) -> str:
-    try: f = float(n)
-    except Exception: return "0 €"
+    try:
+        f = float(n)
+    except Exception:
+        return "0 €"
     s = f"{f:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     if s.endswith(",00"): s = s[:-3]
     return f"{s} €"
 
 def lighten_hex(hex_color: str, factor: float = 0.85) -> str:
-    """
-    Aclara un color hex mezclándolo con blanco.
-    factor 0..1 (más alto = más claro).
-    """
     try:
         h = hex_color.lstrip("#")
         if len(h) == 3:
@@ -104,10 +103,8 @@ def _resolver_columnas(cols):
     keys = list(norm_map.keys())
 
     def find_any(patterns):
-        # exactos
         for p in patterns:
             if p in norm_map: return norm_map[p]
-        # subcadenas
         for p in patterns:
             for k in keys:
                 if p in k: return norm_map[k]
@@ -201,32 +198,81 @@ def app():
     opciones_meses = ["Todos"] + meses_disponibles["mes"].tolist()
     mes_seleccionado = st.selectbox("Selecciona un Mes:", opciones_meses)
 
-    if mes_seleccionado != "Todos":
-        df_ventas = df_ventas[df_ventas["mes"] == mes_seleccionado]
-
+    # Base para KPIs y gráficos
+    df_ventas_filtrado = df_ventas if mes_seleccionado == "Todos" else df_ventas[df_ventas["mes"] == mes_seleccionado].copy()
     titulo_periodo = mes_seleccionado if mes_seleccionado != "Todos" else f"Año {ANIO_ACTUAL}"
     st.markdown(f"### {titulo_periodo}")
 
-    # ======= CÁLCULO RÁPIDO FE (para tarjetas superiores) =======
-    pvfe_total_importe_filtrado = 0.0
+    # ======= CÁLCULO RÁPIDO FE (para KPIs, desde PV-FE) =======
+    pvfe_total_importe_filtrado = 0.0     # suma total (pos + neg)
+    pvfe_cifra_negocio_filtrado = 0.0     # suma solo positivos
     pvfe_path_preview = _encontrar_archivo_pvfe()
     if pvfe_path_preview and os.path.exists(pvfe_path_preview):
         try:
             _df_pvfe_prev = pd.read_excel(pvfe_path_preview)
             _cols_prev = _resolver_columnas(_df_pvfe_prev.columns)
             _dfp_prev = _df_pvfe_prev.copy()
+
             if _cols_prev["fecha"]:
                 _dfp_prev["_fecha"] = pd.to_datetime(_dfp_prev[_cols_prev["fecha"]], errors="coerce", dayfirst=True)
                 _dfp_prev["_mes_es"] = _dfp_prev["_fecha"].dt.month_name().map(traducciones_meses)
                 if mes_seleccionado != "Todos":
                     _dfp_prev = _dfp_prev[_dfp_prev["_mes_es"] == mes_seleccionado]
+
             if _cols_prev["total"]:
-                pvfe_total_importe_filtrado = pd.to_numeric(_dfp_prev[_cols_prev["total"]], errors="coerce").fillna(0).sum()
+                tot_series = pd.to_numeric(_dfp_prev[_cols_prev["total"]], errors="coerce").fillna(0)
+                pvfe_total_importe_filtrado = float(tot_series.sum())
+                pvfe_cifra_negocio_filtrado = float(tot_series[tot_series > 0].sum())
         except Exception:
             pvfe_total_importe_filtrado = 0.0
+            pvfe_cifra_negocio_filtrado = 0.0
 
-    # ======= RESUMEN & COLORES (para gráficos) =======
-    resumen = df_ventas.groupby(["nombre_unificado","propietario"]).size().reset_index(name="Total Matrículas")
+    # ======= TARJETAS DE TOTALES (ARRIBA DEL GRÁFICO) =======
+    total_importe_clientify = float(df_ventas_filtrado["importe"].sum()) if "importe" in df_ventas_filtrado.columns else 0.0
+    cifra_negocio = pvfe_cifra_negocio_filtrado
+    total_importe_fe = pvfe_total_importe_filtrado
+    matriculas_count = int(df_ventas_filtrado.shape[0] if mes_seleccionado != "Todos" else df_ventas_original.shape[0])
+
+    col1, col2, col3, col4, col5 = st.columns(5)
+    with col1:
+        st.markdown(f"""
+            <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #1f77b4;border-radius:8px;'>
+                <h4 style='margin:0'>Importe total Clientify</h4>
+                <p style='font-size:1.5rem;font-weight:700;margin:0'>{euro_es(total_importe_clientify)}</p>
+            </div>
+        """, unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"""
+            <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #0ea5e9;border-radius:8px;'>
+                <h4 style='margin:0'>Cifra de negocio</h4>
+                <p style='font-size:1.5rem;font-weight:700;margin:0'>{euro_es(cifra_negocio)}</p>
+            </div>
+        """, unsafe_allow_html=True)
+    with col3:
+        st.markdown(f"""
+            <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #7f3fbf;border-radius:8px;'>
+                <h4 style='margin:0'>Importe total FE</h4>
+                <p style='font-size:1.5rem;font-weight:700;margin:0'>{euro_es(total_importe_fe)}</p>
+            </div>
+        """, unsafe_allow_html=True)
+    with col4:
+        titulo_matriculas = f"Matrículas ({mes_seleccionado})" if mes_seleccionado != "Todos" else f"Matrículas ({ANIO_ACTUAL})"
+        st.markdown(f"""
+            <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #2ca02c;border-radius:8px;'>
+                <h4 style='margin:0'>{titulo_matriculas}</h4>
+                <p style='font-size:1.5rem;font-weight:700;margin:0'>{matriculas_count}</p>
+            </div>
+        """, unsafe_allow_html=True)
+    with col5:
+        st.markdown(f"""
+            <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #1f77b4;border-radius:8px;'>
+                <h4 style='margin:0'>Preventas</h4>
+                <p style='font-size:1.5rem;font-weight:700;margin:0'>{euro_es(total_preventas_importe)} ({total_preventas_count})</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+    # ======= RESUMEN & COLORES (para gráficos de matrículas) =======
+    resumen = df_ventas_filtrado.groupby(["nombre_unificado","propietario"]).size().reset_index(name="Total Matrículas")
     totales_propietario = resumen.groupby("propietario")["Total Matrículas"].sum().reset_index()
     totales_propietario["propietario_display"] = totales_propietario.apply(
         lambda r: f"{r['propietario']} ({r['Total Matrículas']})", axis=1
@@ -246,7 +292,7 @@ def app():
     owner_color_map = {p.split(" (")[0]: color_map_display[p] for p in propietarios_display}
     owners_in_chart = set(resumen["propietario"].unique())
 
-    # ======= GRÁFICOS =======
+    # ======= GRÁFICO: Distribución Mensual de Matrículas por Propietario =======
     if mes_seleccionado == "Todos":
         df_bar = df_ventas.groupby(["mes","propietario"], dropna=False).size().reset_index(name="Total Matrículas")
         df_bar = df_bar.merge(totales_propietario[["propietario","propietario_display"]], on="propietario", how="left")
@@ -268,7 +314,7 @@ def app():
             xaxis=dict(categoryorder="array", categoryarray=orden_mes_etiqueta),
             legend=dict(orientation="h", yanchor="bottom", y=-0.5, xanchor="center", x=0.5)
         )
-        st.plotly_chart(fig)
+        st.plotly_chart(fig, use_container_width=True)
     else:
         fig = px.scatter(
             resumen, x="nombre_unificado", y="propietario_display",
@@ -287,45 +333,85 @@ def app():
         )
         fig.update_yaxes(categoryorder="array", categoryarray=orden_propietarios[::-1])
         fig.update_xaxes(categoryorder="array", categoryarray=orden_masters)
-        st.plotly_chart(fig)
+        st.plotly_chart(fig, use_container_width=True)
 
-    # ======= TARJETAS DE TOTALES (arriba) =======
-    total_importe_clientify = float(df_ventas["importe"].sum()) if "importe" in df_ventas.columns else 0.0
-    total_importe_fe = float(pvfe_total_importe_filtrado) if pvfe_total_importe_filtrado else 0.0
-    matriculas_count = int(df_ventas.shape[0] if mes_seleccionado != "Todos" else df_ventas_original.shape[0])
+    # ==============================================================
+    # IMPORTE POR MÁSTER / PROGRAMA (Clientify)
+    # ==============================================================
+    st.markdown("---")
+    st.subheader("Importe por Programa/ Clientify")
 
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.markdown(f"""
-            <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #1f77b4;border-radius:8px;'>
-                <h4 style='margin:0'>Importe total Clientify</h4>
-                <p style='font-size:1.5rem;font-weight:700;margin:0'>{euro_es(total_importe_clientify)}</p>
-            </div>
-        """, unsafe_allow_html=True)
-    with col2:
-        st.markdown(f"""
-            <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #7f3fbf;border-radius:8px;'>
-                <h4 style='margin:0'>Importe total FE</h4>
-                <p style='font-size:1.5rem;font-weight:700;margin:0'>{euro_es(total_importe_fe)}</p>
-            </div>
-        """, unsafe_allow_html=True)
-    with col3:
-        titulo_matriculas = f"Matrículas ({mes_seleccionado})" if mes_seleccionado != "Todos" else f"Matrículas ({ANIO_ACTUAL})"
-        st.markdown(f"""
-            <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #2ca02c;border-radius:8px;'>
-                <h4 style='margin:0'>{titulo_matriculas}</h4>
-                <p style='font-size:1.5rem;font-weight:700;margin:0'>{matriculas_count}</p>
-            </div>
-        """, unsafe_allow_html=True)
-    with col4:
-        st.markdown(f"""
-            <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #1f77b4;border-radius:8px;'>
-                <h4 style='margin:0'>Preventas</h4>
-                <p style='font-size:1.5rem;font-weight:700;margin:0'>{euro_es(total_preventas_importe)} ({total_preventas_count})</p>
-            </div>
-        """, unsafe_allow_html=True)
+    # Colores estables por programa
+    programas = sorted(df_ventas["nombre_unificado"].dropna().unique().tolist())
+    prog_color_map = {p: color_palette[i % len(color_palette)] for i, p in enumerate(programas)}
 
-    # ======================================================================
+    if mes_seleccionado == "Todos":
+        # Suma de importes por mes y programa
+        g = (df_ventas.groupby(["mes","nombre_unificado"], dropna=False)["importe"]
+                      .sum().reset_index())
+        # Etiqueta de mes con total € del mes
+        tot_mes_imp = g.groupby("mes")["importe"].sum().to_dict()
+        g["mes_etiqueta"] = g["mes"].apply(lambda m: f"{m} ({euro_es(tot_mes_imp.get(m,0))})" if pd.notna(m) else m)
+
+        # Leyenda con total por programa (en todo el año)
+        tot_prog = g.groupby("nombre_unificado")["importe"].sum().reset_index()
+        tot_prog["nombre_display"] = tot_prog.apply(lambda r: f"{r['nombre_unificado']} ({euro_es(r['importe'])})", axis=1)
+        g = g.merge(tot_prog[["nombre_unificado","nombre_display"]], on="nombre_unificado", how="left")
+
+        # Texto en cada barra
+        g["importe_text"] = g["importe"].apply(euro_es)
+
+        # 🔧 FIX: construir el mapa de colores usando 'tot_prog' directamente (sin merge consigo mismo)
+        color_map_for_legend = {
+            row["nombre_display"]: prog_color_map[row["nombre_unificado"]]
+            for _, row in tot_prog.iterrows()
+        }
+
+        fig_imp = px.bar(
+            g, x="mes_etiqueta", y="importe",
+            color="nombre_display", barmode="group",
+            text="importe_text",
+            color_discrete_map=color_map_for_legend,
+            title=f"Importe por Programa — {ANIO_ACTUAL}",
+            width=width, height=int(height*0.9)
+        )
+        fig_imp.update_traces(textposition="outside")
+        fig_imp.update_layout(
+            xaxis_title="Mes",
+            yaxis_title="Importe (€)",
+            margin=dict(l=20,r=20,t=60,b=140),
+            legend=dict(orientation="h", yanchor="bottom", y=-0.45, xanchor="center", x=0.5)
+        )
+        st.plotly_chart(fig_imp, use_container_width=True)
+
+    else:
+        # Suma de importes en el mes seleccionado por programa
+        g = (df_ventas_filtrado.groupby("nombre_unificado", dropna=False)["importe"]
+                            .sum().reset_index().sort_values("importe", ascending=False))
+        total_mes = float(g["importe"].sum()) if not g.empty else 0.0
+        g["importe_text"] = g["importe"].apply(euro_es)
+
+        titulo_mes = f"Importe por Programa — {mes_seleccionado} — Total: {euro_es(total_mes)}"
+
+        fig_imp = px.bar(
+            g, x="nombre_unificado", y="importe",
+            text="importe_text",
+            color="nombre_unificado",
+            color_discrete_map=prog_color_map,
+            title=titulo_mes,
+            width=width, height=int(height*0.9)
+        )
+        fig_imp.update_traces(textposition="outside")
+        fig_imp.update_layout(
+            xaxis_title="Máster / Programa",
+            yaxis_title="Importe (€)",
+            margin=dict(l=20,r=20,t=60,b=120),
+            xaxis=dict(categoryorder="array", categoryarray=g["nombre_unificado"].tolist()),
+            showlegend=False
+        )
+        st.plotly_chart(fig_imp, use_container_width=True)
+
+        # ======================================================================
     #        FACTURACIÓN FICTICIA + CLIENTIFY POR COMERCIAL (PASTELES)
     # ======================================================================
     st.markdown("---")
@@ -340,6 +426,8 @@ def app():
             st.error(f"No se pudo leer Facturación Ficticia: {e}")
 
     pvfe_summary, pvfe_details_html, details_rows = {}, {}, {}
+    export_rows = []  # ← para la exportación a Excel (resumen por comercial)
+
     if df_pvfe_all is not None and not df_pvfe_all.empty:
         cols = _resolver_columnas(df_pvfe_all.columns)
         dfp = df_pvfe_all.copy()
@@ -364,36 +452,19 @@ def app():
         else:
             dfp["_alias"] = "-"
 
-        # ==== helpers
-        def _join_unique(iterable):
-            out, seen = [], set()
-            for x in iterable:
-                sx = str(x).strip()
-                if sx and sx not in seen:
-                    out.append(sx); seen.add(sx)
-            return " / ".join(out)
-
-        def _join_estado(s: pd.Series) -> str:
-            if not cols["estado"]: return ""
-            return _join_unique([x for x in s.dropna()])
-
-        def _fmt_totals(series: pd.Series):
-            if series is None or series.empty: return ""
-            vals, total = [], 0.0
-            for v in series.dropna():
-                try: f = float(v); vals.append(f); total += f
-                except: pass
-            if not vals: return ""
-            parts = [f"{int(v)}" if abs(v-int(v))<1e-9 else f"{v:g}" for v in vals]
-            return f"{' / '.join(parts)} = {euro_es(total)}"
-
-        # Resumen por alias
-        pvfe_summary = (
-            dfp.groupby("_alias", dropna=False)
-               .agg(pv_regs=("_alias","size"), pv_pend=("_pend","sum"), pv_total=("_total","sum"))
-               .reset_index()
+        # === Resumen por alias (incluye cifra de negocio por comercial)
+        g_alias = dfp.groupby("_alias", dropna=False)
+        pvfe_summary_df = (
+            g_alias.agg(
+                pv_regs=("_alias", "size"),
+                pv_pend=("_pend", "sum"),
+                pv_total=("_total","sum"),
+            ).reset_index()
         )
-        pvfe_summary = dict(pvfe_summary.set_index("_alias")[["pv_regs","pv_pend","pv_total"]].T.to_dict())
+        pvfe_cifra_por_alias = g_alias.apply(lambda x: x["_total"][x["_total"] > 0].sum()).rename("pv_cifra").reset_index()
+        pvfe_summary_df = pvfe_summary_df.merge(pvfe_cifra_por_alias, on="_alias", how="left").fillna({"pv_cifra":0})
+
+        pvfe_summary = dict(pvfe_summary_df.set_index("_alias")[["pv_regs","pv_pend","pv_total","pv_cifra"]].T.to_dict())
 
         # --------- Detalle por razón social (con PROYECTO) ----------
         key_razon = cols["razon"] if cols["razon"] else None
@@ -408,10 +479,22 @@ def app():
                 razon = gg[key_razon].dropna().astype(str).str.strip().iloc[0] if key_razon else ""
                 fechas = gg["_fecha"].dropna().dt.strftime("%d/%m/%Y").tolist()
                 fechas_text = " / ".join(fechas)
-                proyecto = _join_unique(gg[cols["proy"]].dropna()) if cols["proy"] else ""
-                pend = gg["_pend"].sum() if cols["pend"] else 0   # ← CAMBIO: sum() para cuadrar con la tarjeta
-                totals_text = _fmt_totals(gg["_total"]) if cols["total"] else ""
-                estado = _join_estado(gg[cols["estado"]]) if cols["estado"] else ""
+                proyecto = " / ".join(dict.fromkeys([str(x).strip() for x in (gg[cols["proy"]] if cols["proy"] else []) if str(x).strip()]).keys()) if cols["proy"] else ""
+                pend = gg["_pend"].sum() if cols["pend"] else 0
+                totals = gg["_total"]
+                if totals is not None and not totals.empty:
+                    try:
+                        vals = [float(v) for v in totals.dropna().tolist()]
+                        parts = [f"{int(v)}" if abs(v-int(v))<1e-9 else f"{v:g}" for v in vals]
+                        totals_text = f"{' / '.join(parts)} = {euro_es(sum(vals))}"
+                    except Exception:
+                        totals_text = ""
+                else:
+                    totals_text = ""
+                estado = ""
+                if cols["estado"]:
+                    estados = [str(x).strip().upper() for x in gg[cols["estado"]].dropna() if str(x).strip()]
+                    estado = " / ".join(sorted(set(estados)))
                 rows.append((razon, proyecto, fechas_text, pend, totals_text, estado))
 
             details_rows[alias] = len(rows)
@@ -442,9 +525,9 @@ def app():
             else:
                 pvfe_details_html[alias] = "<i>Sin registros</i>"
 
-    # Ventas/Preventas por alias
+    # Ventas/Preventas por alias (Clientify)
     ventas_by_alias = (
-        df_ventas.assign(_alias=df_ventas["propietario"].astype(str).apply(_alias_comercial))
+        df_ventas_filtrado.assign(_alias=df_ventas_filtrado["propietario"].astype(str).apply(_alias_comercial))
                  .groupby("_alias")
                  .agg(ventas_count=("propietario","size"), ventas_importe=("importe","sum"))
                  .reset_index()
@@ -466,7 +549,7 @@ def app():
             preventas_by_alias = dict(preventas_by_alias.set_index("_alias")[["prev_count","prev_importe"]].T.to_dict())
 
     # alias -> owner name
-    owners_all = df_ventas_original["propietario"].dropna().unique().tolist()
+    owners_all = df_ventas["propietario"].dropna().unique().tolist()
     alias_to_owner = {_alias_comercial(o): o for o in owners_all}
 
     # orden: primero con clientify (ventas o preventas), luego solo PV-FE
@@ -484,14 +567,16 @@ def app():
         ring_color = base_color
         text_color = "#111827"
 
-        pv = pvfe_summary.get(alias, {"pv_regs":0,"pv_pend":0,"pv_total":0})
+        pv = pvfe_summary.get(alias, {"pv_regs":0,"pv_pend":0,"pv_total":0,"pv_cifra":0})
         ve = ventas_by_alias.get(alias, {"ventas_count":0,"ventas_importe":0})
         pr = preventas_by_alias.get(alias, {"prev_count":0,"prev_importe":0})
         detail_html = pvfe_details_html.get(alias, "<i>Sin registros</i>")
         nrows = details_rows.get(alias, 1)
 
-        pv_total = float(pv.get("pv_total", 0) or 0)
+        pv_total = float(pv.get("pv_total", 0) or 0)   # Importe total FE (pos + neg)
+        pv_cifra = float(pv.get("pv_cifra", 0) or 0)   # Cifra de negocio (solo positivos)
         ve_importe = float(ve.get("ventas_importe", 0) or 0)
+
         diff_fe_cli = pv_total - ve_importe
         diff_badge = (
             f"<span style='margin-left:10px;background:#000;color:#fff;"
@@ -504,7 +589,8 @@ def app():
                 <div style="font-weight:900;margin-bottom:4px">Facturación Ficticia</div>
                 <div style="font-weight:700">Registros: <b>{int(pv['pv_regs'])}</b></div>
                 <div style="font-weight:700">Pendiente: <b>{euro_es(pv['pv_pend'])}</b></div>
-                <div style="font-weight:700">Total: <b>{euro_es(pv_total)}</b></div>
+                <div style="font-weight:700">Cifra de negocio: <b>{euro_es(pv_cifra)}</b></div>
+                <div style="font-weight:700">Importe total FE: <b>{euro_es(pv_total)}</b></div>
             </div>
         """
 
@@ -548,6 +634,21 @@ def app():
         """
         components.html(card_html, height=height_guess, scrolling=True)
 
+        # ---- fila para exportación
+        export_rows.append({
+            "Comercial": owner_name,
+            "FE - Registros": int(pv.get("pv_regs", 0)),
+            "FE - Pendiente (€)": float(pv.get("pv_pend", 0) or 0),
+            "FE - Cifra de negocio (€)": float(pv_cifra),
+            "FE - Importe total (€)": float(pv_total),
+            "Clientify - Matrículas": int(ve.get("ventas_count", 0)),
+            "Clientify - Importe (€)": float(ve_importe),
+            "Diferencia FE−Clientify (€)": float(diff_fe_cli),
+            "Preventas - Oportunidades": int(pr.get("prev_count", 0)),
+            "Preventas - Importe (€)": float(pr.get("prev_importe", 0) or 0),
+            "Periodo": titulo_periodo,
+        })
+
     # =========================
     # VISTA RÁPIDA PV-FE (blindada)
     # =========================
@@ -575,7 +676,6 @@ def app():
             else:
                 vista["_total_num"] = 0
 
-            # Construir filas con PROYECTO
             rows = []
             key_razon = cols["razon"] if cols["razon"] else None
             def _join_unique(iterable):
@@ -596,7 +696,7 @@ def app():
                 proyecto = _join_unique(g[cols["proy"]].dropna()) if cols["proy"] else ""
                 fechas = g["Fecha Factura"].dropna().tolist()
                 fechas_text = " / ".join(sorted(set([f for f in fechas if f])))
-                pendiente = g["Pendiente"].sum()   # ← CAMBIO: sum() para cuadrar con la tarjeta
+                pendiente = g["Pendiente"].sum()
                 totales = g["_total_num"].dropna().tolist()
                 if totales:
                     suma = sum(totales)
@@ -632,6 +732,19 @@ def app():
             st.error(f"No se pudo procesar Facturación Ficticia: {e}")
     else:
         st.info("📭 No hay archivo de Facturación Ficticia en la carpeta.")
+
+    # ================= EXPORTACIÓN A EXCEL (resumen por comercial) =================
+    if export_rows:
+        df_export = pd.DataFrame(export_rows)
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+            df_export.to_excel(writer, index=False, sheet_name="Resumen")
+        st.download_button(
+            label="⬇️ Descargar resumen por comercial (Excel)",
+            data=buffer.getvalue(),
+            file_name="FacturacionFicticia_Clientify_por_comercial.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
 # Para ejecución directa
 if __name__ == "__main__":
