@@ -88,6 +88,13 @@ def app():
         b_l = int(b + (255 - b) * factor)
         return f"#{r_l:02x}{g_l:02x}{b_l:02x}"
 
+    # Normaliza a "(En Blanco)"
+    def _to_blank_label(series_like) -> pd.Series:
+        s = pd.Series(series_like, copy=True)
+        s = s.astype(str).str.strip()
+        s = s.replace(["", "nan", "NaN", "NONE", "None", "NULL"], "(En Blanco)")
+        return s.fillna("(En Blanco)")
+
     CATEGORIAS_EXACTAS = {
         "MÁSTER IA": [
             "máster en inteligencia artificial", "máster integral en inteligencia artificial", "máster ia",
@@ -160,8 +167,8 @@ def app():
     if 'programa' not in df.columns or 'propietario' not in df.columns:
         st.error("❌ En leads: faltan las columnas 'programa' y/o 'propietario'.")
         return
-    df["programa"] = df["programa"].astype(str).str.strip().replace(["", "nan", "None"], "(En Blanco)")
-    df["propietario"] = df["propietario"].astype(str).str.strip().replace(["", "nan", "None"], "(En Blanco)")
+    df["programa"] = _to_blank_label(df["programa"])
+    df["propietario"] = _to_blank_label(df["propietario"])
     df["programa_categoria"] = df["programa"].apply(clasificar_programa)
     df["programa_final"] = df.apply(
         lambda r: r["programa"] if r["programa_categoria"] == "SIN CLASIFICAR" else r["programa_categoria"], axis=1
@@ -176,10 +183,7 @@ def app():
             df_ventas.columns = df_ventas.columns.str.strip().str.lower()
 
             if "propietario" in df_ventas.columns:
-                df_ventas["propietario"] = (
-                    df_ventas["propietario"].astype(str).str.strip()
-                    .replace(["", "nan", "None"], "(En Blanco)")
-                )
+                df_ventas["propietario"] = _to_blank_label(df_ventas["propietario"])
             else:
                 st.warning("⚠️ En ventas.xlsx falta la columna 'propietario'. Algunas vistas se verán limitadas.")
 
@@ -300,10 +304,7 @@ def app():
         origen_col_leads = "origen" if "origen" in df_tablas.columns else ("origen lead" if "origen lead" in df_tablas.columns else None)
         if origen_col_leads:
             tmp = df_tablas.copy()
-            tmp[origen_col_leads] = (
-                tmp[origen_col_leads].astype(str).str.strip()
-                .replace(["nan", "None", ""], "(En Blanco)").fillna("(En Blanco)")
-            )
+            tmp[origen_col_leads] = _to_blank_label(tmp[origen_col_leads])
             conteo_origen = tmp[origen_col_leads].value_counts().reset_index()
             conteo_origen.columns = ["Origen Lead", "Cantidad"]
         else:
@@ -336,10 +337,7 @@ def app():
 
             if origen_col_v:
                 tmpv = ventas_tablas.copy()
-                tmpv[origen_col_v] = (
-                    tmpv[origen_col_v].astype(str).str.strip()
-                    .replace(["nan", "None", ""], "(En Blanco)").fillna("(En Blanco)")
-                )
+                tmpv[origen_col_v] = _to_blank_label(tmpv[origen_col_v])
                 conteo_origen_v = tmpv[origen_col_v].value_counts().reset_index()
                 conteo_origen_v.columns = ["Origen", "Cantidad"]
             else:
@@ -357,18 +355,18 @@ def app():
         st.dataframe(conteo_origen_v.style.background_gradient(cmap="Purples"), use_container_width=True)
 
     # ===========================================================
-    #  ⬇️ EXPORTAR EXCEL DETALLE DE LAS 3 TABLAS (mismo filtro)
+    #  ⬇️ EXPORTAR EXCEL DETALLE (SOLO FILAS EN BLANCO)
+    #  - Leads por Programa: sin "Origen" (sí "Origen Lead"), filtro Programa="(En Blanco)"
+    #  - Origen Leads: sin "Origen" (sí "Origen Lead"), filtro Origen Lead="(En Blanco)"
+    #  - Leads-Venta: sin "Origen Lead" (sí "Origen"), filtro Origen="(En Blanco)"
     # ===========================================================
-    # Funciones auxiliares para detectar columnas de nombre/apellidos
     def _find_col(cols, candidates):
         return next((c for c in candidates if c in cols), None)
 
-    # ---- Detalle LEADS (para hojas 1 y 2)
+    # ---- Detalle LEADS (normalizado a blancos)
     leads_detalle = df_tablas.copy()
-    # nombre y apellidos en leads
     nombre_col_L = _find_col(leads_detalle.columns, ["nombre", "first name", "firstname"])
     apell_col_L  = _find_col(leads_detalle.columns, ["apellidos", "apellido", "last name", "lastname"])
-    # origen lead
     origen_col_L = _find_col(leads_detalle.columns, ["origen", "origen lead"])
 
     leads_export_cols = pd.DataFrame({
@@ -376,11 +374,13 @@ def app():
         "Nombre": leads_detalle.get(nombre_col_L, pd.Series(dtype=str)),
         "Apellidos": leads_detalle.get(apell_col_L, pd.Series(dtype=str)),
         "Programa": leads_detalle.get("programa_final", pd.Series(dtype=str)),
-        "Origen Lead": leads_detalle.get(origen_col_L, pd.Series(dtype=str)) if origen_col_L else "",
-        "Origen": ""  # vacío en leads
+        "Origen Lead": leads_detalle.get(origen_col_L, pd.Series([""]*len(leads_detalle))) if origen_col_L else pd.Series([""]*len(leads_detalle)),
+        # "Origen" NO se mostrará en hojas 1 y 2
     })
+    leads_export_cols["Programa"] = _to_blank_label(leads_export_cols["Programa"])
+    leads_export_cols["Origen Lead"] = _to_blank_label(leads_export_cols["Origen Lead"])
 
-    # ---- Detalle VENTAS (para hoja 3)
+    # ---- Detalle VENTAS (y normalización de Origen)
     if ventas_ok and not df_ventas.empty:
         ventas_detalle = df_ventas.copy()
         if mes_seleccionado != "Todos":
@@ -401,26 +401,49 @@ def app():
         "Nombre": ventas_detalle.get(nombre_col_V, pd.Series(dtype=str)),
         "Apellidos": ventas_detalle.get(apell_col_V, pd.Series(dtype=str)),
         "Programa": ventas_detalle.get("programa_final", pd.Series(dtype=str)),
-        "Origen Lead": "",  # vacío en ventas
-        "Origen": ventas_detalle.get(origen_col_V, pd.Series(dtype=str)) if origen_col_V else ""
+        # "Origen Lead" NO se mostrará en hoja 3
+        "Origen": ventas_detalle.get(origen_col_V, pd.Series([""]*len(ventas_detalle))) if origen_col_V else pd.Series([""]*len(ventas_detalle))
     })
+    ventas_export_cols["Origen"] = _to_blank_label(ventas_export_cols["Origen"])
+
+    # ======= FILTROS “SOLO EN BLANCO” + SELECCIÓN DE COLUMNAS =======
+    # Hoja 1: Leads por Programa (sin "Origen", sí "Origen Lead"), Programa en blanco
+    hoja1_cols = ["Propietario", "Nombre", "Apellidos", "Programa", "Origen Lead"]
+    hoja1 = leads_export_cols[hoja1_cols].copy()
+    hoja1 = hoja1[hoja1["Programa"] == "(En Blanco)"]
+
+    # Hoja 2: Origen Leads (sin "Origen", sí "Origen Lead"), Origen Lead en blanco
+    hoja2_cols = ["Propietario", "Nombre", "Apellidos", "Programa", "Origen Lead"]
+    hoja2 = leads_export_cols[hoja2_cols].copy()
+    hoja2 = hoja2[hoja2["Origen Lead"] == "(En Blanco)"]
+
+    # Hoja 3: Leads-Venta (sin "Origen Lead", sí "Origen"), Origen en blanco
+    hoja3_cols = ["Propietario", "Nombre", "Apellidos", "Programa", "Origen"]
+    hoja3 = ventas_export_cols[hoja3_cols].copy()
+    hoja3 = hoja3[hoja3["Origen"] == "(En Blanco)"]
 
     # Construir y mostrar botón de descarga
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-        # Hoja 1: detalle que alimenta "Total Leads por Programa"
-        leads_export_cols.to_excel(writer, index=False, sheet_name="Leads por Programa")
-        # Hoja 2: detalle que alimenta "Origen Leads"
-        leads_export_cols.to_excel(writer, index=False, sheet_name="Origen Leads")
-        # Hoja 3: detalle que alimenta "Leads - Venta"
-        ventas_export_cols.to_excel(writer, index=False, sheet_name="Leads-Venta")
+        # Hoja 1
+        (hoja1 if not hoja1.empty else hoja1.head(0)).to_excel(
+            writer, index=False, sheet_name="Programas en blanco"
+        )
+        # Hoja 2
+        (hoja2 if not hoja2.empty else hoja2.head(0)).to_excel(
+            writer, index=False, sheet_name="Origen Leads en blanco"
+        )
+        # Hoja 3
+        (hoja3 if not hoja3.empty else hoja3.head(0)).to_excel(
+            writer, index=False, sheet_name="Leads-Venta (Origen en blanco)"
+        )
 
     st.download_button(
-        label="⬇️ Descargar detalle (Excel) de las 3 tablas",
+        label="⬇️ Descargar detalle (Excel) — SOLO EN BLANCO",
         data=buffer.getvalue(),
-        file_name="detalle_leads_y_ventas.xlsx",
+        file_name="detalle_leads_y_ventas_en_blanco.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        help="Descarga los datos en bruto con columnas: Propietario, Nombre, Apellidos, Programa, Origen Lead y Origen."
+        help="Descarga únicamente las filas en '(En Blanco)' con las columnas exactas por hoja."
     )
 
     # =========================

@@ -1,4 +1,6 @@
 ﻿# pagesEIM/deuda/pendiente_eim.py
+# (Pendiente Total - versión sin AG Grid, alineada con EIP)
+
 import io
 from datetime import datetime
 
@@ -6,7 +8,6 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 from plotly.io import to_html
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 
 from utils.eim_normalizer import prepare_eim_df  # normalizador EIM
 
@@ -33,7 +34,10 @@ _FIG_BARRAS = None  # para exportar a HTML si se genera
 # ===========================
 def vista_clientes_pendientes():
     st.markdown("""
-    <style>.block-container {max-width: 100% !important; padding-left: 1rem; padding-right: 1rem;}</style>
+    <style>
+      .block-container {max-width: 100% !important; padding-left: 1rem; padding-right: 1rem;}
+      .stDataFrame { font-size: 14px; }
+    </style>
     """, unsafe_allow_html=True)
 
     st.header("📄 Clientes con Estado PENDIENTE")
@@ -239,7 +243,7 @@ def vista_clientes_pendientes():
         if total != 0:
             tarjetas.append((f"Pendiente {y}", total, ncli))
 
-    # Render tarjetas (cuadrados) — mismo aspecto que EIP
+    # Render tarjetas (cuadrados)
     if tarjetas:
         st.markdown("## 🧮 Pendiente TOTAL (por año)")
         for i in range(0, len(tarjetas), 4):
@@ -273,73 +277,86 @@ def vista_clientes_pendientes():
     st.session_state["total_clientes_unicos_eim"] = num_clientes_total
     st.session_state["total_deuda_acumulada_eim"] = total_pendiente
 
-    # ----- Detalle (robusto, sin KeyError si faltan columnas)
+    # ----- Detalle (idéntico a la versión sin AG Grid)
     st.markdown("### 📋 Detalle de deuda por cliente")
 
-    # Columnas base si existen
-    base_posibles = ["Cliente", "Proyecto", "Curso", "Comercial", "Forma Pago"]
-    columnas_info = [c for c in base_posibles if c in df_pend.columns]
+    email_col = next((c for c in ["Email", "Correo", "E-mail"] if c in df_pend.columns), None)
+    tel_col   = next((c for c in ["Teléfono", "Telefono", "Tel"] if c in df_pend.columns), None)
 
-    # Columnas de contacto opcionales (con/sin acentos)
-    contacto_candidatas = ["Email", "Correo", "E-mail", "Teléfono", "Telefono", "Tel"]
-    contacto_presentes = [c for c in contacto_candidatas if c in df_pend.columns]
-    columnas_info += contacto_presentes
+    columnas_info = ["Cliente", "Proyecto", "Curso", "Comercial", "Forma Pago"]
+    if email_col: columnas_info.append(email_col)
+    if tel_col:   columnas_info.append(tel_col)
 
-    # Columnas numéricas a sumar en filas de detalle
-    columnas_sumatorias = cols_18_21 + (cols_22_aa if "cols_22_aa" in locals() else [])
+    # Columnas numéricas candidatas (mismas reglas que arriba)
+    columnas_sumatorias = []
+    columnas_sumatorias += [f"Total {a}" for a in range(2018, 2022) if f"Total {a}" in df_pend.columns]
+    columnas_sumatorias += (cols_22_aa if cols_22_aa else [])
     columnas_sumatorias = [c for c in columnas_sumatorias if c in df_pend.columns]
 
-    if columnas_sumatorias and columnas_info:
-        columnas_existentes = [c for c in columnas_info if c in df_pend.columns]
-        df_detalle = df_pend[df_pend["Cliente"].isin(total_clientes_unicos)][
-            columnas_existentes + columnas_sumatorias
-        ].copy()
+    if columnas_sumatorias:
+        columnas_finales = list(dict.fromkeys(columnas_info + columnas_sumatorias))
+        df_detalle = df_pend[columnas_finales].copy()
+        df_detalle[columnas_sumatorias] = df_detalle[columnas_sumatorias].apply(pd.to_numeric, errors="coerce").fillna(0)
+        df_detalle["Total deuda"] = df_detalle[columnas_sumatorias].sum(axis=1)
 
-        if df_detalle.empty:
-            st.info("No hay filas para mostrar en el detalle con los filtros actuales.")
-        else:
-            df_detalle[columnas_sumatorias] = df_detalle[columnas_sumatorias].apply(pd.to_numeric, errors="coerce").fillna(0)
-            df_detalle["Total deuda"] = df_detalle[columnas_sumatorias].sum(axis=1)
+        # Agrupar por cliente (texto -> conjuntos únicos; totales -> suma)
+        def _join_unique(series):
+            vals = [str(v).strip() for v in series if pd.notna(v) and str(v).strip()]
+            return ", ".join(sorted(set(vals)))
 
-            def _join_unique(series):
-                vals = [str(v).strip() for v in series if pd.notna(v) and str(v).strip()]
-                return ", ".join(sorted(set(vals)))
+        agg_dict = {
+            "Proyecto": _join_unique,
+            "Curso": _join_unique,
+            "Comercial": _join_unique,
+            "Forma Pago": lambda x: ", ".join(sorted(set(str(i) for i in x if pd.notna(i) and str(i).strip()))),
+            "Total deuda": "sum",
+        }
+        if email_col:
+            agg_dict[email_col] = _join_unique
+        if tel_col:
+            agg_dict[tel_col] = _join_unique
 
-            # agg_dict solo con columnas presentes
-            agg_dict = {"Total deuda": "sum"}
-            for c in ["Proyecto", "Curso", "Comercial", "Forma Pago"]:
-                if c in df_detalle.columns:
-                    agg_dict[c] = _join_unique
-            for c in contacto_presentes:
-                if c in df_detalle.columns:
-                    agg_dict[c] = _join_unique
+        df_detalle = (
+            df_detalle.groupby(["Cliente"], as_index=False)
+                      .agg(agg_dict)
+                      .sort_values(by="Total deuda", ascending=False)
+                      .reset_index(drop=True)
+        )
 
-            df_detalle = (
-                df_detalle.groupby(["Cliente"], as_index=False)
-                          .agg(agg_dict)
-                          .sort_values(by="Total deuda", ascending=False)
-            )
+        # ===== Filtros ligeros (idénticos) =====
+        with st.expander("🔎 Filtros del detalle"):
+            col_f1, col_f2, col_f3 = st.columns([1.2, 1, 1])
+            texto_cliente = col_f1.text_input("Buscar cliente contiene...", "")
+            lista_comerciales = sorted({c.strip() for s in df_detalle["Comercial"].dropna().astype(str)
+                                        for c in s.split(",") if c.strip()}) if "Comercial" in df_detalle.columns else []
+            sel_comerciales = col_f2.multiselect("Comercial", options=lista_comerciales)
+            max_total = float(df_detalle["Total deuda"].max()) if not df_detalle.empty else 0.0
+            rango = col_f3.slider("Rango Total deuda (€)", 0.0, max_total, (0.0, max_total), step=max(1.0, max_total/100 if max_total else 1.0))
 
-            auto_fit = JsCode("function(p){ p.api.sizeColumnsToFit(); }")
-            gb = GridOptionsBuilder.from_dataframe(df_detalle)
-            gb.configure_default_column(filter=True, sortable=True, resizable=True, wrapText=True, autoHeight=True, flex=1)
-            gb.configure_grid_options(domLayout='normal', suppressRowClickSelection=True,
-                                      pagination=False, onFirstDataRendered=auto_fit, onGridSizeChanged=auto_fit)
+        if texto_cliente:
+            df_detalle = df_detalle[df_detalle["Cliente"].str.contains(texto_cliente, case=False, na=False)]
+        if sel_comerciales and "Comercial" in df_detalle.columns:
+            df_detalle = df_detalle[df_detalle["Comercial"].apply(
+                lambda s: any(c in [x.strip() for x in str(s).split(",")] for c in sel_comerciales)
+            )]
+        if rango:
+            df_detalle = df_detalle[(df_detalle["Total deuda"] >= rango[0]) & (df_detalle["Total deuda"] <= rango[1])]
 
-            if "Cliente" in df_detalle.columns:   gb.configure_column("Cliente",   flex=2, min_width=260)
-            if "Proyecto" in df_detalle.columns:  gb.configure_column("Proyecto",  flex=2, min_width=220)
-            if "Curso" in df_detalle.columns:     gb.configure_column("Curso",     flex=2, min_width=300)
-            if "Comercial" in df_detalle.columns: gb.configure_column("Comercial", flex=1, min_width=180)
-            if "Forma Pago" in df_detalle.columns:gb.configure_column("Forma Pago",flex=1, min_width=200)
-            for c in contacto_presentes:
-                if c in df_detalle.columns:
-                    gb.configure_column(c, flex=1, min_width=180)
-            gb.configure_column("Total deuda", type=["numericColumn","rightAligned"], flex=1, min_width=140)
+        # Mostrar tabla nativa con formato €
+        column_config = {
+            "Total deuda": st.column_config.NumberColumn("Total deuda", format="€ %.2f", help="Suma de todas las columnas de deuda seleccionadas"),
+        }
+        st.dataframe(
+            df_detalle,
+            use_container_width=True,
+            hide_index=True,
+            column_config=column_config
+        )
 
-            AgGrid(df_detalle, gridOptions=gb.build(), update_mode=GridUpdateMode.NO_UPDATE,
-                   allow_unsafe_jscode=True, theme="streamlit", height=600, use_container_width=True)
-
-            resultado_exportacion["ResumenClientes"] = df_detalle
+        resultado_exportacion["ResumenClientes"] = df_detalle
+        st.session_state["detalle_filtrado_eim"] = df_detalle
+    else:
+        st.info("No hay columnas seleccionadas o disponibles para calcular el detalle.")
 
     st.markdown("---")
 

@@ -608,7 +608,7 @@ def app():
         if not ordered_aliases:
             st.info("Sin comerciales que mostrar para el periodo seleccionado.")
         else:
-            st.caption(f"Mostrando {len(ordered_aliases)} comercial(es).")
+            st.caption(f"Mostrando {len(ordered_aliases)} comerciales.")
             for alias in ordered_aliases:
                 owner_name = alias_to_owner.get(alias, alias)
                 base_color = owner_color_map.get(owner_name, "#1f77b4") if owner_name in owners_in_chart else "#888"
