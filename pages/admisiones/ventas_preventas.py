@@ -244,14 +244,14 @@ def app():
     with col2:
         st.markdown(f"""
             <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #0ea5e9;border-radius:8px;'>
-                <h4 style='margin:0'>Cifra de negocio</h4>
+                <h4 style='margin:0'>Importe total FE</h4>
                 <p style='font-size:1.5rem;font-weight:700;margin:0'>{euro_es(cifra_negocio)}</p>
             </div>
         """, unsafe_allow_html=True)
     with col3:
         st.markdown(f"""
             <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #7f3fbf;border-radius:8px;'>
-                <h4 style='margin:0'>Importe total FE</h4>
+                <h4 style='margin:0'>Cifra de negocio</h4>
                 <p style='font-size:1.5rem;font-weight:700;margin:0'>{euro_es(total_importe_fe)}</p>
             </div>
         """, unsafe_allow_html=True)
