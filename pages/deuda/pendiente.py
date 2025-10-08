@@ -321,6 +321,9 @@ def vista_clientes_pendientes():
             .reset_index(drop=True)
         )
 
+        # 🔴 NUEVO: ocultar filas con "Total deuda" exactamente 0
+        df_detalle = df_detalle[df_detalle["Total deuda"] > 0]
+
         # ===== Filtros ligeros =====
         with st.expander("🔎 Filtros del detalle"):
             col_f1, col_f2, col_f3 = st.columns([1.2, 1, 1])

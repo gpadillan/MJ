@@ -1,5 +1,5 @@
 ﻿# pagesEIM/deuda/pendiente_eim.py
-# (Pendiente Total - versión sin AG Grid, alineada con EIP)
+# (Pendiente Total - versión sin AG Grid, alineada con EIM)
 
 import io
 from datetime import datetime
@@ -277,7 +277,7 @@ def vista_clientes_pendientes():
     st.session_state["total_clientes_unicos_eim"] = num_clientes_total
     st.session_state["total_deuda_acumulada_eim"] = total_pendiente
 
-    # ----- Detalle (idéntico a la versión sin AG Grid)
+    # ----- Detalle (idéntico a la versión sin AG Grid, filtrando Total deuda == 0)
     st.markdown("### 📋 Detalle de deuda por cliente")
 
     email_col = next((c for c in ["Email", "Correo", "E-mail"] if c in df_pend.columns), None)
@@ -323,6 +323,9 @@ def vista_clientes_pendientes():
                       .reset_index(drop=True)
         )
 
+        # 🔴 Filtra aquí: excluir filas con Total deuda == 0 (pero mantiene 0,10, etc.)
+        df_detalle = df_detalle[df_detalle["Total deuda"] > 0]
+
         # ===== Filtros ligeros (idénticos) =====
         with st.expander("🔎 Filtros del detalle"):
             col_f1, col_f2, col_f3 = st.columns([1.2, 1, 1])
@@ -331,7 +334,12 @@ def vista_clientes_pendientes():
                                         for c in s.split(",") if c.strip()}) if "Comercial" in df_detalle.columns else []
             sel_comerciales = col_f2.multiselect("Comercial", options=lista_comerciales)
             max_total = float(df_detalle["Total deuda"].max()) if not df_detalle.empty else 0.0
-            rango = col_f3.slider("Rango Total deuda (€)", 0.0, max_total, (0.0, max_total), step=max(1.0, max_total/100 if max_total else 1.0))
+            rango = col_f3.slider(
+                "Rango Total deuda (€)",
+                0.0, max_total,
+                (0.0, max_total),
+                step=max(1.0, max_total/100 if max_total else 1.0)
+            )
 
         if texto_cliente:
             df_detalle = df_detalle[df_detalle["Cliente"].str.contains(texto_cliente, case=False, na=False)]
@@ -344,7 +352,10 @@ def vista_clientes_pendientes():
 
         # Mostrar tabla nativa con formato €
         column_config = {
-            "Total deuda": st.column_config.NumberColumn("Total deuda", format="€ %.2f", help="Suma de todas las columnas de deuda seleccionadas"),
+            "Total deuda": st.column_config.NumberColumn(
+                "Total deuda", format="€ %.2f",
+                help="Suma de todas las columnas de deuda seleccionadas"
+            ),
         }
         st.dataframe(
             df_detalle,
