@@ -148,6 +148,7 @@ def app():
         "Programa Movilidad California": "PROGRAMA CALIFORNIA",
         "Máster en RRHH: Dirección de Personas, Desarrollo de Talento y Gestión Laboral": "MÁSTER RRHH",
         "Master en RRHH, dirección de personas, desarrollo de talento y gestión laboral": "MÁSTER RRHH",
+        "Máster en Dirección Financiera y Consultoría Funcional SAP S/4HANA Finance": "CERTIFICACIÓN SAP S/4HANA",
         "Máster en Inteligencia Artificial": "MÁSTER IA"
     }
     df["programa_categoria"] = df["Programa"].map(programa_mapping).fillna(df["Programa"])
