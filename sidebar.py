@@ -17,6 +17,14 @@ def _logo_path(unidad: str) -> str:
     path = candidates.get(unidad, fallback)
     return path if os.path.exists(path) else fallback
 
+def _nav_button(label: str, page_key: str):
+    """
+    Crea un botón de navegación que cambia st.session_state['current_page'].
+    """
+    if st.button(label, use_container_width=True, key=f"nav_{page_key}"):
+        st.session_state["current_page"] = page_key
+        st.rerun()
+
 def show_sidebar():
     with st.sidebar:
         # Cabecera
@@ -47,23 +55,22 @@ def show_sidebar():
         # Navegación por ámbito
         if unidad_sel == "Mainjobs B2C":
             st.markdown("### 📂 Navegación B2C")
-            # En B2C solo mostramos el panel principal B2C (suma EIP+EIM)
-            if st.button("Área Principal (B2C)", use_container_width=True, key="nav_b2c_principal"):
-                st.session_state["current_page"] = "Principal"
-                st.rerun()
-        else:
-            st.markdown("### 📂 Navegación")
-            nav_items = {
-                "Área Principal": "Principal",
-                "Área de Admisiones": "Admisiones",
-                "Área Académica": "Academica",
-                "Área de Empleo": "Desarrollo",
-                "Área Gestión de Cobro": "Gestión de Cobro",
-            }
-            for label, page_key in nav_items.items():
-                if st.button(label, use_container_width=True, key=f"nav_{page_key}"):
-                    st.session_state["current_page"] = page_key
-                    st.rerun()
+            _nav_button("Área Principal (B2C)", "Principal")
+
+        elif unidad_sel == "EIM":
+            st.markdown("### 📂 Navegación EIM")
+            # En EIM ocultamos Académica y Empleo (Desarrollo)
+            _nav_button("Área Principal", "Principal")
+            _nav_button("Área de Admisiones", "Admisiones")
+            _nav_button("Área Gestión de Cobro", "Gestión de Cobro")
+
+        else:  # EIP
+            st.markdown("### 📂 Navegación EIP")
+            _nav_button("Área Principal", "Principal")
+            _nav_button("Área de Admisiones", "Admisiones")
+            _nav_button("Área Académica", "Academica")
+            _nav_button("Área de Empleo", "Desarrollo")
+            _nav_button("Área Gestión de Cobro", "Gestión de Cobro")
 
         st.markdown("---")
 
@@ -95,4 +102,3 @@ def show_sidebar():
             st.session_state["upload_time"] = None
             st.session_state["current_page"] = "Inicio"
             st.rerun()
-

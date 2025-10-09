@@ -78,8 +78,6 @@ ROUTES_EIP = {
 ROUTES_EIM = {
     "Inicio": ("pagesEIM.inicio", "inicio_page"),
     "Admisiones": ("pagesEIM.admisiones.main_admisiones", "app"),
-    "Academica": ("pagesEIM.academica.academica_main", "academica_page"),
-    "Desarrollo": ("pagesEIM.desarrollo_main", "desarrollo_page"),
     "Gestión de Cobro": ("pagesEIM.deuda_main", "deuda_page"),
     "Principal": ("pagesEIM.principal", "principal_page"),
 }
