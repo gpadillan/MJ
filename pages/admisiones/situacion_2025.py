@@ -1,6 +1,8 @@
 import os
-import io  # 👈 añadido para la descarga a Excel
+import io  # 👈 para Excel en memoria
 from datetime import datetime
+import smtplib  # 👈 para enviar email
+from email.message import EmailMessage  # 👈 para adjunto
 
 import pandas as pd
 import plotly.express as px
@@ -26,6 +28,77 @@ def _is_blank_series(s: pd.Series):
 @st.cache_data(show_spinner=False)
 def _read_excel_cached(path: str, mtime: float, sheet_name="Contactos") -> pd.DataFrame:
     return pd.read_excel(path, sheet_name=sheet_name, engine="openpyxl", dtype=str)
+
+
+def _send_mail_with_attachment(recipients, subject, body, attachment_bytes, filename):
+    """
+    Envía un correo con adjunto (Excel). Requiere credenciales SMTP en st.secrets['smtp'].
+    """
+    if "smtp" not in st.secrets:
+        raise RuntimeError("Faltan credenciales SMTP en st.secrets['smtp'].")
+
+    smtp_conf = st.secrets["smtp"]
+    user = smtp_conf.get("user")
+    password = smtp_conf.get("password")
+    host = smtp_conf.get("host", "smtp.office365.com")
+    port = int(smtp_conf.get("port", 587))
+
+    if not user or not password:
+        raise RuntimeError("smtp.user y smtp.password son obligatorios en st.secrets.")
+
+    if isinstance(recipients, str):
+        recipients = [r.strip() for r in recipients.split(",") if r.strip()]
+
+    if not recipients:
+        raise RuntimeError("Debe indicar al menos un destinatario.")
+
+    msg = EmailMessage()
+    msg["From"] = user
+    msg["To"] = ", ".join(recipients)
+    msg["Subject"] = subject.strip() if subject else "(sin asunto)"
+    msg.set_content(body or "")
+
+    # Adjuntar Excel
+    msg.add_attachment(
+        attachment_bytes,
+        maintype="application",
+        subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=filename,
+    )
+
+    with smtplib.SMTP(host, port) as server:
+        server.starttls()
+        server.login(user, password)
+        server.send_message(msg)
+
+
+# ---- Admin helpers ----
+def _admin_authenticated() -> bool:
+    """Devuelve True si la sesión ya validó como admin."""
+    return st.session_state.get("_admin_ok", False)
+
+
+def _admin_gate():
+    """
+    Dibuja un área protegida para admin.
+    Si no has validado, pide clave.
+    """
+    with st.expander("🔐 Área admin", expanded=False):
+        if _admin_authenticated():
+            st.success("Acceso admin concedido.")
+            return True
+        # pide clave
+        pwd = st.text_input("Introduce la clave de admin", type="password", key="__admin_pwd")
+        if st.button("Validar clave de admin", key="__admin_btn"):
+            secret_pwd = st.secrets.get("admin_password", None)
+            if secret_pwd and pwd == secret_pwd:
+                st.session_state["_admin_ok"] = True
+                st.success("Acceso admin concedido.")
+                return True
+            else:
+                st.error("Clave incorrecta o no configurada en st.secrets.")
+                return False
+    return _admin_authenticated()
 
 
 # ----------------- APP -----------------
@@ -100,8 +173,8 @@ def app():
         "Contar TODOS los años (ignorar el filtro de año)",
         value=False
     )
-    incluir_sin_fecha = True
-    incluir_programa_blanco = True
+    incluir_sin_fecha = True  # no se usa directamente pero mantenido por compatibilidad
+    incluir_programa_blanco = True  # idem
 
     # Dataset filtrado
     anios_disponibles = sorted(df["_anio"].dropna().unique().tolist(), reverse=True)
@@ -282,20 +355,17 @@ def app():
                 use_container_width=True
             )
 
-            # ✅ Botón de descarga Excel (sin tocar tu lógica)
+            # ✅ Preparar Excel en memoria
             export_df = faltantes[["propietario", "Programa", "Forma de Pago", "PVP", "Campos en blanco"]].reset_index(drop=True)
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
                 export_df.to_excel(writer, sheet_name="Registros en blanco", index=False)
             buffer.seek(0)
+
+            # 👉 Opción 1: Descargar
             st.download_button(
                 label="📥 Descargar en Excel",
                 data=buffer,
                 file_name="Situacion Actual-Registros en blanco.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-
-        else:
-            st.info("No hay registros con PVP, Forma de Pago o Programa en blanco para este filtro.")
-    else:
-        st.info("No hay datos suficientes para mostrar el detalle de faltantes.")

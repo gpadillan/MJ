@@ -50,6 +50,146 @@ def limpiar_riesgo(valor) -> float:
     except Exception:
         return 0.0
 
+# ======== Helpers de color y tabla con degradado por área ========
+AREA_COLORS = {
+    "SAP": "#1f77b4",
+    "RRHH": "#2ca02c",
+    "IA": "#9467bd",
+    "CIBER": "#d62728",
+    "DPO": "#17becf",
+    "EERR": "#8c654b",
+    "DF": "#da3fab",
+    "FULLSTACK": "#bcbd22",
+    "Logística": "#009e42",
+    "BIM": "#ff7f0e",
+    "TOTAL": "#b3b3b3",  # color base para la fila TOTAL
+}
+
+def _hex_to_rgb(h: str) -> tuple[int, int, int]:
+    h = h.lstrip("#")
+    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
+
+def _rgb_to_hex(r: int, g: int, b: int) -> str:
+    return "#{:02x}{:02x}{:02x}".format(max(0,min(255,r)), max(0,min(255,g)), max(0,min(255,b)))
+
+def _mix_with_white(hex_color: str, t: float) -> str:
+    """
+    Mezcla el color base con blanco.
+    t=0 -> blanco, t=1 -> color base.
+    """
+    r, g, b = _hex_to_rgb(hex_color)
+    r = int(255*(1-t) + r*t)
+    g = int(255*(1-t) + g*t)
+    b = int(255*(1-t) + b*t)
+    return _rgb_to_hex(r, g, b)
+
+def _area_gradient_table(df_pivot: pd.DataFrame) -> go.Figure:
+    """
+    Crea una tabla Plotly donde cada FILA (Área) usa su propio color base
+    y cada AÑO se pinta en degradado (más oscuro = mayor valor dentro de esa fila).
+    Incluye la fila TOTAL si viene en df_pivot.
+    """
+    if df_pivot is None or df_pivot.empty:
+        return go.Figure()
+
+    df = df_pivot.copy()
+    if "Área" not in df.columns:
+        raise ValueError("La tabla pivote debe tener columna 'Área'.")
+
+    # Columnas de año + Total si existe
+    year_cols = [c for c in df.columns if isinstance(c, int)]
+    cols = ["Área"] + year_cols + (["Total"] if "Total" in df.columns else [])
+    df = df[cols].reset_index(drop=True)
+
+    # --- Colores por celda (lista por columna como espera Plotly) ---
+    n_rows = df.shape[0]
+    cell_colors_by_col: list[list[str]] = []
+
+    # Columna Área: tono base suavizado
+    col_area_colors = []
+    for i in range(n_rows):
+        area = df.at[i, "Área"]
+        base = AREA_COLORS.get(area, "#446adb")
+        col_area_colors.append(_mix_with_white(base, 0.2))
+    cell_colors_by_col.append(col_area_colors)
+
+    # Columnas de AÑO: degradado por fila (normaliza dentro de la fila)
+    for y in year_cols:
+        col_colors = []
+        for i in range(n_rows):
+            area = df.at[i, "Área"]
+            base = AREA_COLORS.get(area, "#446adb")
+            row_vals = [float(df.at[i, yy]) for yy in year_cols if pd.notna(df.at[i, yy])]
+            if not row_vals:
+                col_colors.append("#f2f2f2")
+                continue
+            v = float(df.at[i, y])
+            vmin, vmax = min(row_vals), max(row_vals)
+            if vmax == vmin:
+                t = 0.15 if vmax == 0 else 0.6
+            else:
+                norm = (v - vmin) / (vmax - vmin)
+                t = 0.15 + 0.85 * norm
+            col_colors.append(_mix_with_white(base, t))
+        cell_colors_by_col.append(col_colors)
+
+    # Columna Total: tono intermedio
+    if "Total" in df.columns:
+        col_total_colors = []
+        for i in range(n_rows):
+            area = df.at[i, "Área"]
+            base = AREA_COLORS.get(area, "#446adb")
+            col_total_colors.append(_mix_with_white(base, 0.75))
+        cell_colors_by_col.append(col_total_colors)
+
+    # Valores por columna
+    cell_values = [df[c].tolist() for c in df.columns]
+
+    # Formateo de números con separador de miles europeo
+    def _fmt_col(col_vals):
+        out = []
+        for v in col_vals:
+            try:
+                iv = int(v)
+                out.append(f"{iv:,}".replace(",", "."))
+            except Exception:
+                out.append(v)
+        return out
+
+    formatted_values = []
+    for c, vals in zip(df.columns, cell_values):
+        if c == "Área":
+            formatted_values.append(vals)
+        else:
+            formatted_values.append(_fmt_col(vals))
+
+    header_colors = "#e9ecef"
+    header_font_color = "#111"
+
+    fig = go.Figure(
+        data=[
+            go.Table(
+                header=dict(
+                    values=[f"<b>{c}</b>" for c in df.columns],
+                    fill_color=header_colors,
+                    align="center",
+                    font=dict(color=header_font_color, size=13),
+                    height=34,
+                ),
+                cells=dict(
+                    values=formatted_values,
+                    fill_color=cell_colors_by_col,
+                    align="center",
+                    font=dict(color="#111", size=12),
+                    height=32,
+                ),
+                columnwidth=[160] + [80 for _ in year_cols] + ([90] if "Total" in df.columns else []),
+            )
+        ]
+    )
+    fig.update_layout(margin=dict(l=0, r=0, t=6, b=0), height=38 + 35 + 32 * max(1, n_rows))
+    return fig
+
 # =============== Graph / SharePoint helpers ===============
 def _secrets_ok(sec: dict) -> bool:
     req = ["client_id", "tenant_id", "client_secret", "domain", "site_name"]
@@ -286,7 +426,7 @@ def _append_total_global_row(df_pivot: pd.DataFrame) -> pd.DataFrame:
 def _detalle_por_area_y_ano(drive_id: str, base_path: str, areas_map: dict[str, str],
                             token: str, year: int) -> pd.DataFrame:
     """
-    Detalle de convenios para un AÑO concreto: Área, Carpeta (empresa), Archivo, Fecha, Link.
+    Detalle de convenios para un AÑO concreto: Área, Carpeta, Archivo, Fecha, Link.
     Usa búsqueda y, si no, recorrido recursivo. Intenta obtener la carpeta-empresa.
     """
     rows = []
@@ -479,7 +619,7 @@ def render(df: pd.DataFrame | None = None):
         x=conteo_area["Área"],
         y=conteo_area["Cantidad"],
         marker=dict(color=conteo_area["Cantidad"],
-                    colorscale=[[0, "#ffff00"], [1, "#1f77b4"]],
+                    colorscale=[[0, "#6B6A6A"], [1, "#003cff"]],
                     line=dict(color="black", width=1.5)),
     ))
     for x, y in zip(conteo_area["Área"], conteo_area["Cantidad"]):
@@ -584,15 +724,27 @@ def render(df: pd.DataFrame | None = None):
         "SAP": "SAP",
     }
 
-    # Resumen por año + fila TOTAL global
+    # Resumen por año + fila TOTAL
     try:
         df_pivot = _convenios_por_area_y_ano(drive_id, BASE, AREAS_PATHS, token)
         df_pivot_total = _append_total_global_row(df_pivot)
-        st.dataframe(df_pivot_total, use_container_width=True, hide_index=True)
 
-        # KPI total global de convenios
-        total_global = int(df_pivot["Total"].sum())
-        st.metric(" Total convenios ", total_global)
+        # ✅ Tabla con degradado por área (incluye fila TOTAL)
+        fig_grad = _area_gradient_table(df_pivot_total)
+        st.plotly_chart(fig_grad, use_container_width=True)
+
+        # KPI total global (de la fila TOTAL)
+        if "Total" in df_pivot_total.columns and "Área" in df_pivot_total.columns:
+            try:
+                total_global = int(df_pivot_total.loc[df_pivot_total["Área"] == "TOTAL", "Total"].iloc[0])
+            except Exception:
+                year_cols = [c for c in df_pivot_total.columns if isinstance(c, int)]
+                total_global = int(df_pivot_total[year_cols].sum(axis=1).sum())
+        else:
+            year_cols = [c for c in df_pivot.columns if isinstance(c, int)]
+            total_global = int(df_pivot[year_cols].sum(axis=1).sum())
+
+        st.metric(" Total convenios ", f"{total_global:,}".replace(",", "."))
 
     except Exception as e:
         st.error(f"No fue posible construir el resumen de convenios por año: {e}")
@@ -655,7 +807,6 @@ def render(df: pd.DataFrame | None = None):
             anio_sel = st.selectbox("Año:", options=sorted(year_cols, reverse=True), key="ano_y_area")
 
         try:
-            # Reusamos el detalle de área y filtramos por año
             df_area = _detalle_area_all_years(drive_id, BASE, AREAS_PATHS, token, area_sel)
             df_area_year = df_area[df_area["Año"] == int(anio_sel)].copy()
             st.metric(f"Total convenios en {area_sel} durante {anio_sel}", int(len(df_area_year)))
