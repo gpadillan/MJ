@@ -132,8 +132,12 @@ def vista_clientes_pendientes():
             "Total_Deuda": [df2[c].sum() for c in cols_22_aa],
             "Num_Clientes": [(df2.groupby("Cliente")[c].sum() > 0).sum() for c in cols_22_aa],
         })
-        # Mostrar gráfico solo si hay algún valor > 0
-        if (resumen2["Total_Deuda"] > 0).any():
+
+        # ⬅️ NUEVO: quitar periodos con 0 € y 0 clientes
+        resumen2 = resumen2[~((resumen2["Total_Deuda"] == 0) & (resumen2["Num_Clientes"] == 0))].reset_index(drop=True)
+
+        # Mostrar gráfico solo si queda algo que pintar
+        if not resumen2.empty:
             fig = px.bar(
                 resumen2, x="Periodo", y="Total_Deuda",
                 color="Total_Deuda", color_continuous_scale=["#eaf5ea", "#0b5b1d"],
@@ -277,7 +281,7 @@ def vista_clientes_pendientes():
     st.session_state["total_clientes_unicos_eim"] = num_clientes_total
     st.session_state["total_deuda_acumulada_eim"] = total_pendiente
 
-    # ----- Detalle (idéntico a la versión sin AG Grid, filtrando Total deuda == 0)
+    # ================== DETALLE: igual que pages/deuda/pendiente.py ==================
     st.markdown("### 📋 Detalle de deuda por cliente")
 
     email_col = next((c for c in ["Email", "Correo", "E-mail"] if c in df_pend.columns), None)
@@ -323,7 +327,7 @@ def vista_clientes_pendientes():
                       .reset_index(drop=True)
         )
 
-        # 🔴 Filtra aquí: excluir filas con Total deuda == 0 (pero mantiene 0,10, etc.)
+        # 🔴 Igual que en EIP: excluir filas con Total deuda == 0 (pero mantiene 0,10, etc.)
         df_detalle = df_detalle[df_detalle["Total deuda"] > 0]
 
         # ===== Filtros ligeros (idénticos) =====
@@ -350,7 +354,7 @@ def vista_clientes_pendientes():
         if rango:
             df_detalle = df_detalle[(df_detalle["Total deuda"] >= rango[0]) & (df_detalle["Total deuda"] <= rango[1])]
 
-        # Mostrar tabla nativa con formato €
+        # Mostrar tabla nativa con formato € (igual que en EIP)
         column_config = {
             "Total deuda": st.column_config.NumberColumn(
                 "Total deuda", format="€ %.2f",

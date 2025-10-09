@@ -7,6 +7,7 @@ from datetime import datetime
 import pandas as pd
 import plotly.express as px
 import plotly.io as pio
+import plotly.graph_objects as go
 import streamlit as st
 
 
@@ -71,14 +72,29 @@ def render():
     )
 
     if seleccion:
+        # A números
         df_beca[seleccion] = df_beca[seleccion].apply(pd.to_numeric, errors="coerce").fillna(0)
-        suma = df_beca[seleccion].sum().reset_index()
-        suma.columns = ["Año", "Suma Total"]
-        suma["Año"] = suma["Año"].str.replace("Total ", "")
-        # quitar años con 0
-        suma = suma[suma["Suma Total"] > 0]
 
-        total = float(suma["Suma Total"].sum())
+        # Sumas y nº de clientes (>0) por año
+        if "Cliente" in df_beca.columns:
+            num_cli_vals = [(df_beca.groupby("Cliente")[c].sum() > 0).sum() for c in seleccion]
+        else:
+            num_cli_vals = [(pd.to_numeric(df_beca[c], errors="coerce").fillna(0) > 0).sum() for c in seleccion]
+
+        suma = pd.DataFrame({
+            "Año_txt": [c.replace("Total ", "") for c in seleccion],
+            "Suma Total": [float(df_beca[c].sum()) for c in seleccion],
+            "Num_Clientes": [int(v) for v in num_cli_vals],
+        })
+
+        # Agregar (por si hay duplicados), quitar 0/0 y pasar a int para eje numérico
+        suma = (suma.groupby("Año_txt", as_index=False)
+                     .agg({"Suma Total": "sum", "Num_Clientes": "sum"}))
+        suma = suma[~((suma["Suma Total"] == 0) & (suma["Num_Clientes"] == 0))].reset_index(drop=True)
+        suma["Año"] = pd.to_numeric(suma["Año_txt"], errors="coerce")
+        suma = suma.dropna(subset=["Año"]).sort_values("Año").reset_index(drop=True)
+
+        total = float(suma["Suma Total"].sum()) if not suma.empty else 0.0
         st.markdown(
             f"<div style='display:inline-block;padding:6px 10px;border-radius:8px;"
             f"background:#eaf5ea;color:#0b5b1d;font-weight:700;'>"
@@ -88,37 +104,74 @@ def render():
         html.write(f"<p><strong>Total acumulado: € {_eu(total)}</strong></p>")
 
         if not suma.empty:
-            fig = px.bar(
-                suma,
-                x="Año",
-                y="Suma Total",
-                color="Suma Total",
-                # 🔴→🟣 rojo a morado
-                color_continuous_scale="Sunsetdark",
-                template="plotly_white",
-                height=360,
-                text="Suma Total",  # <- texto dentro de la barra
+            # Paleta degradado manual sin colorbar
+            palette = px.colors.sequential.Sunsetdark
+            vals = suma["Suma Total"].astype(float)
+            vmin, vmax = float(vals.min()), float(vals.max())
+            if vmax - vmin <= 0:
+                idxs = [len(palette)//2] * len(vals)
+            else:
+                idxs = [int(round((v - vmin) / (vmax - vmin) * (len(palette) - 1))) for v in vals]
+            colors = [palette[i] for i in idxs]
+
+            fig = go.Figure()
+
+            # Columnas VERTICALES con eje X NUMÉRICO (dtick=1)
+            fig.add_bar(
+                x=suma["Año"],                # <- numérico (int)
+                y=suma["Suma Total"],
+                marker=dict(color=colors, line=dict(color="black", width=0.8)),
+                hovertemplate="Año: %{x}<br>Total: € %{y:,.0f}<extra></extra>",
             )
-            fig.update_traces(
-                marker_line_color="black",
-                marker_line_width=0.6,
-                hovertemplate="Año: %{x}<br>Total: € %{y:,}<extra></extra>",
-                texttemplate="€ %{y:,.0f}",   # valor real dentro
-                textposition="inside",
-                textfont_color="white",
-            )
+
             ymax = float(suma["Suma Total"].max())
-            fig.update_yaxes(range=[0, ymax * 1.15], title="Suma Total")
-            fig.update_layout(margin=dict(l=20, r=20, t=30, b=40), coloraxis_showscale=True)
+            fig.update_yaxes(range=[0, ymax * 1.25], title="Suma Total")
+            fig.update_xaxes(
+                title=None,
+                tickmode="linear",            # <- ticks 2019, 2020, 2021...
+                tick0=int(suma["Año"].min()),
+                dtick=1,
+                showgrid=False
+            )
+            fig.update_layout(
+                template="plotly_white",
+                height=420,
+                margin=dict(l=20, r=20, t=30, b=40),
+                bargap=0.25,
+                showlegend=False,
+            )
+
+            # Cajas negras (importe + clientes) por barra
+            annotations = []
+            for _, r in suma.iterrows():
+                annotations.append(dict(
+                    x=float(r["Año"]),
+                    y=float(r["Suma Total"]) * 1.06,
+                    yanchor="bottom",
+                    xanchor="center",
+                    text=f"€ {_eu(r['Suma Total'])}<br>👥 {int(r['Num_Clientes'])}",
+                    showarrow=False,
+                    font=dict(color="white", size=14),
+                    align="center",
+                    bgcolor="rgba(0,0,0,0.95)",
+                    bordercolor="black",
+                    borderwidth=1.2,
+                    opacity=1
+                ))
+            fig.update_layout(annotations=annotations)
 
             st.plotly_chart(fig, use_container_width=True)
             html.write(pio.to_html(fig, include_plotlyjs="cdn", full_html=False))
         else:
-            st.info("No hay años con suma > 0 para mostrar.")
+            st.info("No hay años con datos para mostrar.")
 
         # Excel de respaldo
-        df_total = suma.copy()
-        df_total.loc[len(df_total)] = ["TOTAL GENERAL", total]
+        df_total = suma[["Año", "Suma Total", "Num_Clientes"]].copy()
+        df_total.loc[len(df_total)] = [
+            "TOTAL GENERAL",
+            total,
+            int(suma["Num_Clientes"].sum()) if not suma.empty else 0
+        ]
         export_dict["Total_Anios"] = df_total
 
     # ------------- Mes – Año actual -------------
@@ -196,7 +249,7 @@ def render():
     ]
 
     # Un único multiselect con ambas cosas
-    opciones_fut = disp_rest + cols_fut  # meses primero, años después
+    opciones_fut = disp_rest + cols_fut
     sel_fut_comb = st.multiselect(
         "Selecciona periodos futuros (meses restantes y años posteriores):",
         opciones_fut,
@@ -211,7 +264,7 @@ def render():
     total_restante = 0.0
     total_futuro = 0.0
 
-    # tarjetas de meses primero (sin banda amarilla)
+    # tarjetas de meses primero
     if sel_meses:
         df_beca[sel_meses] = df_beca[sel_meses].apply(pd.to_numeric, errors="coerce").fillna(0)
         rest = df_beca[sel_meses].sum().reset_index()
@@ -233,21 +286,19 @@ def render():
             ignore_index=True,
         )
 
-    # tarjetas de años después (incluye 2025 con total de meses restantes)
+    # tarjetas de años después (incluye año actual con meses restantes)
     if sel_anios:
         df_beca[sel_anios] = df_beca[sel_anios].apply(pd.to_numeric, errors="coerce").fillna(0)
         fut = df_beca[sel_anios].sum().reset_index()
         fut.columns = ["Año", "Suma Total"]
         fut["Año"] = fut["Año"].str.replace("Total ", "")
 
-        # Insertar la tarjeta del año actual (2025) con el TOTAL de meses restantes
         if total_restante > 0:
             fut = pd.concat(
                 [pd.DataFrame({"Año": [str(year)], "Suma Total": [total_restante]}), fut],
                 ignore_index=True
             )
 
-        # Ocultar cualquier "año" con 0
         fut = fut[fut["Suma Total"] > 0].reset_index(drop=True)
 
         if not fut.empty:
