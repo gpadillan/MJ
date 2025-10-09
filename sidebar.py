@@ -17,11 +17,13 @@ def _logo_path(unidad: str) -> str:
     path = candidates.get(unidad, fallback)
     return path if os.path.exists(path) else fallback
 
-def _nav_button(label: str, page_key: str):
+def _nav_button(label: str, page_key: str, primary: bool = False):
     """
     Crea un botón de navegación que cambia st.session_state['current_page'].
+    - primary=True => usa el estilo 'primary' de Streamlit (lo sobreescribimos con CSS en EIM)
     """
-    if st.button(label, use_container_width=True, key=f"nav_{page_key}"):
+    btn_type = "primary" if primary else "secondary"
+    if st.button(label, use_container_width=True, key=f"nav_{page_key}", type=btn_type):
         st.session_state["current_page"] = page_key
         st.rerun()
 
@@ -52,25 +54,55 @@ def show_sidebar():
 
         st.markdown("---")
 
+        # 🎨 Estilos SOLO para navegación EIM (burdeos + texto blanco)
+        if unidad_sel == "EIM":
+            st.markdown(
+                """
+                <style>
+                /* Botones 'primary' del sidebar (solo los nav de EIM los marcamos como primary) */
+                [data-testid="stSidebar"] .stButton > button[kind="primary"]{
+                    background-color: #7B1E3A !important;  /* burdeos */
+                    border-color: #7B1E3A !important;
+                    color: #ffffff !important;
+                }
+                [data-testid="stSidebar"] .stButton > button[kind="primary"]:hover{
+                    background-color: #6a1932 !important;
+                    border-color: #6a1932 !important;
+                    color: #ffffff !important;
+                }
+                [data-testid="stSidebar"] .stButton > button[kind="primary"]:active{
+                    background-color: #5c162c !important;
+                    border-color: #5c162c !important;
+                    color: #ffffff !important;
+                }
+                [data-testid="stSidebar"] .stButton > button[kind="primary"]:focus{
+                    outline: none !important;
+                    box-shadow: 0 0 0 0.2rem rgba(123, 30, 58, 0.25) !important;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+
         # Navegación por ámbito
         if unidad_sel == "Mainjobs B2C":
             st.markdown("### 📂 Navegación B2C")
-            _nav_button("Área Principal (B2C)", "Principal")
+            _nav_button("Área Principal (B2C)", "Principal", primary=False)
 
         elif unidad_sel == "EIM":
             st.markdown("### 📂 Navegación EIM")
-            # En EIM ocultamos Académica y Empleo (Desarrollo)
-            _nav_button("Área Principal", "Principal")
-            _nav_button("Área de Admisiones", "Admisiones")
-            _nav_button("Área Gestión de Cobro", "Gestión de Cobro")
+            # En EIM ocultamos Académica y Empleo (Desarrollo) y pintamos nav como 'primary'
+            _nav_button("Área Principal", "Principal", primary=True)
+            _nav_button("Área de Admisiones", "Admisiones", primary=True)
+            _nav_button("Área Gestión de Cobro", "Gestión de Cobro", primary=True)
 
         else:  # EIP
             st.markdown("### 📂 Navegación EIP")
-            _nav_button("Área Principal", "Principal")
-            _nav_button("Área de Admisiones", "Admisiones")
-            _nav_button("Área Académica", "Academica")
-            _nav_button("Área de Empleo", "Desarrollo")
-            _nav_button("Área Gestión de Cobro", "Gestión de Cobro")
+            _nav_button("Área Principal", "Principal", primary=False)
+            _nav_button("Área de Admisiones", "Admisiones", primary=False)
+            _nav_button("Área Académica", "Academica", primary=False)
+            _nav_button("Área de Empleo", "Desarrollo", primary=False)
+            _nav_button("Área Gestión de Cobro", "Gestión de Cobro", primary=False)
 
         st.markdown("---")
 
