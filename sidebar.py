@@ -17,15 +17,18 @@ def _logo_path(unidad: str) -> str:
     path = candidates.get(unidad, fallback)
     return path if os.path.exists(path) else fallback
 
+
 def _nav_button(label: str, page_key: str, primary: bool = False):
     """
     Crea un botón de navegación que cambia st.session_state['current_page'].
     - primary=True => usa el estilo 'primary' de Streamlit (lo sobreescribimos con CSS en EIM)
+    - primary=False => 'secondary' (lo sobreescribimos con CSS en EIP)
     """
     btn_type = "primary" if primary else "secondary"
     if st.button(label, use_container_width=True, key=f"nav_{page_key}", type=btn_type):
         st.session_state["current_page"] = page_key
         st.rerun()
+
 
 def show_sidebar():
     with st.sidebar:
@@ -54,28 +57,29 @@ def show_sidebar():
 
         st.markdown("---")
 
-        # 🎨 Estilos SOLO para navegación EIM (burdeos + texto blanco)
+        # 🎨 Estilos específicos por unidad SOLO para los contenedores de navegación
         if unidad_sel == "EIM":
+            # Burdeos + blanco para botones 'primary' dentro del contenedor .nav-eim
             st.markdown(
                 """
                 <style>
-                /* Botones 'primary' del sidebar (solo los nav de EIM los marcamos como primary) */
-                [data-testid="stSidebar"] .stButton > button[kind="primary"]{
+                .nav-eim .stButton > button[kind="primary"]{
                     background-color: #7B1E3A !important;  /* burdeos */
                     border-color: #7B1E3A !important;
                     color: #ffffff !important;
+                    font-weight: 700 !important;
                 }
-                [data-testid="stSidebar"] .stButton > button[kind="primary"]:hover{
+                .nav-eim .stButton > button[kind="primary"]:hover{
                     background-color: #6a1932 !important;
                     border-color: #6a1932 !important;
                     color: #ffffff !important;
                 }
-                [data-testid="stSidebar"] .stButton > button[kind="primary"]:active{
+                .nav-eim .stButton > button[kind="primary"]:active{
                     background-color: #5c162c !important;
                     border-color: #5c162c !important;
                     color: #ffffff !important;
                 }
-                [data-testid="stSidebar"] .stButton > button[kind="primary"]:focus{
+                .nav-eim .stButton > button[kind="primary"]:focus{
                     outline: none !important;
                     box-shadow: 0 0 0 0.2rem rgba(123, 30, 58, 0.25) !important;
                 }
@@ -83,30 +87,64 @@ def show_sidebar():
                 """,
                 unsafe_allow_html=True,
             )
+        elif unidad_sel == "EIP":
+            # Amarillo claro + azul para botones 'secondary' dentro del contenedor .nav-eip
+            st.markdown(
+                """
+                <style>
+                .nav-eip .stButton > button[kind="secondary"]{
+                    background-color: #FFF6CC !important;   /* amarillo claro */
+                    border-color: #FFE58F !important;
+                    color: #0b5394 !important;               /* azul */
+                    font-weight: 700 !important;
+                }
+                .nav-eip .stButton > button[kind="secondary"]:hover{
+                    background-color: #FFEFA3 !important;
+                    border-color: #FFE083 !important;
+                    color: #0b5394 !important;
+                }
+                .nav-eip .stButton > button[kind="secondary"]:active{
+                    background-color: #FFE076 !important;
+                    border-color: #FFD34F !important;
+                    color: #0b5394 !important;
+                }
+                .nav-eip .stButton > button[kind="secondary"]:focus{
+                    outline: none !important;
+                    box-shadow: 0 0 0 0.2rem rgba(255, 229, 143, 0.5) !important;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
 
-        # Navegación por ámbito
+        # Navegación por ámbito (envuelta en contenedores para que el CSS no afecte a otros botones)
         if unidad_sel == "Mainjobs B2C":
             st.markdown("### 📂 Navegación B2C")
-            _nav_button("Área Principal (B2C)", "Principal", primary=False)
+            # Contenedor neutro (sin estilos especiales)
+            with st.container():
+                _nav_button("Área Principal (B2C)", "Principal", primary=False)
 
         elif unidad_sel == "EIM":
             st.markdown("### 📂 Navegación EIM")
-            # En EIM ocultamos Académica y Empleo (Desarrollo) y pintamos nav como 'primary'
+            st.markdown('<div class="nav-eim">', unsafe_allow_html=True)
             _nav_button("Área Principal", "Principal", primary=True)
             _nav_button("Área de Admisiones", "Admisiones", primary=True)
             _nav_button("Área Gestión de Cobro", "Gestión de Cobro", primary=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
         else:  # EIP
             st.markdown("### 📂 Navegación EIP")
+            st.markdown('<div class="nav-eip">', unsafe_allow_html=True)
             _nav_button("Área Principal", "Principal", primary=False)
             _nav_button("Área de Admisiones", "Admisiones", primary=False)
             _nav_button("Área Académica", "Academica", primary=False)
             _nav_button("Área de Empleo", "Desarrollo", primary=False)
             _nav_button("Área Gestión de Cobro", "Gestión de Cobro", primary=False)
+            st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown("---")
 
-        # Recargar / limpiar caché
+        # Recargar / limpiar caché (no afectado por los estilos de navegación)
         if st.button("🔄 Recargar / limpiar caché", use_container_width=True, key="reload_cache"):
             for k in [
                 "academica_excel_data",
@@ -124,7 +162,7 @@ def show_sidebar():
             st.success("Caché limpiada. Volviendo a cargar…")
             st.rerun()
 
-        # Cerrar sesión
+        # Cerrar sesión (no afectado por los estilos de navegación)
         if st.button("🚪 Cerrar Sesión", use_container_width=True, key="logout_btn"):
             st.session_state["logged_in"] = False
             st.session_state["username"] = ""
