@@ -6,6 +6,7 @@ from email.message import EmailMessage  # 👈 para adjunto
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 from responsive import get_screen_size
 
@@ -175,8 +176,6 @@ def app():
         "Contar TODOS los años (ignorar el filtro de año)",
         value=False
     )
-    incluir_sin_fecha = True
-    incluir_programa_blanco = True
 
     # Dataset filtrado
     anios_disponibles = sorted(df["_anio"].dropna().unique().tolist(), reverse=True)
@@ -202,6 +201,7 @@ def app():
     # ===================== UI =====================
     col1, col2 = st.columns(2)
 
+    # ---------- Paleta consistente para PROGRAMAS ----------
     with col1:
         titulo_anio = anio_sel if anio_sel else "—"
         st.metric(f"Total matrículas — {titulo_anio}", value=int(base.shape[0]))
@@ -209,13 +209,20 @@ def app():
         conteo_programa = df_filtrado["programa_categoria"].value_counts().reset_index()
         conteo_programa.columns = ["programa", "cantidad"]
 
+        prog_palette = (
+            px.colors.qualitative.Set2
+            + px.colors.qualitative.Plotly
+            + px.colors.qualitative.Safe
+            + px.colors.qualitative.Set3
+        )
+        COLOR_MAP_PROG = {row["programa"]: prog_palette[i % len(prog_palette)]
+                          for i, row in conteo_programa.iterrows()}
+
         if not conteo_programa.empty:
-            colores = px.colors.qualitative.Plotly
-            color_map = {row["programa"]: colores[i % len(colores)] for i, row in conteo_programa.iterrows()}
             fig1 = px.bar(
                 conteo_programa, x="programa", y="cantidad",
                 color="programa", text="cantidad",
-                color_discrete_map=color_map,
+                color_discrete_map=COLOR_MAP_PROG,
                 title=f"Total matrículas por programa — {titulo_anio}"
             )
             fig1.update_layout(
@@ -231,28 +238,88 @@ def app():
 
         df_final = df_filtrado if propietario_seleccionado == "Todos" else df_filtrado[df_filtrado["propietario"] == propietario_seleccionado]
 
-        current_year = datetime.now().year
-        if modo_todos_anios:
-            label_kpi = "Matrículas (todos los años)"
-        else:
-            label_kpi = "Matrícula en curso" if (anio_sel_int == current_year) else f"Matrícula {anio_sel}"
-
-        st.metric(label=label_kpi, value=df_final.shape[0])
+        # ❌ KPI “Matrícula en curso …” eliminado
 
         if propietario_seleccionado == "Todos":
-            conteo_prop = df_final["propietario"].value_counts().reset_index()
-            conteo_prop.columns = ["propietario", "cantidad"]
-            if not conteo_prop.empty:
-                fig2 = px.funnel(conteo_prop, y="propietario", x="cantidad", text="cantidad", color_discrete_sequence=["#1f77b4"])
-                fig2.update_layout(xaxis_title="Cantidad", yaxis_title=None, showlegend=False)
-                fig2.update_traces(texttemplate="%{x}", textfont_size=16, textposition="inside")
-                st.plotly_chart(fig2, use_container_width=True)
+            # ===== Barras apiladas por PROPIETARIO (colores por PROGRAMA) + totales al final =====
+            if not df_final.empty:
+                by_prop_prog = (
+                    df_final.groupby(["propietario", "programa_categoria"])
+                            .size()
+                            .reset_index(name="cantidad")
+                )
+                if not by_prop_prog.empty:
+                    # Ordenar propietarios por total (descendente)
+                    orden_totales = (
+                        by_prop_prog.groupby("propietario")["cantidad"]
+                                    .sum().sort_values(ascending=False)
+                                    .reset_index()
+                    )
+                    orden_cat = orden_totales["propietario"].tolist()
+                    by_prop_prog["propietario"] = pd.Categorical(
+                        by_prop_prog["propietario"], categories=orden_cat, ordered=True
+                    )
+
+                    # Completar mapa de colores si aparecen programas nuevos
+                    for p in sorted(by_prop_prog["programa_categoria"].unique()):
+                        if p not in COLOR_MAP_PROG:
+                            idx = len(COLOR_MAP_PROG)
+                            extra_palette = px.colors.qualitative.Dark24 + px.colors.qualitative.Set1
+                            COLOR_MAP_PROG[p] = extra_palette[idx % len(extra_palette)]
+
+                    figp = px.bar(
+                        by_prop_prog,
+                        x="cantidad", y="propietario",
+                        color="programa_categoria",
+                        orientation="h",
+                        color_discrete_map=COLOR_MAP_PROG,
+                        template="plotly_white",
+                        height=max(420, 36 * by_prop_prog["propietario"].nunique() + 120),
+                    )
+                    figp.update_layout(
+                        barmode="stack",
+                        xaxis_title="Matrículas",
+                        yaxis_title=None,
+                        legend_title="Programa",
+                        margin=dict(l=10, r=20, t=20, b=40)
+                    )
+
+                    # Totales por propietario (anotación al final)
+                    totales = orden_totales
+                    xmax = totales["cantidad"].max() if not totales.empty else 0
+                    figp.update_xaxes(range=[0, xmax * 1.15])
+
+                    annotations = []
+                    for _, r in totales.iterrows():
+                        txt = f"{int(r['cantidad']):,}".replace(",", ".")
+                        annotations.append(dict(
+                            x=float(r["cantidad"]) * 1.01,
+                            y=r["propietario"],
+                            xanchor="left",
+                            yanchor="middle",
+                            text=f"<b>{txt}</b>",
+                            showarrow=False,
+                            font=dict(color="white", size=12),
+                            align="center",
+                            bgcolor="rgba(0,0,0,0.95)",
+                            bordercolor="black",
+                            borderwidth=1,
+                            borderpad=4,
+                        ))
+                    figp.update_layout(annotations=annotations)
+
+                    st.plotly_chart(figp, use_container_width=True)
         else:
-            tabla_programas = df_final.groupby("programa_categoria").size().reset_index(name="Cantidad").sort_values("Cantidad", ascending=False)
+            # Un propietario concreto → tabla por programa
+            tabla_programas = (
+                df_final.groupby("programa_categoria")
+                        .size()
+                        .reset_index(name="Cantidad")
+                        .sort_values("Cantidad", ascending=False)
+            )
             st.dataframe(tabla_programas, use_container_width=True)
 
-    # --- Promedio de PVP ---
-    st.markdown("---")
+    # --- Promedio de PVP (encima de la raya) ---
     if "PVP" in df_final.columns and not df_final.empty:
         df_final = df_final.copy()
         df_final["PVP"] = pd.to_numeric(df_final["PVP"], errors="coerce").fillna(0)
@@ -260,6 +327,9 @@ def app():
         st.metric(label="Promedio de PVP", value=f"{promedio_pvp:,.0f} €")
     else:
         st.metric(label="Promedio de PVP", value="0 €")
+
+    # Separador visual
+    st.markdown("---")
 
     # ===== Análisis =====
     st.subheader("📊 Análisis")
@@ -269,7 +339,6 @@ def app():
     def _normalize_fp(s: pd.Series) -> pd.Series:
         return s.astype(str).str.strip().replace(["", "nan", "NaN", "NONE", "None"], "(En Blanco)")
 
-    # Normalizo una copia grande para que EL MISMO color se use en ambos bloques
     tmp_all = df_final.copy()
     if "Forma de Pago" in tmp_all.columns:
         tmp_all["FP_norm"] = _normalize_fp(tmp_all["Forma de Pago"])
@@ -302,7 +371,7 @@ def app():
 
     with col4:
         st.subheader("Suma de PVP por Forma de Pago")
-        # 🔄 Tarjetas cuadradas del mismo tamaño por forma de pago, con COLORES LIGADOS a la forma de pago (mismo map)
+        # Tarjetas cuadradas (mismo tamaño) con color ligado a la forma de pago
         if "Forma de Pago" in df_final.columns and "PVP" in df_final.columns and not df_final.empty:
             tmp = df_final.copy()
             tmp["FP_norm"] = _normalize_fp(tmp["Forma de Pago"])
@@ -330,8 +399,7 @@ def app():
                     </div>
                     """
 
-                # Grid 3 por fila (ajusta N si quieres 2/4)
-                N = 3
+                N = 3  # tarjetas por fila
                 for i in range(0, len(suma_pvp), N):
                     cols = st.columns(N)
                     for j, c in enumerate(cols):
@@ -365,8 +433,12 @@ def app():
         faltantes = tmp[fp_blank_flag | pvp_blank_flag | prog_blank_flag].copy()
 
         if not faltantes.empty:
-            faltantes["Forma de Pago"] = _normalize_fp(faltantes["Forma de Pago"])
-            faltantes["Programa"] = _normalize_fp(faltantes["Programa"])
+            faltantes["Forma de Pago"] = faltantes["Forma de Pago"].astype(str).str.strip().replace(
+                ["", "nan", "NaN", "NONE", "None"], "(En Blanco)"
+            )
+            faltantes["Programa"] = faltantes["Programa"].astype(str).str.strip().replace(
+                ["", "nan", "NaN", "NONE", "None"], "(En Blanco)"
+            )
 
             def _pvp_display(row):
                 val_num = pd.to_numeric(row.get("PVP_NUM"), errors="coerce")
@@ -387,21 +459,19 @@ def app():
                 return ", ".join(missing) if missing else ""
             faltantes["Campos en blanco"] = faltantes.apply(_faltan, axis=1)
 
-            # Mostrar la tabla como siempre
             st.dataframe(
                 faltantes[["propietario", "Programa", "Forma de Pago", "PVP", "Campos en blanco"]]
                 .reset_index(drop=True),
                 use_container_width=True
             )
 
-            # ✅ Preparar Excel en memoria
-            export_df = faltantes[["propietario", "Programa", "Forma de Pago", "PVP", "Campos en blanco"]].reset_index(drop=True)
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                export_df.to_excel(writer, sheet_name="Registros en blanco", index=False)
+                faltantes[["propietario", "Programa", "Forma de Pago", "PVP", "Campos en blanco"]].to_excel(
+                    writer, sheet_name="Registros en blanco", index=False
+                )
             buffer.seek(0)
 
-            # 👉 Opción 1: Descargar
             st.download_button(
                 label="📥 Descargar en Excel",
                 data=buffer,
