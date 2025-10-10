@@ -175,8 +175,8 @@ def app():
         "Contar TODOS los años (ignorar el filtro de año)",
         value=False
     )
-    incluir_sin_fecha = True  # no se usa directamente pero mantenido por compatibilidad
-    incluir_programa_blanco = True  # idem
+    incluir_sin_fecha = True
+    incluir_programa_blanco = True
 
     # Dataset filtrado
     anios_disponibles = sorted(df["_anio"].dropna().unique().tolist(), reverse=True)
@@ -265,21 +265,34 @@ def app():
     st.subheader("📊 Análisis")
     col3, col4 = st.columns([1, 1])
 
+    # ---------- Mapeo de colores ÚNICO por forma de pago ----------
+    def _normalize_fp(s: pd.Series) -> pd.Series:
+        return s.astype(str).str.strip().replace(["", "nan", "NaN", "NONE", "None"], "(En Blanco)")
+
+    # Normalizo una copia grande para que EL MISMO color se use en ambos bloques
+    tmp_all = df_final.copy()
+    if "Forma de Pago" in tmp_all.columns:
+        tmp_all["FP_norm"] = _normalize_fp(tmp_all["Forma de Pago"])
+        formas_global = sorted(tmp_all["FP_norm"].unique().tolist())
+    else:
+        formas_global = []
+
+    palette = px.colors.qualitative.Plotly + px.colors.qualitative.Safe + px.colors.qualitative.Set3
+    COLOR_MAP_FP = {fp: palette[i % len(palette)] for i, fp in enumerate(formas_global)}
+
     with col3:
         st.subheader("Forma de Pago")
         if "Forma de Pago" in df_final.columns and not df_final.empty:
             tmp = df_final.copy()
-            forma_pago_str = tmp["Forma de Pago"].astype(str).str.strip()
-            tmp["Forma de Pago (vist)"] = forma_pago_str.replace(["", "nan", "NaN", "NONE", "None"], "(En Blanco)")
-            conteo_pago = tmp["Forma de Pago (vist)"].value_counts().reset_index()
+            tmp["FP_norm"] = _normalize_fp(tmp["Forma de Pago"])
+            conteo_pago = tmp["FP_norm"].value_counts().reset_index()
             conteo_pago.columns = ["forma_pago", "cantidad"]
 
             if not conteo_pago.empty:
-                formas_pago = conteo_pago["forma_pago"].tolist()
-                color_palette = px.colors.qualitative.Bold
-                color_map_fp = {fp: color_palette[i % len(color_palette)] for i, fp in enumerate(formas_pago)}
-                fig3 = px.pie(conteo_pago, names="forma_pago", values="cantidad", hole=0.4,
-                              color="forma_pago", color_discrete_map=color_map_fp)
+                fig3 = px.pie(
+                    conteo_pago, names="forma_pago", values="cantidad", hole=0.4,
+                    color="forma_pago", color_discrete_map=COLOR_MAP_FP
+                )
                 fig3.update_layout(showlegend=True, legend_title="Forma de pago")
                 st.plotly_chart(fig3, use_container_width=True)
             else:
@@ -289,20 +302,48 @@ def app():
 
     with col4:
         st.subheader("Suma de PVP por Forma de Pago")
+        # 🔄 Tarjetas cuadradas del mismo tamaño por forma de pago, con COLORES LIGADOS a la forma de pago (mismo map)
         if "Forma de Pago" in df_final.columns and "PVP" in df_final.columns and not df_final.empty:
             tmp = df_final.copy()
-            tmp["Forma de Pago"] = tmp["Forma de Pago"].astype(str).str.strip().replace(
-                ["", "nan", "NaN", "NONE", "None"], "(En Blanco)"
-            )
+            tmp["FP_norm"] = _normalize_fp(tmp["Forma de Pago"])
             tmp["PVP"] = pd.to_numeric(tmp["PVP"], errors="coerce").fillna(0)
-            suma_pvp = tmp.groupby("Forma de Pago")["PVP"].sum().reset_index().sort_values("PVP", ascending=True)
+            suma_pvp = (
+                tmp.groupby("FP_norm", as_index=False)["PVP"]
+                   .sum()
+                   .sort_values("PVP", ascending=False)
+                   .reset_index(drop=True)
+            )
 
-            fig4 = px.funnel(suma_pvp, y="Forma de Pago", x="PVP", color="Forma de Pago")
-            fig4.update_layout(width=650, xaxis_title="Suma de PVP (€)", yaxis=dict(showticklabels=False), showlegend=False)
-            fig4.update_traces(texttemplate="%{x:,.0f} €", textfont_size=16, textposition="inside")
-            st.plotly_chart(fig4, use_container_width=True)
+            if not suma_pvp.empty:
+                def _tile(label: str, amount: float, color: str) -> str:
+                    amt = f"{amount:,.0f} €".replace(",", ".")
+                    return f"""
+                    <div style="
+                        height: 110px; border-radius: 14px;
+                        background: {color}; color: #fff;
+                        display: flex; flex-direction: column;
+                        justify-content: center; gap: 6px;
+                        padding: 12px 14px; box-shadow: 0 2px 6px rgba(0,0,0,.08);
+                        border: 1px solid rgba(0,0,0,.15);">
+                        <div style="font-weight: 800; font-size: 14px; opacity:.95;">{label}</div>
+                        <div style="font-weight: 900; font-size: 22px;">{amt}</div>
+                    </div>
+                    """
+
+                # Grid 3 por fila (ajusta N si quieres 2/4)
+                N = 3
+                for i in range(0, len(suma_pvp), N):
+                    cols = st.columns(N)
+                    for j, c in enumerate(cols):
+                        if i + j >= len(suma_pvp):
+                            break
+                        row = suma_pvp.iloc[i + j]
+                        color = COLOR_MAP_FP.get(row["FP_norm"], "#6c757d")
+                        c.markdown(_tile(row["FP_norm"], float(row["PVP"]), color), unsafe_allow_html=True)
+            else:
+                st.info("No hay datos suficientes para mostrar las tarjetas de PVP por forma de pago.")
         else:
-            st.info("No hay datos suficientes para mostrar el embudo de PVP por forma de pago.")
+            st.info("No hay datos suficientes para mostrar las tarjetas de PVP por forma de pago.")
 
     # ======= TABLA FALTANTES =======
     st.markdown("---")
@@ -324,12 +365,8 @@ def app():
         faltantes = tmp[fp_blank_flag | pvp_blank_flag | prog_blank_flag].copy()
 
         if not faltantes.empty:
-            faltantes["Forma de Pago"] = faltantes["Forma de Pago"].astype(str).str.strip().replace(
-                ["", "nan", "NaN", "NONE", "None"], "(En Blanco)"
-            )
-            faltantes["Programa"] = faltantes["Programa"].astype(str).str.strip().replace(
-                ["", "nan", "NaN", "NONE", "None"], "(En Blanco)"
-            )
+            faltantes["Forma de Pago"] = _normalize_fp(faltantes["Forma de Pago"])
+            faltantes["Programa"] = _normalize_fp(faltantes["Programa"])
 
             def _pvp_display(row):
                 val_num = pd.to_numeric(row.get("PVP_NUM"), errors="coerce")
@@ -371,3 +408,5 @@ def app():
                 file_name="Situacion Actual-Registros en blanco.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+    else:
+        st.info("No hay datos suficientes para mostrar el detalle de faltantes.")
