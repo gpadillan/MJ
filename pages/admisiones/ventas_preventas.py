@@ -181,14 +181,9 @@ def app():
         df_preventas = pd.read_excel(PREVENTAS_FILE)
         df_preventas.rename(columns={c: _strip_accents_lower(c) for c in df_preventas.columns}, inplace=True)
         columnas_importe = [col for col in df_preventas.columns if "importe" in col]
-        total_preventas_importe = df_preventas[columnas_importe].sum(numeric_only=True).sum() if columnas_importe else 0
-        total_preventas_count   = df_preventas.shape[0]
     else:
         df_preventas = None
-        total_preventas_importe = 0
-        total_preventas_count   = 0
-
-    df_ventas_original = df_ventas.copy()
+        columnas_importe = []
 
     # ======= UI =======
     st.subheader("📊 Ventas y Preventas")
@@ -198,8 +193,31 @@ def app():
     opciones_meses = ["Todos"] + meses_disponibles["mes"].tolist()
     mes_seleccionado = st.selectbox("Selecciona un Mes:", opciones_meses)
 
-    # Base para KPIs y gráficos
-    df_ventas_filtrado = df_ventas if mes_seleccionado == "Todos" else df_ventas[df_ventas["mes"] == mes_seleccionado].copy()
+    # Base por mes (para poblar propietarios del mes)
+    df_ventas_filtrado_mes = df_ventas if mes_seleccionado == "Todos" else df_ventas[df_ventas["mes"] == mes_seleccionado].copy()
+    propietarios_disponibles = sorted(df_ventas_filtrado_mes["propietario"].dropna().unique().tolist())
+
+    # DESPLEGABLE: Selectbox con "Todos"
+    selected_propietario = st.selectbox(
+        "Selecciona propietario:",
+        options=["Todos"] + propietarios_disponibles,
+        index=0
+    )
+    is_all = (selected_propietario == "Todos")
+    selected_alias = _alias_comercial(selected_propietario) if not is_all else None
+
+    # Helpers de filtrado por propietario
+    def _filtrar_por_propietario(df, col="propietario"):
+        if is_all:
+            return df
+        if col in df.columns:
+            return df[df[col] == selected_propietario]
+        return df
+
+    # Data para KPIs y gráficos
+    df_ventas_all_owner = _filtrar_por_propietario(df_ventas.copy(), col="propietario")  # todo el año (para "Todos" meses)
+    df_ventas_filtrado = _filtrar_por_propietario(df_ventas_filtrado_mes.copy(), col="propietario")
+
     titulo_periodo = mes_seleccionado if mes_seleccionado != "Todos" else f"Año {ANIO_ACTUAL}"
     st.markdown(f"### {titulo_periodo}")
 
@@ -213,11 +231,17 @@ def app():
             _cols_prev = _resolver_columnas(_df_pvfe_prev.columns)
             _dfp_prev = _df_pvfe_prev.copy()
 
+            # Fecha/Mes
             if _cols_prev["fecha"]:
                 _dfp_prev["_fecha"] = pd.to_datetime(_dfp_prev[_cols_prev["fecha"]], errors="coerce", dayfirst=True)
                 _dfp_prev["_mes_es"] = _dfp_prev["_fecha"].dt.month_name().map(traducciones_meses)
                 if mes_seleccionado != "Todos":
                     _dfp_prev = _dfp_prev[_dfp_prev["_mes_es"] == mes_seleccionado]
+
+            # Filtrado por propietario (alias) si hay columna comercial
+            if _cols_prev["comer"] and not is_all:
+                _dfp_prev["_alias"] = _dfp_prev[_cols_prev["comer"]].astype(str).apply(_alias_comercial)
+                _dfp_prev = _dfp_prev[_dfp_prev["_alias"] == selected_alias]
 
             if _cols_prev["total"]:
                 tot_series = pd.to_numeric(_dfp_prev[_cols_prev["total"]], errors="coerce").fillna(0)
@@ -231,7 +255,7 @@ def app():
     total_importe_clientify = float(df_ventas_filtrado["importe"].sum()) if "importe" in df_ventas_filtrado.columns else 0.0
     cifra_negocio = pvfe_cifra_negocio_filtrado
     total_importe_fe = pvfe_total_importe_filtrado
-    matriculas_count = int(df_ventas_filtrado.shape[0] if mes_seleccionado != "Todos" else df_ventas_original.shape[0])
+    matriculas_count = int(df_ventas_all_owner.shape[0]) if mes_seleccionado == "Todos" else int(df_ventas_filtrado.shape[0])
 
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
@@ -264,6 +288,22 @@ def app():
             </div>
         """, unsafe_allow_html=True)
     with col5:
+        # Totales de preventas filtrados por propietario si es posible
+        if df_preventas is not None and not df_preventas.empty:
+            dft_prev = df_preventas.copy()
+            owner_cols_prev = [c for c in dft_prev.columns if any(x in c for x in ["propietario","comercial","asesor","owner","vendedor","responsable"])]
+            if owner_cols_prev:
+                ocol_prev = owner_cols_prev[0]
+                dft_prev["_alias"] = dft_prev[ocol_prev].astype(str).apply(_alias_comercial)
+                if not is_all:
+                    dft_prev = dft_prev[dft_prev["_alias"] == selected_alias]
+            columnas_importe_prev = [col for col in dft_prev.columns if "importe" in col]
+            total_preventas_importe = dft_prev[columnas_importe_prev].sum(numeric_only=True).sum() if columnas_importe_prev else 0
+            total_preventas_count   = dft_prev.shape[0]
+        else:
+            total_preventas_importe = 0
+            total_preventas_count   = 0
+
         st.markdown(f"""
             <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #1f77b4;border-radius:8px;'>
                 <h4 style='margin:0'>Preventas</h4>
@@ -294,11 +334,12 @@ def app():
 
     # ======= GRÁFICO: Distribución Mensual de Matrículas por Propietario =======
     if mes_seleccionado == "Todos":
-        df_bar = df_ventas.groupby(["mes","propietario"], dropna=False).size().reset_index(name="Total Matrículas")
-        df_bar = df_bar.merge(totales_propietario[["propietario","propietario_display"]], on="propietario", how="left")
+        df_bar_base = df_ventas_all_owner.copy()
+        df_bar = df_bar_base.groupby(["mes","propietario"], dropna=False).size().reset_index(name="Total Matrículas")
         tot_mes = df_bar.groupby("mes")["Total Matrículas"].sum().to_dict()
         df_bar["mes_etiqueta"] = df_bar["mes"].apply(lambda m: f"{m} ({tot_mes.get(m,0)})" if pd.notna(m) else m)
         orden_mes_etiqueta = [f"{m} ({tot_mes[m]})" for m in orden_meses if m in tot_mes]
+        df_bar = df_bar.merge(totales_propietario[["propietario","propietario_display"]], on="propietario", how="left")
 
         fig = px.bar(
             df_bar, x="mes_etiqueta", y="Total Matrículas",
@@ -341,30 +382,23 @@ def app():
     st.markdown("---")
     st.subheader("Importe por Programa/ Clientify")
 
-    # Colores estables por programa
     programas = sorted(df_ventas["nombre_unificado"].dropna().unique().tolist())
     prog_color_map = {p: color_palette[i % len(color_palette)] for i, p in enumerate(programas)}
 
     if mes_seleccionado == "Todos":
-        # Suma de importes por mes y programa
-        g = (df_ventas.groupby(["mes","nombre_unificado"], dropna=False)["importe"]
-                      .sum().reset_index())
-        # Totales € por mes
+        g = (
+            df_ventas_all_owner.groupby(["mes","nombre_unificado"], dropna=False)["importe"]
+            .sum().reset_index()
+        )
         tot_mes_imp = g.groupby("mes")["importe"].sum().to_dict()
-        # Etiqueta de mes con total € del mes
         g["mes_etiqueta"] = g["mes"].apply(lambda m: f"{m} ({euro_es(tot_mes_imp.get(m,0))})" if pd.notna(m) else m)
-        # Orden fijo Enero→Diciembre con etiqueta (€)
         orden_mes_etiqueta = [f"{m} ({euro_es(tot_mes_imp[m])})" for m in orden_meses if m in tot_mes_imp]
 
-        # Leyenda con total por programa (en todo el año)
         tot_prog = g.groupby("nombre_unificado")["importe"].sum().reset_index()
         tot_prog["nombre_display"] = tot_prog.apply(lambda r: f"{r['nombre_unificado']} ({euro_es(r['importe'])})", axis=1)
         g = g.merge(tot_prog[["nombre_unificado","nombre_display"]], on="nombre_unificado", how="left")
-
-        # Texto en cada barra
         g["importe_text"] = g["importe"].apply(euro_es)
 
-        # Mapa de colores para la leyenda
         color_map_for_legend = {
             row["nombre_display"]: prog_color_map[row["nombre_unificado"]]
             for _, row in tot_prog.iterrows()
@@ -389,9 +423,10 @@ def app():
         st.plotly_chart(fig_imp, use_container_width=True)
 
     else:
-        # Suma de importes en el mes seleccionado por programa
-        g = (df_ventas_filtrado.groupby("nombre_unificado", dropna=False)["importe"]
-                            .sum().reset_index().sort_values("importe", ascending=False))
+        g = (
+            df_ventas_filtrado.groupby("nombre_unificado", dropna=False)["importe"]
+            .sum().reset_index().sort_values("importe", ascending=False)
+        )
         total_mes = float(g["importe"].sum()) if not g.empty else 0.0
         g["importe_text"] = g["importe"].apply(euro_es)
 
@@ -431,6 +466,39 @@ def app():
 
     pvfe_summary, pvfe_details_html, details_rows = {}, {}, {}
 
+    # Ventas/Preventas por alias (Clientify/Preventas) — filtradas
+    ventas_by_alias = (
+        df_ventas_filtrado.assign(_alias=df_ventas_filtrado["propietario"].astype(str).apply(_alias_comercial))
+                 .groupby("_alias")
+                 .agg(ventas_count=("propietario","size"), ventas_importe=("importe","sum"))
+                 .reset_index()
+    )
+    ventas_by_alias = dict(ventas_by_alias.set_index("_alias")[["ventas_count","ventas_importe"]].T.to_dict())
+
+    preventas_by_alias = {}
+    if df_preventas is not None and not df_preventas.empty:
+        owner_cols = [c for c in df_preventas.columns if any(x in c for x in ["propietario","comercial","asesor","owner","vendedor","responsable"])]
+        if owner_cols:
+            ocol = owner_cols[0]
+            dft = df_preventas.copy()
+            dft["_alias"] = dft[ocol].astype(str).apply(_alias_comercial)
+
+            # Filtrar preventas por propietario seleccionado
+            if not is_all:
+                dft = dft[dft["_alias"] == selected_alias]
+
+            imp_cols = [c for c in dft.columns if "importe" in c]
+            dft["_imp"] = dft[imp_cols].sum(axis=1, numeric_only=True) if imp_cols else 0
+            preventas_by_alias = (
+                dft.groupby("_alias").agg(prev_count=(ocol,"size"), prev_importe=("_imp","sum")).reset_index()
+            )
+            preventas_by_alias = dict(preventas_by_alias.set_index("_alias")[["prev_count","prev_importe"]].T.to_dict())
+
+    # alias -> owner name
+    owners_all = df_ventas["propietario"].dropna().unique().tolist()
+    alias_to_owner = {_alias_comercial(o): o for o in owners_all}
+
+    # ======= PV-FE: resumen y detalle (filtrado por mes y propietario alias) =======
     if df_pvfe_all is not None and not df_pvfe_all.empty:
         cols = _resolver_columnas(df_pvfe_all.columns)
         dfp = df_pvfe_all.copy()
@@ -442,18 +510,22 @@ def app():
         else:
             dfp["_fecha"] = pd.NaT
             dfp["_mes_es"] = ""
-        if mes_seleccionado != "Todos":
-            dfp = dfp[dfp["_mes_es"] == mes_seleccionado]
 
-        # NUMÉRICOS
-        dfp["_pend"]  = pd.to_numeric(dfp[cols["pend"]], errors="coerce").fillna(0) if cols["pend"] else 0
-        dfp["_total"] = pd.to_numeric(dfp[cols["total"]], errors="coerce").fillna(0) if cols["total"] else 0
-
-        # COMERCIAL
+        # COMERCIAL → alias
         if cols["comer"]:
             dfp["_alias"] = dfp[cols["comer"]].astype(str).apply(_alias_comercial)
         else:
             dfp["_alias"] = "-"
+
+        # Filtros
+        if mes_seleccionado != "Todos":
+            dfp = dfp[dfp["_mes_es"] == mes_seleccionado]
+        if not is_all:
+            dfp = dfp[dfp["_alias"] == selected_alias]
+
+        # NUMÉRICOS
+        dfp["_pend"]  = pd.to_numeric(dfp[cols["pend"]], errors="coerce").fillna(0) if cols["pend"] else 0
+        dfp["_total"] = pd.to_numeric(dfp[cols["total"]], errors="coerce").fillna(0) if cols["total"] else 0
 
         # === Resumen por alias (incluye cifra de negocio por comercial)
         g_alias = dfp.groupby("_alias", dropna=False)
@@ -528,34 +600,7 @@ def app():
             else:
                 pvfe_details_html[alias] = "<i>Sin registros</i>"
 
-    # Ventas/Preventas por alias (Clientify)
-    ventas_by_alias = (
-        df_ventas_filtrado.assign(_alias=df_ventas_filtrado["propietario"].astype(str).apply(_alias_comercial))
-                 .groupby("_alias")
-                 .agg(ventas_count=("propietario","size"), ventas_importe=("importe","sum"))
-                 .reset_index()
-    )
-    ventas_by_alias = dict(ventas_by_alias.set_index("_alias")[["ventas_count","ventas_importe"]].T.to_dict())
-
-    preventas_by_alias = {}
-    if df_preventas is not None and not df_preventas.empty:
-        owner_cols = [c for c in df_preventas.columns if any(x in c for x in ["propietario","comercial","asesor","owner","vendedor","responsable"])]
-        if owner_cols:
-            ocol = owner_cols[0]
-            imp_cols = [c for c in df_preventas.columns if "importe" in c]
-            dft = df_preventas.copy()
-            dft["_alias"] = dft[ocol].astype(str).apply(_alias_comercial)
-            dft["_imp"] = dft[imp_cols].sum(axis=1, numeric_only=True) if imp_cols else 0
-            preventas_by_alias = (
-                dft.groupby("_alias").agg(prev_count=(ocol,"size"), prev_importe=("_imp","sum")).reset_index()
-            )
-            preventas_by_alias = dict(preventas_by_alias.set_index("_alias")[["prev_count","prev_importe"]].T.to_dict())
-
-    # alias -> owner name
-    owners_all = df_ventas["propietario"].dropna().unique().tolist()
-    alias_to_owner = {_alias_comercial(o): o for o in owners_all}
-
-    # orden: primero con clientify (ventas o preventas), luego solo PV-FE
+    # Orden de comerciales: primero los que tienen Clientify (ventas/preventas) y luego solo PV-FE
     all_aliases = set(pvfe_summary.keys()) | set(ventas_by_alias.keys()) | set(preventas_by_alias.keys())
     aliases_clientify = [a for a in all_aliases if (a in ventas_by_alias or a in preventas_by_alias)]
     aliases_solo_pvfe = [a for a in all_aliases if a not in aliases_clientify]
@@ -700,6 +745,13 @@ def app():
                 vista["Fecha Factura"] = vista["_fecha"].dt.strftime("%d/%m/%Y")
             else:
                 vista["Fecha Factura"] = ""
+
+            # Filtrar por propietario alias si hay columna comercial
+            if cols["comer"]:
+                vista["_alias"] = vista[cols["comer"]].astype(str).apply(_alias_comercial)
+                if not is_all:
+                    vista = vista[vista["_alias"] == selected_alias]
+
             if cols["pend"]:
                 vista["Pendiente"] = pd.to_numeric(vista[cols["pend"]], errors="coerce").fillna(0)
             else:
@@ -760,7 +812,7 @@ def app():
                 final = pd.DataFrame(rows).sort_values(by="Pendiente", ascending=False, na_position="last")
                 st.dataframe(final, use_container_width=True)
             else:
-                st.info("📭 No hay registros de Facturación Ficticia para el mes seleccionado.")
+                st.info("📭 No hay registros de Facturación Ficticia para el mes/propietario seleccionado.")
         except Exception as e:
             st.error(f"No se pudo procesar Facturación Ficticia: {e}")
     else:

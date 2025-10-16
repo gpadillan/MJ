@@ -112,10 +112,15 @@ def route_page():
         return
 
     try:
+        importlib.invalidate_caches()  # evita problemas de caché de imports
         mod = importlib.import_module(module_path)
     except ModuleNotFoundError:
         st.title(f"{page} · {unidad}")
         st.info("Esta sección para el ámbito seleccionado aún no existe.")
+        return
+    except Exception as e:
+        st.title(f"{page} · {unidad}")
+        st.exception(e)
         return
 
     fn = getattr(mod, func_name, None)
@@ -123,6 +128,10 @@ def route_page():
         st.title(f"{page} · {unidad}")
         st.info(f"La página no define la función `{func_name}()`.")
         return
+
+    # Pasar el ámbito al asistente (para personalizar título/datos)
+    if "pages.asistente" in module_path:
+        st.session_state["ambito"] = unidad
 
     st.caption(f"Ámbito activo: **{unidad}**")
     fn()
@@ -149,7 +158,7 @@ def main():
         if st.session_state["unidad"] == "Mainjobs B2C":
             st.session_state["current_page"] = "Principal"
 
-        # Si vuelves a EIP/EIM y estabas en "Principal", ajusta a una válida
+        # Si vuelves a EIP/EIM y estabas en una página no válida, ajusta a Inicio
         if st.session_state["unidad"] in ("EIP", "EIM") and (
             st.session_state.get("current_page") not in _get_routes_for_unidad(st.session_state["unidad"])
         ):

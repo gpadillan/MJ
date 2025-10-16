@@ -316,7 +316,7 @@ def _html_table_cols_color(df: pd.DataFrame, col_widths: list[str], col_bg: dict
                            align_nums: bool = True, small: bool = True) -> str:
     """
     Tabla sin scroll donde puedes colorear columnas concretas (fondo fijo).
-    col_bg = { "CONSECUCIÓN": "#e3f2fd", "INAPLICACIÓN": "#eeeeee", "DEVOLUCIÓN": "#fff3e0", ... }
+    col_bg = { "CONSECUCIÓN": "#308446", "INAPLICACIÓN": "#eeeeee", "DEVOLUCIÓN": "#fff3e0", ... }
     """
     if df is None or df.empty:
         return "<div style='color:#5f6368'>Sin datos</div>"
