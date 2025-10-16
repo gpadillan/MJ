@@ -18,6 +18,26 @@ PREVENTAS_FILE  = os.path.join(UPLOAD_FOLDER, "preventas.xlsx")
 PVFE_FILE       = os.path.join(UPLOAD_FOLDER, "pv_fe.xlsx")   # si no existe busco por 'listadoFacturacionFicticia*'
 ANIO_ACTUAL     = datetime.now().year  # ← año en curso
 
+# ===== Colores configurables por programa (opcional) =====
+# Claves = valores de "nombre_unificado"
+PROGRAM_COLOR_MAP = {
+    "MÁSTER IA": "#3B82F6",           # Azul intenso
+    "MÁSTER CIBERSEGURIDAD": "#EF4444",  # Rojo
+    "MÁSTER RRHH": "#10B981",         # Verde
+    "MÁSTER DPO": "#8B5CF6",          # Violeta
+    "MÁSTER EERR": "#F59E0B",         # Naranja
+    "CERTIFICACIÓN SAP S/4HANA": "#F163C4",  # Azul violeta
+    "MBA + RRHH": "#14B8A6",          # Turquesa
+    "PROGRAMA CALIFORNIA": "#C4A0A6", # Coral
+}
+
+# Tamaño de los "cuadrados" (tiles)
+TILE_WIDTH_PX   = 160   # ancho (ajusta a tu gusto)
+TILE_MIN_HEIGHT = 70    # alto mínimo
+TILE_PAD_V      = 8     # padding vertical
+TILE_PAD_H      = 10    # padding horizontal
+TILE_RADIUS_PX  = 10    # esquinas redondeadas
+
 # Pasteles (ajusta si quieres aún más claro)
 OWNER_HEADER_LIGHTEN = 0.82  # 0..1 (más alto = más claro) cabecera de tarjeta
 OWNER_BLOCK_LIGHTEN  = 0.92  # 0..1 bloques internos (FF/Clientify)
@@ -326,6 +346,7 @@ def app():
         resumen.groupby("nombre_unificado")["Total Matrículas"].sum().sort_values(ascending=False).index.tolist()
     )
 
+    # Paleta por propietario (para los gráficos superiores)
     color_palette = px.colors.qualitative.Plotly + px.colors.qualitative.D3 + px.colors.qualitative.Alphabet
     propietarios_display = sorted(resumen["propietario_display"].dropna().unique())
     color_map_display = {p: color_palette[i % len(color_palette)] for i, p in enumerate(propietarios_display)}
@@ -377,78 +398,196 @@ def app():
         st.plotly_chart(fig, use_container_width=True)
 
     # ==============================================================
-    # IMPORTE POR MÁSTER / PROGRAMA (Clientify)
+    # IMPORTE POR MÁSTER / PROGRAMA (Clientify)  ➜  “Cuadrados” por mes en filas + TOTAL AÑO
     # ==============================================================
     st.markdown("---")
-    st.subheader("Importe por Programa/ Clientify")
+    hdr_col, legend_col = st.columns([0.74, 0.26])
+    with hdr_col:
+        st.subheader("Importe por Programa / Clientify")
 
+    # --- Paleta por programa (respetando PROGRAM_COLOR_MAP) ---
     programas = sorted(df_ventas["nombre_unificado"].dropna().unique().tolist())
-    prog_color_map = {p: color_palette[i % len(color_palette)] for i, p in enumerate(programas)}
+    default_palette = px.colors.qualitative.Set3 + px.colors.qualitative.Pastel + px.colors.qualitative.Bold
+    prog_color_map = {}
+    # Primero aplica tus colores fijos
+    for p in programas:
+        if p in PROGRAM_COLOR_MAP and PROGRAM_COLOR_MAP[p]:
+            prog_color_map[p] = PROGRAM_COLOR_MAP[p]
+    # Rellena faltantes con paleta por defecto
+    idx = 0
+    for p in programas:
+        if p not in prog_color_map:
+            prog_color_map[p] = default_palette[idx % len(default_palette)]
+            idx += 1
 
-    if mes_seleccionado == "Todos":
-        g = (
-            df_ventas_all_owner.groupby(["mes","nombre_unificado"], dropna=False)["importe"]
-            .sum().reset_index()
+    # ----- Mini componentes HTML -----
+    def _tile(name_programa: str, n: int, amount: float, color: str) -> str:
+        # NO cortar (wrap), altura auto; solo nombre del programa (sin totales en el título)
+        return f"""
+        <div style="
+            display:inline-flex; flex-direction:column; justify-content:center;
+            width:{TILE_WIDTH_PX}px; min-height:{TILE_MIN_HEIGHT}px; height:auto;
+            padding:{TILE_PAD_V}px {TILE_PAD_H}px; margin:6px 8px 6px 0;
+            border-radius:{TILE_RADIUS_PX}px; background:{color}; color:#fff;
+            box-shadow:0 2px 6px rgba(0,0,0,.08); border:1px solid rgba(0,0,0,.15);">
+            <div style="font-weight:900; font-size:.82rem; white-space:normal; overflow:visible; line-height:1.15;">
+                {name_programa}
+            </div>
+            <div style="display:flex; gap:8px; margin-top:6px; align-items:center; flex-wrap:wrap;">
+                <span style="font-weight:800; font-size:.78rem; opacity:.95;">{int(n)} matr.</span>
+                <span style="font-weight:900; font-size:.86rem;">{euro_es(amount)}</span>
+            </div>
+        </div>
+        """
+
+    def _total_tile(total_amount: float, total_count: int) -> str:
+        return f"""
+        <div style="
+            display:inline-flex; flex-direction:column; justify-content:center;
+            width:{TILE_WIDTH_PX}px; min-height:{TILE_MIN_HEIGHT}px; height:auto;
+            padding:{TILE_PAD_V}px {TILE_PAD_H}px; margin:6px 0 6px 8px;
+            border-radius:{TILE_RADIUS_PX}px; background:#111; color:#fff;
+            box-shadow:0 2px 6px rgba(0,0,0,.14); border:1px solid rgba(0,0,0,.6);">
+            <div style="font-weight:900; font-size:.82rem;">TOTAL</div>
+            <div style="display:flex; gap:8px; margin-top:6px; align-items:center; flex-wrap:wrap;">
+                <span style="font-weight:800; font-size:.78rem;">{int(total_count)} matr.</span>
+                <span style="font-weight:900; font-size:.86rem;">{euro_es(total_amount)}</span>
+            </div>
+        </div>
+        """
+
+    def _mes_header(mes: str) -> str:
+        return f"""
+        <div style="display:inline-flex; align-items:center; justify-content:center;
+            min-height:{TILE_MIN_HEIGHT}px; padding:{TILE_PAD_V}px {TILE_PAD_H}px; margin:6px 12px 6px 0;
+            background:#eef0f4; color:#111; border:1px solid #e0e3e8; border-radius:{TILE_RADIUS_PX}px;
+            min-width:110px; font-weight:900;">{mes}</div>
+        """
+
+    def _row_scroll(html_inside: str) -> str:
+        return f"""
+        <div style="display:flex; align-items:flex-start; gap:12px; overflow-x:auto; white-space:nowrap;
+                    padding:4px 2px 10px 2px; border-bottom:1px solid #efefef;">
+            {html_inside}
+        </div>
+        """
+
+    # Panel derecho: Totales por programa del periodo y propietario seleccionado
+    def _legend_totales_panel(base_df: pd.DataFrame):
+        if base_df.empty:
+            legend_col.info("Sin datos.")
+            return
+        tot_prog = (
+            base_df.groupby("nombre_unificado")
+                   .agg(matr=("nombre_unificado","size"), imp=("importe","sum"))
+                   .reset_index()
+                   .sort_values("imp", ascending=False)
         )
-        tot_mes_imp = g.groupby("mes")["importe"].sum().to_dict()
-        g["mes_etiqueta"] = g["mes"].apply(lambda m: f"{m} ({euro_es(tot_mes_imp.get(m,0))})" if pd.notna(m) else m)
-        orden_mes_etiqueta = [f"{m} ({euro_es(tot_mes_imp[m])})" for m in orden_meses if m in tot_mes_imp]
-
-        tot_prog = g.groupby("nombre_unificado")["importe"].sum().reset_index()
-        tot_prog["nombre_display"] = tot_prog.apply(lambda r: f"{r['nombre_unificado']} ({euro_es(r['importe'])})", axis=1)
-        g = g.merge(tot_prog[["nombre_unificado","nombre_display"]], on="nombre_unificado", how="left")
-        g["importe_text"] = g["importe"].apply(euro_es)
-
-        color_map_for_legend = {
-            row["nombre_display"]: prog_color_map[row["nombre_unificado"]]
-            for _, row in tot_prog.iterrows()
-        }
-
-        fig_imp = px.bar(
-            g, x="mes_etiqueta", y="importe",
-            color="nombre_display", barmode="group",
-            text="importe_text",
-            color_discrete_map=color_map_for_legend,
-            title=f"Importe por Programa — {ANIO_ACTUAL}",
-            width=width, height=int(height*0.9)
+        items = []
+        for _, r in tot_prog.iterrows():
+            color = prog_color_map.get(r["nombre_unificado"], "#6c757d")
+            items.append(f"""
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+              <span style="display:inline-block; width:14px; height:14px; border-radius:3px; background:{color}; border:1px solid rgba(0,0,0,.25);"></span>
+              <div style="flex:1; font-size:.9rem; font-weight:700; line-height:1.15;">{r['nombre_unificado']}</div>
+              <div style="font-size:.85rem; font-weight:800;">{int(r['matr'])} matr.</div>
+              <div style="font-size:.85rem; font-weight:900; margin-left:8px;">{euro_es(float(r['imp']))}</div>
+            </div>
+            """)
+        legend_col.markdown(
+            f"""
+            <div style="background:#fff; border:1px solid #e6e6e6; border-radius:12px; padding:12px;">
+                <div style="font-weight:900; margin-bottom:8px;">Totales por programa</div>
+                {''.join(items)}
+            </div>
+            """,
+            unsafe_allow_html=True
         )
-        fig_imp.update_traces(textposition="outside")
-        fig_imp.update_layout(
-            xaxis_title="Mes",
-            yaxis_title="Importe (€)",
-            margin=dict(l=20,r=20,t=60,b=140),
-            legend=dict(orientation="h", yanchor="bottom", y=-0.45, xanchor="center", x=0.5),
-            xaxis=dict(categoryorder="array", categoryarray=orden_mes_etiqueta)
-        )
-        st.plotly_chart(fig_imp, use_container_width=True)
 
-    else:
-        g = (
-            df_ventas_filtrado.groupby("nombre_unificado", dropna=False)["importe"]
-            .sum().reset_index().sort_values("importe", ascending=False)
-        )
-        total_mes = float(g["importe"].sum()) if not g.empty else 0.0
-        g["importe_text"] = g["importe"].apply(euro_es)
+    # ==== BLOQUE PRINCIPAL: filas por mes + fila TOTAL ====
+    with hdr_col:
+        if mes_seleccionado == "Todos":
+            base = df_ventas_all_owner.copy()
 
-        titulo_mes = f"Importe por Programa — {mes_seleccionado} — Total: {euro_es(total_mes)}"
+            # Pre-cálculo por mes/programa: cantidad e importe
+            grp = (
+                base.groupby(["mes", "nombre_unificado"], dropna=False)
+                    .agg(matr=("nombre_unificado", "size"), imp=("importe", "sum"))
+                    .reset_index()
+            )
 
-        fig_imp = px.bar(
-            g, x="nombre_unificado", y="importe",
-            text="importe_text",
-            color="nombre_unificado",
-            color_discrete_map=prog_color_map,
-            title=titulo_mes,
-            width=width, height=int(height*0.9)
-        )
-        fig_imp.update_traces(textposition="outside")
-        fig_imp.update_layout(
-            xaxis_title="Máster / Programa",
-            yaxis_title="Importe (€)",
-            margin=dict(l=20,r=20,t=60,b=120),
-            xaxis=dict(categoryorder="array", categoryarray=g["nombre_unificado"].tolist()),
-            showlegend=False
-        )
-        st.plotly_chart(fig_imp, use_container_width=True)
+            # ► SOLO meses con datos
+            meses_con_datos = [m for m in orden_meses if m in grp["mes"].unique()]
+
+            # Render: UNA FILA POR MES (solo los que tienen registros)
+            for mes in meses_con_datos:
+                gmes = grp[grp["mes"] == mes].copy().sort_values("imp", ascending=False)
+                if gmes.empty:
+                    continue
+
+                total_mes_importe = float(gmes["imp"].sum())
+                total_mes_count   = int(gmes["matr"].sum())
+
+                chips = [_mes_header(mes)]
+                for _, r in gmes.iterrows():
+                    # Título SOLO con nombre del programa (sin totales entre paréntesis)
+                    chips.append(_tile(
+                        r["nombre_unificado"],
+                        int(r["matr"]),
+                        float(r["imp"]),
+                        prog_color_map.get(r["nombre_unificado"], "#6c757d")
+                    ))
+                chips.append(_total_tile(total_mes_importe, total_mes_count))
+                st.markdown(_row_scroll("".join(chips)), unsafe_allow_html=True)
+
+            # ===== Fila TOTAL AÑO (como si fuese un mes extra) =====
+            if not base.empty:
+                total_year = (
+                    base.groupby("nombre_unificado")
+                        .agg(matr=("nombre_unificado","size"), imp=("importe","sum"))
+                        .reset_index()
+                        .sort_values("imp", ascending=False)
+                )
+                chips = [_mes_header("TOTAL")]
+                for _, r in total_year.iterrows():
+                    chips.append(_tile(
+                        r["nombre_unificado"],  # solo nombre, sin paréntesis
+                        int(r["matr"]), float(r["imp"]),
+                        prog_color_map.get(r["nombre_unificado"], "#6c757d")
+                    ))
+                chips.append(_total_tile(float(total_year["imp"].sum()), int(total_year["matr"].sum())))
+                st.markdown(_row_scroll("".join(chips)), unsafe_allow_html=True)
+
+            # Panel derecho con totales (periodo + propietario)
+            _legend_totales_panel(base)
+
+        else:
+            # Un único mes: tiles del mes + panel de totales para ese mes
+            base_mes = df_ventas_filtrado.copy()
+            if base_mes.empty:
+                st.info("No hay datos para este mes.")
+            else:
+                g = (
+                    base_mes.groupby("nombre_unificado", dropna=False)
+                            .agg(matr=("nombre_unificado","size"), imp=("importe","sum"))
+                            .reset_index()
+                            .sort_values("imp", ascending=False)
+                )
+                total_mes_importe = float(g["imp"].sum())
+                total_mes_count   = int(g["matr"].sum())
+
+                chips = [_mes_header(mes_seleccionado)]
+                for _, r in g.iterrows():
+                    chips.append(_tile(
+                        r["nombre_unificado"],  # solo nombre
+                        int(r["matr"]), float(r["imp"]),
+                        prog_color_map.get(r["nombre_unificado"], "#6c757d")
+                    ))
+                chips.append(_total_tile(total_mes_importe, total_mes_count))
+                st.markdown(_row_scroll("".join(chips)), unsafe_allow_html=True)
+
+            # Panel derecho con totales del mes (y propietario)
+            _legend_totales_panel(base_mes)
 
     # ======================================================================
     # FACTURACIÓN FICTICIA + CLIENTIFY POR COMERCIAL  (con "Ver más")
@@ -628,8 +767,8 @@ def app():
             "Clientify - Matrículas": int(ve.get("ventas_count", 0)),
             "Clientify - Importe (€)": float(ve_importe),
             "Diferencia FE−Clientify (€)": float(diff_fe_cli),
-            "Preventas - Oportunidades": int(pr.get("prev_count", 0)),
-            "Preventas - Importe (€)": float(pr.get("prev_importe", 0) or 0),
+            "Preventas - Oportunidades": int(pr.get("prev_count", 0) if pr else 0),
+            "Preventas - Importe (€)": float(pr.get("prev_importe", 0) if pr else 0),
             "Periodo": titulo_periodo,
         })
 
@@ -668,8 +807,8 @@ def app():
                 detail_html = pvfe_details_html.get(alias, "<i>Sin registros</i>")
                 nrows = details_rows.get(alias, 1)
 
-                pv_total = float(pv.get("pv_total", 0) or 0)   # Importe total FE (pos + neg)
-                pv_cifra = float(pv.get("pv_cifra", 0) or 0)   # Cifra de negocio (solo positivos)
+                pv_total = float(pv.get("pv_total", 0) or 0)
+                pv_cifra = float(pv.get("pv_cifra", 0) or 0)
                 ve_importe = float(ve.get("ventas_importe", 0) or 0)
 
                 diff_fe_cli = pv_total - ve_importe
@@ -733,8 +872,10 @@ def app():
     st.markdown("---")
     st.subheader("📄 Facturación Ficticia — Vista rápida")
 
-    if df_pvfe_all is not None and not df_pvfe_all.empty:
+    pvfe_path = _encontrar_archivo_pvfe() if 'pvfe_path' not in locals() else pvfe_path
+    if pvfe_path and os.path.exists(pvfe_path):
         try:
+            df_pvfe_all = pd.read_excel(pvfe_path)
             cols = _resolver_columnas(df_pvfe_all.columns)
             vista = df_pvfe_all.copy()
             if cols["fecha"]:
@@ -746,7 +887,6 @@ def app():
             else:
                 vista["Fecha Factura"] = ""
 
-            # Filtrar por propietario alias si hay columna comercial
             if cols["comer"]:
                 vista["_alias"] = vista[cols["comer"]].astype(str).apply(_alias_comercial)
                 if not is_all:
