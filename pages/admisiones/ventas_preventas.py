@@ -94,6 +94,25 @@ def lighten_hex(hex_color: str, factor: float = 0.85) -> str:
     except Exception:
         return "#f5f7fa"
 
+# ========= Abreviar nombres de programa (para tiles y gráficos) EN MAYÚSCULAS =========
+def abreviar_programa(nombre: str) -> str:
+    base = _strip_accents_lower(nombre)
+    if "ciber" in base or "hacking" in base or "ofensiva" in base:
+        return "CIBER"
+    if "sap" in base or "s/4hana" in base or "s 4 hana" in base:
+        return "SAP"
+    if "inteligencia artificial" in base or base.startswith("master ia") or base.startswith("máster ia") or base == "ia":
+        return "IA"
+    if "dpo" in base or "proteccion de datos" in base or "compliance" in base:
+        return "DPO"
+    if "rrhh" in base or "recursos humanos" in base:
+        return "RRHH"
+    if "energ" in base or "eerr" in base or "renovabl" in base:
+        return "EERR"
+    if "blackwell" in base:
+        return "BLACKWELL"
+    return nombre.upper() if isinstance(nombre, str) else nombre
+
 # =========================
 # CATEGORÍAS (para nombre_unificado)
 # =========================
@@ -195,6 +214,8 @@ def app():
     df_ventas["mes"]     = df_ventas["fecha de cierre"].dt.month_name().map(traducciones_meses)
     df_ventas["mes_num"] = df_ventas["fecha de cierre"].dt.month
     df_ventas["nombre_unificado"] = df_ventas["nombre"].apply(unificar_nombre)
+    # columna abreviada MAYÚSCULAS para toda la app
+    df_ventas["prog_corto"] = df_ventas["nombre_unificado"].apply(abreviar_programa)
 
     # ======= PREVENTAS (opcional) =======
     if os.path.exists(PREVENTAS_FILE):
@@ -277,7 +298,6 @@ def app():
     total_importe_fe = pvfe_total_importe_filtrado
     matriculas_count = int(df_ventas_all_owner.shape[0]) if mes_seleccionado == "Todos" else int(df_ventas_filtrado.shape[0])
 
-    # >>> Promedio PVP (ticket medio) YA NO se muestra en la fila de KPIs
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.markdown(f"""
@@ -333,7 +353,8 @@ def app():
         """, unsafe_allow_html=True)
 
     # ======= RESUMEN & COLORES (para gráficos de matrículas) =======
-    resumen = df_ventas_filtrado.groupby(["nombre_unificado","propietario"]).size().reset_index(name="Total Matrículas")
+    df_ventas_filtrado["prog_corto"] = df_ventas_filtrado["nombre_unificado"].apply(abreviar_programa)
+    resumen = df_ventas_filtrado.groupby(["prog_corto","propietario"]).size().reset_index(name="Total Matrículas")
     totales_propietario = resumen.groupby("propietario")["Total Matrículas"].sum().reset_index()
     totales_propietario["propietario_display"] = totales_propietario.apply(
         lambda r: f"{r['propietario']} ({r['Total Matrículas']})", axis=1
@@ -344,19 +365,16 @@ def app():
         totales_propietario.sort_values(by="Total Matrículas", ascending=False)["propietario_display"].tolist()
     )
     orden_masters = (
-        resumen.groupby("nombre_unificado")["Total Matrículas"].sum().sort_values(ascending=False).index.tolist()
+        resumen.groupby("prog_corto")["Total Matrículas"].sum().sort_values(ascending=False).index.tolist()
     )
 
-    # Paleta y mapa de colores por programa (primero PROGRAM_COLOR_MAP, luego paleta de respaldo)
     base_palette = px.colors.qualitative.Plotly + px.colors.qualitative.D3 + px.colors.qualitative.Alphabet
 
     def _build_prog_color_map(programas):
         cmap = {}
-        # Primero usar los definidos por el usuario
         for p in programas:
             if p in PROGRAM_COLOR_MAP:
                 cmap[p] = PROGRAM_COLOR_MAP[p]
-        # Completar con paleta base para los no definidos
         idx = 0
         for p in programas:
             if p not in cmap:
@@ -364,17 +382,17 @@ def app():
                 idx += 1
         return cmap
 
-    color_map_display = {p: base_palette[i % len(base_palette)] for i, p in enumerate(sorted(resumen["propietario_display"].dropna().unique()))}
+    resumen_prop_disp = sorted(resumen["propietario_display"].dropna().unique())
+    color_map_display = {p: base_palette[i % len(base_palette)] for i, p in enumerate(resumen_prop_disp)}
     owner_color_map = {p.split(" (")[0]: color_map_display[p] for p in color_map_display}
     owners_in_chart = set(resumen["propietario"].unique())
 
-    # ======= GRÁFICO: Distribución Mensual de Matrículas por Propietario =======
+    # ======= GRÁFICO =======
     if mes_seleccionado == "Todos":
         df_bar_base = df_ventas_all_owner.copy()
         df_bar = df_bar_base.groupby(["mes","propietario"], dropna=False).size().reset_index(name="Total Matrículas")
         tot_mes = df_bar.groupby("mes")["Total Matrículas"].sum().to_dict()
         df_bar["mes_etiqueta"] = df_bar["mes"].apply(lambda m: f"{m} ({tot_mes.get(m,0)})" if pd.notna(m) else m)
-        # solo meses con datos
         orden_mes_etiqueta = [f"{m} ({tot_mes[m]})" for m in orden_meses if m in tot_mes]
         df_bar = df_bar.merge(totales_propietario[["propietario","propietario_display"]], on="propietario", how="left")
 
@@ -395,7 +413,7 @@ def app():
         st.plotly_chart(fig, use_container_width=True)
     else:
         fig = px.scatter(
-            resumen, x="nombre_unificado", y="propietario_display",
+            resumen, x="prog_corto", y="propietario_display",
             size="Total Matrículas", color="propietario_display",
             color_discrete_map=color_map_display, text="Total Matrículas",
             size_max=60, width=width, height=height
@@ -405,7 +423,7 @@ def app():
             marker=dict(line=dict(color="black", width=1.2))
         )
         fig.update_layout(
-            xaxis_title="Máster / Programa (Unificado)", yaxis_title="Propietario",
+            xaxis_title="Programa (abreviado)", yaxis_title="Propietario",
             legend=dict(orientation="v", yanchor="top", y=0.98, xanchor="left", x=1.02),
             margin=dict(l=20,r=20,t=40,b=80)
         )
@@ -421,13 +439,11 @@ def app():
     with hdr_col:
         st.subheader("Importe por Programa / Clientify")
 
-    # Paleta de programas basada en PROGRAM_COLOR_MAP + respaldo
     programas_all = sorted(df_ventas["nombre_unificado"].dropna().unique().tolist())
     prog_color_map = _build_prog_color_map(programas_all)
 
     # ----- Mini componentes HTML -----
-    def _tile(programa: str, n: int, amount: float, color: str) -> str:
-        # Nombre completo sin cortar
+    def _tile(programa_display: str, n: int, amount: float, color: str) -> str:
         return f"""
         <div style="
             display:inline-flex; flex-direction:column; justify-content:center;
@@ -436,7 +452,7 @@ def app():
             border-radius:{TILE_RADIUS_PX}px; background:{color}; color:#fff;
             box-shadow:0 2px 6px rgba(0,0,0,.08); border:1px solid rgba(0,0,0,.15);">
             <div style="font-weight:900; font-size:.80rem; white-space:normal; word-break:break-word; line-height:1.15;">
-                {programa}
+                {programa_display}
             </div>
             <div style="display:flex; gap:8px; margin-top:6px; align-items:center; flex-wrap:wrap;">
                 <span style="font-weight:800; font-size:.72rem; opacity:.95;">{int(n)} matr.</span>
@@ -445,15 +461,14 @@ def app():
         </div>
         """
 
-    # >>> MODIFICADO: TOTAL en fondo blanco y letras negras
     def _total_tile(total_amount: float, total_count: int) -> str:
         return f"""
         <div style="
             display:inline-flex; flex-direction:column; justify-content:center;
             width:{TILE_WIDTH_PX}px; min-height:{TILE_HEIGHT_PX}px;
             padding:{TILE_PAD_V}px {TILE_PAD_H}px; margin:6px 0 6px 8px;
-            border-radius:{TILE_RADIUS_PX}px; background:#fff; color:#000;
-            box-shadow:0 2px 6px rgba(0,0,0,.14); border:1px solid rgba(0,0,0,.15);">
+            border-radius:{TILE_RADIUS_PX}px; background:#fff; color:#111;
+            box-shadow:0 2px 6px rgba(0,0,0,.14); border:1px solid rgba(0,0,0,.25);">
             <div style="font-weight:900; font-size:.80rem;">TOTAL</div>
             <div style="display:flex; gap:8px; margin-top:6px; align-items:center;">
                 <span style="font-weight:800; font-size:.72rem;">{int(total_count)} matr.</span>
@@ -478,19 +493,19 @@ def app():
         </div>
         """
 
-    # Panel derecho: Totales por programa del periodo y propietario seleccionado
-    # + Promedio de PVP (ticket medio real: media de 'importe' > 0) + Suma de Importe por Forma de Pago
+    # Panel derecho
     def _legend_totales_panel(base_df: pd.DataFrame):
         if base_df.empty:
             legend_col.info("Sin datos.")
             return
 
-        # --- Totales por programa ---
+        # --- Totales por programa (nombre completo) ---
+        tmp_full = base_df.copy()
         tot_prog = (
-            base_df.groupby("nombre_unificado")
-                   .agg(matr=("nombre_unificado","size"), imp=("importe","sum"))
-                   .reset_index()
-                   .sort_values("imp", ascending=False)
+            tmp_full.groupby("nombre_unificado")
+                    .agg(matr=("nombre_unificado","size"), imp=("importe","sum"))
+                    .reset_index()
+                    .sort_values("imp", ascending=False)
         )
         items = []
         for _, r in tot_prog.iterrows():
@@ -513,7 +528,7 @@ def app():
             unsafe_allow_html=True
         )
 
-        # ---------- Promedio de PVP (panel) en gris claro y texto negro ----------
+        # ---------- Promedio de PVP (gris con letras negras) ----------
         try:
             imp_series_panel = pd.to_numeric(base_df.get("importe", pd.Series(dtype=float)), errors="coerce")
             valid_panel = imp_series_panel[imp_series_panel > 0]
@@ -530,7 +545,7 @@ def app():
         except Exception:
             pass
 
-        # ---------- Suma de PVP por Forma de Pago (usando IMPORTE) ----------
+        # ---------- Suma de PVP por Forma de Pago ----------
         fp_col = None
         for c in base_df.columns:
             if _norm(str(c)) == "forma de pago":
@@ -600,8 +615,9 @@ def app():
 
                     chips = [_mes_header(mes)]
                     for _, r in gmes.iterrows():
+                        prog_display = abreviar_programa(r["nombre_unificado"])  # MAYÚSCULAS
                         chips.append(_tile(
-                            r["nombre_unificado"],
+                            prog_display,
                             int(r["matr"]),
                             float(r["imp"]),
                             prog_color_map.get(r["nombre_unificado"], "#6c757d")
@@ -609,7 +625,6 @@ def app():
                     chips.append(_total_tile(total_mes_importe, total_mes_count))
                     st.markdown(_row_scroll("".join(chips)), unsafe_allow_html=True)
 
-            # Panel derecho con totales + promedio + suma por FP
             _legend_totales_panel(base)
 
         else:
@@ -629,15 +644,15 @@ def app():
 
                 chips = [_mes_header(mes_seleccionado)]
                 for _, r in g.iterrows():
+                    prog_display = abreviar_programa(r["nombre_unificado"])  # MAYÚSCULAS
                     chips.append(_tile(
-                        r["nombre_unificado"],
+                        prog_display,
                         int(r["matr"]), float(r["imp"]),
                         prog_color_map.get(r["nombre_unificado"], "#6c757d")
                     ))
                 chips.append(_total_tile(total_mes_importe, total_mes_count))
                 st.markdown(_row_scroll("".join(chips)), unsafe_allow_html=True)
 
-            # Panel derecho con totales + promedio + suma por FP para ese mes
             _legend_totales_panel(base_mes)
 
     # ======================================================================
@@ -690,7 +705,6 @@ def app():
         cols = _resolver_columnas(df_pvfe_all.columns)
         dfp = df_pvfe_all.copy()
 
-        # FECHA / MES
         if cols["fecha"]:
             dfp["_fecha"] = pd.to_datetime(dfp[cols["fecha"]], errors="coerce", dayfirst=True)
             dfp["_mes_es"] = dfp["_fecha"].dt.month_name().map(traducciones_meses)
@@ -698,23 +712,19 @@ def app():
             dfp["_fecha"] = pd.NaT
             dfp["_mes_es"] = ""
 
-        # COMERCIAL → alias
         if cols["comer"]:
             dfp["_alias"] = dfp[cols["comer"]].astype(str).apply(_alias_comercial)
         else:
             dfp["_alias"] = "-"
 
-        # Filtros
         if mes_seleccionado != "Todos":
             dfp = dfp[dfp["_mes_es"] == mes_seleccionado]
         if not is_all:
             dfp = dfp[dfp["_alias"] == selected_alias]
 
-        # NUMÉRICOS
         dfp["_pend"]  = pd.to_numeric(dfp[cols["pend"]], errors="coerce").fillna(0) if cols["pend"] else 0
         dfp["_total"] = pd.to_numeric(dfp[cols["total"]], errors="coerce").fillna(0) if cols["total"] else 0
 
-        # === Resumen por alias (incluye cifra de negocio por comercial) — protegido si no hay datos
         if not dfp.empty:
             g_alias = dfp.groupby("_alias", dropna=False)
             pvfe_summary_df = (
@@ -734,7 +744,7 @@ def app():
         else:
             pvfe_summary = {}
 
-        # --------- Detalle por razón social (con PROYECTO) ----------
+        # --------- Detalle por razón social ----------
         pvfe_details_html = {}
         details_rows = {}
         key_razon = cols["razon"] if cols["razon"] else None
@@ -795,13 +805,13 @@ def app():
             else:
                 pvfe_details_html[alias] = "<i>Sin registros</i>"
 
-    # Orden de comerciales: primero los que tienen Clientify (ventas/preventas) y luego solo PV-FE
+    # Orden de comerciales
     all_aliases = set(pvfe_summary.keys()) | set(ventas_by_alias.keys()) | set(preventas_by_alias.keys())
     aliases_clientify = [a for a in all_aliases if (a in ventas_by_alias or a in preventas_by_alias)]
     aliases_solo_pvfe = [a for a in all_aliases if a not in aliases_clientify]
     ordered_aliases = aliases_clientify + aliases_solo_pvfe
 
-    # ======= Construcción del RESUMEN exportable (independiente del render) =======
+    # ======= Export =======
     export_rows = []
     for alias in ordered_aliases:
         owner_name = alias_to_owner.get(alias, alias)
@@ -828,7 +838,6 @@ def app():
             "Periodo": titulo_periodo,
         })
 
-    # ======= Descargar Excel SIEMPRE visible =======
     if export_rows:
         df_export = pd.DataFrame(export_rows)
         buffer = BytesIO()
@@ -843,7 +852,7 @@ def app():
     else:
         st.info("📭 No hay datos para exportar en este periodo.")
 
-    # ======= "Ver más" (expander) para MOSTRAR/OCULTAR tarjetas =======
+    # ======= "Ver más" =======
     with st.expander("Ver más: tarjetas por comercial (Facturación Ficticia + Clientify)", expanded=False):
         if not ordered_aliases:
             st.info("Sin comerciales que mostrar para el periodo seleccionado.")
@@ -863,8 +872,8 @@ def app():
                 detail_html = pvfe_details_html.get(alias, "<i>Sin registros</i>")
                 nrows = details_rows.get(alias, 1)
 
-                pv_total = float(pv.get("pv_total", 0) or 0)   # Importe total FE (pos + neg)
-                pv_cifra = float(pv.get("pv_cifra", 0) or 0)   # Cifra de negocio (solo positivos)
+                pv_total = float(pv.get("pv_total", 0) or 0)
+                pv_cifra = float(pv.get("pv_cifra", 0) or 0)
                 ve_importe = float(ve.get("ventas_importe", 0) or 0)
 
                 diff_fe_cli = pv_total - ve_importe
@@ -923,7 +932,6 @@ def app():
                 </div>
                 """
                 components.html(card_html, height=height_guess, scrolling=True)
-
     # ================= VISTA RÁPIDA PV-FE (blindada) =================
     st.markdown("---")
     st.subheader("📄 Facturación Ficticia — Vista rápida")
