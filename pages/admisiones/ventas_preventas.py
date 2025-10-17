@@ -277,12 +277,8 @@ def app():
     total_importe_fe = pvfe_total_importe_filtrado
     matriculas_count = int(df_ventas_all_owner.shape[0]) if mes_seleccionado == "Todos" else int(df_ventas_filtrado.shape[0])
 
-    # >>> PROMEDIO PVP (ticket medio) según filtros de mes y propietario
-    base_prom = df_ventas_filtrado if mes_seleccionado != "Todos" else df_ventas_all_owner
-    imp_series = pd.to_numeric(base_prom.get("importe", pd.Series(dtype=float)), errors="coerce")
-    promedio_pvp_value = float(imp_series[imp_series > 0].mean()) if not imp_series.empty and (imp_series > 0).any() else 0.0
-
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    # >>> Promedio PVP (ticket medio) YA NO se muestra en la fila de KPIs
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.markdown(f"""
             <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #1f77b4;border-radius:8px;'>
@@ -333,13 +329,6 @@ def app():
             <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #1f77b4;border-radius:8px;'>
                 <h4 style='margin:0'>Preventas</h4>
                 <p style='font-size:1.5rem;font-weight:700;margin:0'>{euro_es(total_preventas_importe)} ({total_preventas_count})</p>
-            </div>
-        """, unsafe_allow_html=True)
-    with col6:
-        st.markdown(f"""
-            <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #ea580c;border-radius:8px;'>
-                <h4 style='margin:0'>Promedio de PVP</h4>
-                <p style='font-size:1.5rem;font-weight:700;margin:0'>{euro_es(promedio_pvp_value)}</p>
             </div>
         """, unsafe_allow_html=True)
 
@@ -456,14 +445,15 @@ def app():
         </div>
         """
 
+    # >>> MODIFICADO: TOTAL en fondo blanco y letras negras
     def _total_tile(total_amount: float, total_count: int) -> str:
         return f"""
         <div style="
             display:inline-flex; flex-direction:column; justify-content:center;
             width:{TILE_WIDTH_PX}px; min-height:{TILE_HEIGHT_PX}px;
             padding:{TILE_PAD_V}px {TILE_PAD_H}px; margin:6px 0 6px 8px;
-            border-radius:{TILE_RADIUS_PX}px; background:#111; color:#fff;
-            box-shadow:0 2px 6px rgba(0,0,0,.14); border:1px solid rgba(0,0,0,.6);">
+            border-radius:{TILE_RADIUS_PX}px; background:#fff; color:#000;
+            box-shadow:0 2px 6px rgba(0,0,0,.14); border:1px solid rgba(0,0,0,.15);">
             <div style="font-weight:900; font-size:.80rem;">TOTAL</div>
             <div style="display:flex; gap:8px; margin-top:6px; align-items:center;">
                 <span style="font-weight:800; font-size:.72rem;">{int(total_count)} matr.</span>
@@ -489,7 +479,7 @@ def app():
         """
 
     # Panel derecho: Totales por programa del periodo y propietario seleccionado
-    # + Promedio de PVP (ticket medio) + Suma de Importe por Forma de Pago
+    # + Promedio de PVP (ticket medio real: media de 'importe' > 0) + Suma de Importe por Forma de Pago
     def _legend_totales_panel(base_df: pd.DataFrame):
         if base_df.empty:
             legend_col.info("Sin datos.")
@@ -523,16 +513,16 @@ def app():
             unsafe_allow_html=True
         )
 
-        # ---------- Promedio de PVP (ticket medio real: media de 'importe' > 0) ----------
+        # ---------- Promedio de PVP (panel) en gris claro y texto negro ----------
         try:
             imp_series_panel = pd.to_numeric(base_df.get("importe", pd.Series(dtype=float)), errors="coerce")
             valid_panel = imp_series_panel[imp_series_panel > 0]
             promedio_panel = float(valid_panel.mean()) if not valid_panel.empty else 0.0
             legend_col.markdown(
                 f"""
-                <div style="margin-top:10px; background:#0ea5e9; color:#fff; border-radius:12px; padding:12px; border:1px solid rgba(0,0,0,.15);">
+                <div style="margin-top:10px; background:#eef0f4; color:#111; border-radius:12px; padding:12px; border:1px solid #e0e3e8;">
                     <div style="font-weight:900; margin-bottom:4px;">Promedio de PVP</div>
-                    <div style="font-weight:900; font-size:1.4rem;">{euro_es(promedio_panel)}</div>
+                    <div style="font-weight:900; font-size:1.2rem;">{euro_es(promedio_panel)}</div>
                 </div>
                 """,
                 unsafe_allow_html=True
@@ -541,7 +531,6 @@ def app():
             pass
 
         # ---------- Suma de PVP por Forma de Pago (usando IMPORTE) ----------
-        # Buscar columna "Forma de Pago" de forma robusta
         fp_col = None
         for c in base_df.columns:
             if _norm(str(c)) == "forma de pago":
@@ -559,11 +548,9 @@ def app():
                    .sort_values("importe", ascending=False)
             )
 
-            # Paleta estable por forma de pago
             palette = px.colors.qualitative.Plotly + px.colors.qualitative.Safe + px.colors.qualitative.Set3
             color_map_fp = {fp: palette[i % len(palette)] for i, fp in enumerate(suma_por_fp["_fp"].tolist())}
 
-            # Render de tarjetas
             card_items = []
             for _, r in suma_por_fp.iterrows():
                 fp = r["_fp"]; amt = float(r["importe"])
