@@ -32,14 +32,14 @@ OWNER_BLOCK_LIGHTEN  = 0.92  # 0..1 bloques internos (FF/Clientify)
 # ===== Colores configurables por programa (opcional) =====
 # Claves = valores de "nombre_unificado"
 PROGRAM_COLOR_MAP = {
-    "MÁSTER IA": "#3B82F6",                 # Azul intenso
-    "MÁSTER CIBERSEGURIDAD": "#EF4444",     # Rojo
-    "MÁSTER RRHH": "#10B981",               # Verde
-    "MÁSTER DPO": "#F65CE2",                # Violeta
-    "MÁSTER EERR": "#F59E0B",               # Naranja
-    "CERTIFICACIÓN SAP S/4HANA": "#7C3AED", # Morado
-    "MBA + RRHH": "#14B8A6",                # Turquesa
-    "PROGRAMA CALIFORNIA": "#F97316",       # Coral/Naranja
+    "MÁSTER IA": "#3B82F6",
+    "MÁSTER CIBERSEGURIDAD": "#EF4444",
+    "MÁSTER RRHH": "#10B981",
+    "MÁSTER DPO": "#F65CE2",
+    "MÁSTER EERR": "#F59E0B",
+    "CERTIFICACIÓN SAP S/4HANA": "#7C3AED",
+    "MBA + RRHH": "#14B8A6",
+    "PROGRAMA CALIFORNIA": "#F97316",
 }
 
 # =========================
@@ -214,7 +214,6 @@ def app():
     df_ventas["mes"]     = df_ventas["fecha de cierre"].dt.month_name().map(traducciones_meses)
     df_ventas["mes_num"] = df_ventas["fecha de cierre"].dt.month
     df_ventas["nombre_unificado"] = df_ventas["nombre"].apply(unificar_nombre)
-    # columna abreviada MAYÚSCULAS para toda la app
     df_ventas["prog_corto"] = df_ventas["nombre_unificado"].apply(abreviar_programa)
 
     # ======= PREVENTAS (opcional) =======
@@ -329,7 +328,7 @@ def app():
             </div>
         """, unsafe_allow_html=True)
     with col5:
-        # Totales de preventas filtrados por propietario si es posible
+        # Totales de preventas
         if df_preventas is not None and not df_preventas.empty:
             dft_prev = df_preventas.copy()
             owner_cols_prev = [c for c in dft_prev.columns if any(x in c for x in ["propietario","comercial","asesor","owner","vendedor","responsable"])]
@@ -493,11 +492,12 @@ def app():
         </div>
         """
 
-    # Panel derecho
+    # Panel derecho — devuelve también el orden de programas (por importe desc)
     def _legend_totales_panel(base_df: pd.DataFrame):
+        order_prog = []
         if base_df.empty:
             legend_col.info("Sin datos.")
-            return
+            return order_prog
 
         # --- Totales por programa (nombre completo) ---
         tmp_full = base_df.copy()
@@ -507,6 +507,8 @@ def app():
                     .reset_index()
                     .sort_values("imp", ascending=False)
         )
+        order_prog = tot_prog["nombre_unificado"].tolist()
+
         items = []
         for _, r in tot_prog.iterrows():
             color = prog_color_map.get(r["nombre_unificado"], "#6c757d")
@@ -578,7 +580,6 @@ def app():
                     <div style="font-weight:900;">{euro_es(amt)}</div>
                 </div>
                 """)
-
             legend_col.markdown(
                 f"""
                 <div style="margin-top:10px; background:#fff; border:1px solid #e6e6e6; border-radius:12px; padding:12px;">
@@ -591,10 +592,15 @@ def app():
         else:
             legend_col.info("No se encontró la columna 'Forma de Pago' para el cálculo por forma de pago.")
 
+        return order_prog
+
     # ==== BLOQUE PRINCIPAL: filas por mes + (si “Todos”) ====
     with hdr_col:
         if mes_seleccionado == "Todos":
             base = df_ventas_all_owner.copy()
+
+            # Orden oficial desde el panel de totales
+            order_prog = _legend_totales_panel(base)
 
             if not base.empty:
                 grp = (
@@ -602,13 +608,18 @@ def app():
                         .agg(matr=("nombre_unificado", "size"), imp=("importe", "sum"))
                         .reset_index()
                 )
-
                 meses_con_datos = [m for m in orden_meses if m in grp["mes"].unique()]
 
+                # Para cada mes: ordenar por 'order_prog'
                 for mes in meses_con_datos:
-                    gmes = grp[grp["mes"] == mes].copy().sort_values("imp", ascending=False)
+                    gmes = grp[grp["mes"] == mes].copy()
                     if gmes.empty:
                         continue
+                    if order_prog:
+                        gmes["nombre_unificado"] = pd.Categorical(gmes["nombre_unificado"], categories=order_prog, ordered=True)
+                        gmes = gmes.sort_values(["nombre_unificado"])
+                    else:
+                        gmes = gmes.sort_values("imp", ascending=False)
 
                     total_mes_importe = float(gmes["imp"].sum())
                     total_mes_count   = int(gmes["matr"].sum())
@@ -625,11 +636,11 @@ def app():
                     chips.append(_total_tile(total_mes_importe, total_mes_count))
                     st.markdown(_row_scroll("".join(chips)), unsafe_allow_html=True)
 
-            _legend_totales_panel(base)
-
         else:
             # Un único mes
             base_mes = df_ventas_filtrado.copy()
+            order_prog = _legend_totales_panel(base_mes)
+
             if base_mes.empty:
                 st.info("No hay datos para este mes.")
             else:
@@ -637,8 +648,13 @@ def app():
                     base_mes.groupby("nombre_unificado", dropna=False)
                             .agg(matr=("nombre_unificado","size"), imp=("importe","sum"))
                             .reset_index()
-                            .sort_values("imp", ascending=False)
                 )
+                if order_prog:
+                    g["nombre_unificado"] = pd.Categorical(g["nombre_unificado"], categories=order_prog, ordered=True)
+                    g = g.sort_values(["nombre_unificado"])
+                else:
+                    g = g.sort_values("imp", ascending=False)
+
                 total_mes_importe = float(g["imp"].sum())
                 total_mes_count   = int(g["matr"].sum())
 
@@ -652,8 +668,6 @@ def app():
                     ))
                 chips.append(_total_tile(total_mes_importe, total_mes_count))
                 st.markdown(_row_scroll("".join(chips)), unsafe_allow_html=True)
-
-            _legend_totales_panel(base_mes)
 
     # ======================================================================
     # FACTURACIÓN FICTICIA + CLIENTIFY POR COMERCIAL  (con "Ver más")
@@ -700,7 +714,7 @@ def app():
     owners_all = df_ventas["propietario"].dropna().unique().tolist()
     alias_to_owner = {_alias_comercial(o): o for o in owners_all}
 
-    # ======= PV-FE: resumen y detalle (filtrado por mes y propietario alias) =======
+    # ======= PV-FE: resumen y detalle =======
     if df_pvfe_all is not None and not df_pvfe_all.empty:
         cols = _resolver_columnas(df_pvfe_all.columns)
         dfp = df_pvfe_all.copy()
@@ -932,6 +946,7 @@ def app():
                 </div>
                 """
                 components.html(card_html, height=height_guess, scrolling=True)
+
     # ================= VISTA RÁPIDA PV-FE (blindada) =================
     st.markdown("---")
     st.subheader("📄 Facturación Ficticia — Vista rápida")
