@@ -35,7 +35,7 @@ PROGRAM_COLOR_MAP = {
     "MÁSTER IA": "#3B82F6",                 # Azul intenso
     "MÁSTER CIBERSEGURIDAD": "#EF4444",     # Rojo
     "MÁSTER RRHH": "#10B981",               # Verde
-    "MÁSTER DPO": "#8B5CF6",                # Violeta
+    "MÁSTER DPO": "#F65CE2",                # Violeta
     "MÁSTER EERR": "#F59E0B",               # Naranja
     "CERTIFICACIÓN SAP S/4HANA": "#7C3AED", # Morado
     "MBA + RRHH": "#14B8A6",                # Turquesa
