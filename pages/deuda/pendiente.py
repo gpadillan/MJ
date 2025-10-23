@@ -58,6 +58,7 @@ def vista_clientes_pendientes():
     mes_actual = datetime.today().month
     meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
              "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
+    mes_actual_nombre = meses[mes_actual - 1]
 
     total_clientes_unicos = set()
 
@@ -126,7 +127,7 @@ def vista_clientes_pendientes():
 
         fig2 = px.bar(
             resumen2, x="Periodo", y="Total_Deuda",
-            color="Total_Deuda", color_continuous_scale=["#eaf5ea", "#0b5b1d"],
+            color="Total_Deuda", color_continuous_scale=["#eaf5ea", "#0b375b"],
             template="plotly_white", height=560
         )
         fig2.update_traces(marker_line_color="black", marker_line_width=0.6, hovertemplate=None, hoverinfo="skip")
@@ -153,7 +154,7 @@ def vista_clientes_pendientes():
     else:
         _FIG_22_25 = None
 
-    # ---------------- Cards por año (con lógica año actual y futuros) ----------------
+    # ---------------- Cards por año (con triple lógica para el año actual) ----------------
     def _year_from_total(col):
         try:
             return int(col.split()[-1])
@@ -195,7 +196,7 @@ def vista_clientes_pendientes():
     years_meses = sorted(meses_por_año.keys())
     all_years_present = sorted(set(years_totales) | set(years_meses))
 
-    # Pasados
+    # Años pasados
     for y in [yy for yy in all_years_present if yy < año_actual]:
         cols = []
         if f"Total {y}" in df_pendiente.columns:
@@ -204,27 +205,52 @@ def vista_clientes_pendientes():
             cols = [col for _, col in sorted(meses_por_año[y])]
         total, ncli = _sum_and_clients(cols)
         if total != 0:
-            tarjetas.append(("Total "+str(y), total, ncli))
+            tarjetas.append(("Total " + str(y), total, ncli))
 
-    # Año actual → dividir meses
+    # Año actual → tres particiones:
+    #   1) "Pendiente actual" = enero..mes-1
+    #   2) "Pendiente {MesActual}" = sólo mes actual (card roja clara)
+    #   3) "Pendiente {AñoActual} futuro" = mes+1..diciembre
     if año_actual in all_years_present:
-        cols_aa = [col for _, col in sorted(meses_por_año.get(año_actual, []))]
-        cols_actual = [f"{m} {año_actual}" for m in meses[:mes_actual] if f"{m} {año_actual}" in df_pendiente.columns]
-        cols_futuro = [f"{m} {año_actual}" for m in meses[mes_actual:] if f"{m} {año_actual}" in df_pendiente.columns]
+        cols_mes_año = {m: f"{m} {año_actual}" for m in meses}
+        cols_existentes = set(df_pendiente.columns)
 
-        if not cols_aa and f"Total {año_actual}" in df_pendiente.columns:
+        # 1) enero..mes-1
+        meses_pasados = meses[:max(mes_actual - 1, 0)]  # vacío si enero
+        cols_pasados = [cols_mes_año[m] for m in meses_pasados if cols_mes_año[m] in cols_existentes]
+
+        # 2) mes actual
+        col_mes_actual = cols_mes_año[mes_actual_nombre]
+        cols_mes_actual = [col_mes_actual] if col_mes_actual in cols_existentes else []
+
+        # 3) mes+1..diciembre
+        meses_fut = meses[mes_actual:]  # desde el siguiente (mes_actual es 1-based; slicing ya toma el siguiente índice)
+        cols_futuro = [cols_mes_año[m] for m in meses_fut if cols_mes_año[m] in cols_existentes]
+
+        # Si no hay columnas mensuales y existe Total año → cae a "Pendiente actual" con Total año
+        tiene_mensuales_actual = any(c.endswith(f" {año_actual}") for c in cols_existentes)
+        if not tiene_mensuales_actual and f"Total {año_actual}" in cols_existentes:
             total, ncli = _sum_and_clients([f"Total {año_actual}"])
             if total != 0:
                 tarjetas.append(("Pendiente actual", total, ncli))
         else:
-            total_act, ncli_act = _sum_and_clients(cols_actual)
-            total_fut, ncli_fut = _sum_and_clients(cols_futuro)
-            if total_act != 0:
-                tarjetas.append(("Pendiente actual", total_act, ncli_act))
-            if total_fut != 0:
-                tarjetas.append((f"Pendiente {año_actual} futuro", total_fut, ncli_fut))
+            # 1) Pasados (enero..mes-1)
+            if cols_pasados:
+                total_pas, ncli_pas = _sum_and_clients(cols_pasados)
+                if total_pas != 0:
+                    tarjetas.append(("Pendiente actual", total_pas, ncli_pas))
+            # 2) Mes actual (card roja)
+            if cols_mes_actual:
+                total_act, ncli_act = _sum_and_clients(cols_mes_actual)
+                if total_act != 0:
+                    tarjetas.append((f"Pendiente {mes_actual_nombre}", total_act, ncli_act, "red"))
+            # 3) Futuro (mes+1..dic)
+            if cols_futuro:
+                total_fut, ncli_fut = _sum_and_clients(cols_futuro)
+                if total_fut != 0:
+                    tarjetas.append((f"Pendiente {año_actual} futuro", total_fut, ncli_fut))
 
-    # Futuros
+    # Años futuros
     for y in [yy for yy in all_years_present if yy > año_actual]:
         cols = []
         if y in meses_por_año:
@@ -241,28 +267,37 @@ def vista_clientes_pendientes():
         for i in range(0, len(tarjetas), 4):
             cols_stream = st.columns(4)
             for j, col in enumerate(cols_stream):
-                if i + j >= len(tarjetas): break
-                title, amount, ncli = tarjetas[i + j]
-                col.markdown(_card(title, amount, ncli), unsafe_allow_html=True)
+                if i + j >= len(tarjetas):
+                    break
+                item = tarjetas[i + j]
+                # item puede ser (title, amount, ncli) o (title, amount, ncli, variant)
+                if len(item) == 4:
+                    title, amount, ncli, variant = item
+                else:
+                    title, amount, ncli = item
+                    variant = "blue"
+                col.markdown(_card(title, amount, ncli, variant=variant), unsafe_allow_html=True)
 
-    # ---------------- Totales consolidados + desgloses solicitados ----------------
+    # ---------------- Totales consolidados ----------------
     total_clientes_unicos |= set(df_pendiente["Cliente"].unique())
     num_clientes_total = len(total_clientes_unicos)
 
-    # Sumas a partir de las tarjetas renderizadas
-    suma_tarjetas = sum(amount for _, amount, __ in tarjetas)
+    # Suma de importes de todas las tarjetas
+    suma_tarjetas = sum(item[1] for item in tarjetas)
 
-    # Pendiente con deuda = Pasado (Total YYYY) + Pendiente actual
-    pendiente_con_deuda = sum(
-        amount for title, amount, __ in tarjetas
-        if title.startswith("Total ") or title == "Pendiente actual"
-    )
+    # Pendiente con deuda = "Total YYYY" + "Pendiente actual" + "Pendiente {MesActual}"
+    pendiente_con_deuda = 0.0
+    for item in tarjetas:
+        title = item[0]
+        if title.startswith("Total ") or title == "Pendiente actual" or title == f"Pendiente {mes_actual_nombre}":
+            pendiente_con_deuda += item[1]
 
-    # Pendiente futuro = resto de "Pendiente ..." que no sea "Pendiente actual"
-    pendiente_futuro = sum(
-        amount for title, amount, __ in tarjetas
-        if title.startswith("Pendiente ") and title != "Pendiente actual"
-    )
+    # Pendiente futuro = resto de "Pendiente ..." que no sea actual ni mes actual
+    pendiente_futuro = 0.0
+    for item in tarjetas:
+        title = item[0]
+        if title.startswith("Pendiente ") and title not in ("Pendiente actual", f"Pendiente {mes_actual_nombre}"):
+            pendiente_futuro += item[1]
 
     total_pendiente = pendiente_con_deuda + pendiente_futuro
 
@@ -321,7 +356,7 @@ def vista_clientes_pendientes():
             .reset_index(drop=True)
         )
 
-        # 🔴 NUEVO: ocultar filas con "Total deuda" exactamente 0
+        # Ocultar filas con "Total deuda" exactamente 0
         df_detalle = df_detalle[df_detalle["Total deuda"] > 0]
 
         # ===== Filtros ligeros =====
@@ -362,15 +397,31 @@ def vista_clientes_pendientes():
     st.markdown("---")
 
 
-def _card(title, amount, ncli):
+def _card(title, amount, ncli, variant="blue"):
+    """
+    variant: "blue" (por defecto) | "red" (para 'Pendiente {MesActual}')
+    """
+    if variant == "red":
+        bg = "#fff1f1"
+        border = "#ffc9c9"
+        title_color = "#7a1f1f"
+        amount_color = "#a32020"
+        people_color = "#7a1f1f"
+    else:
+        bg = "#f1f9ff"
+        border = "#dbe9ff"
+        title_color = "#0b5394"
+        amount_color = "#00335c"
+        people_color = "#2a6aa5"
+
     return f"""
-    <div style="background:#f1f9ff;border:1px solid #dbe9ff;border-radius:12px;
+    <div style="background:{bg};border:1px solid {border};border-radius:12px;
                 padding:14px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);
                 display:flex;flex-direction:column;gap:6px;min-height:92px">
-      <div style="font-weight:700;color:#0b5394">{title}</div>
+      <div style="font-weight:700;color:{title_color}">{title}</div>
       <div style="display:flex;gap:12px;align-items:baseline;">
-        <div style="font-size:26px;font-weight:800;color:#00335c">€ {_eu(amount)}</div>
-        <div style="font-size:14px;color:#2a6aa5">👥 {int(ncli)}</div>
+        <div style="font-size:26px;font-weight:800;color:{amount_color}">€ {_eu(amount)}</div>
+        <div style="font-size:14px;color:{people_color}">👥 {int(ncli)}</div>
       </div>
     </div>
     """
