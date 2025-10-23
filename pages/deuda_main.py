@@ -1,3 +1,4 @@
+# pages/deuda_main.py
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -5,18 +6,19 @@ import pytz
 import os
 import io
 
+# Evita SettingWithCopyWarning globalmente
+pd.options.mode.copy_on_write = True
+
 # Rutas
 UPLOAD_FOLDER = "uploaded"
 EXCEL_FILENAME = "archivo_cargado.xlsx"
 TIEMPO_FILENAME = os.path.join(UPLOAD_FOLDER, "ultima_subida.txt")
 
-# Guardar Excel en disco
 def guardar_excel(df):
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     ruta = os.path.join(UPLOAD_FOLDER, EXCEL_FILENAME)
     df.to_excel(ruta, index=False)
 
-# Guardar la fecha de carga (hora local Madrid)
 def guardar_marca_tiempo():
     os.makedirs(UPLOAD_FOLDER, exist_ok=True)
     zona = pytz.timezone("Europe/Madrid")
@@ -25,28 +27,28 @@ def guardar_marca_tiempo():
         f.write(hora_local)
     return hora_local
 
-# Cargar Excel si existe
 def cargar_excel_guardado():
     ruta = os.path.join(UPLOAD_FOLDER, EXCEL_FILENAME)
     if os.path.exists(ruta):
         return pd.read_excel(ruta, dtype=str)
     return None
 
-# Cargar fecha/hora si existe
 def cargar_marca_tiempo():
     if os.path.exists(TIEMPO_FILENAME):
         with open(TIEMPO_FILENAME, "r") as f:
             return f.read().strip()
     return "Fecha no disponible"
 
-# Subpáginas
-from pages.deuda import (
-    gestion_datos,
-    global_,
-    pendiente,
-    becas_unificado,
-    pendiente_cobro_isa,
-)
+# ===================== IMPORTS DE SUBMÓDULOS (evitar símbolos del paquete) =====================
+# Asegúrate de que pages/deuda/__init__.py esté vacío.
+from pages.deuda import gestion_datos
+from pages.deuda import global_              # módulo con .render()
+from pages.deuda import pendiente            # módulo con .render()
+from pages.deuda import becas_unificado      # módulo con .render()
+from pages.deuda import pendiente_cobro_isa  # módulo con .render()
+from pages.deuda import estado_restante      # ✅ NUEVO: Estados restantes (con .render())
+
+# ==============================================================================================
 
 def deuda_page():
     if 'excel_data' not in st.session_state:
@@ -56,7 +58,6 @@ def deuda_page():
     if 'upload_time' not in st.session_state:
         st.session_state['upload_time'] = None
 
-    # Cargar desde disco si no hay datos en sesión
     if st.session_state['excel_data'] is None:
         df_guardado = cargar_excel_guardado()
         if df_guardado is not None:
@@ -74,8 +75,7 @@ def deuda_page():
             unsafe_allow_html=True
         )
 
-    # Subida de archivo solo para administradores
-    if st.session_state['role'] == "admin":
+    if st.session_state.get('role') == "admin":
         archivo = st.file_uploader("📤 Sube un archivo Excel", type=["xlsx", "xls"])
         if archivo:
             try:
@@ -83,12 +83,10 @@ def deuda_page():
                 df = pd.read_excel(xls, sheet_name=xls.sheet_names[0], dtype=str)
                 hora_local = guardar_marca_tiempo()
 
-                # Guardar en sesión
                 st.session_state['excel_data'] = df
                 st.session_state['excel_filename'] = archivo.name
                 st.session_state['upload_time'] = hora_local
 
-                # Guardar en disco
                 guardar_excel(df)
 
                 st.success(f"✅ Archivo cargado y guardado: {archivo.name}")
@@ -96,7 +94,7 @@ def deuda_page():
             except Exception as e:
                 st.error(f"❌ Error al procesar el archivo: {e}")
     else:
-        if st.session_state["excel_data"] is None:
+        if st.session_state.get("excel_data") is None:
             ruta_excel = os.path.join(UPLOAD_FOLDER, EXCEL_FILENAME)
             if os.path.exists(ruta_excel):
                 with open(ruta_excel, "rb") as f:
@@ -108,15 +106,14 @@ def deuda_page():
                 st.warning("⚠️ El administrador aún no ha subido el archivo.")
                 return
 
-    # Mostrar nombre del archivo cargado
     if st.session_state['excel_data'] is not None:
         st.success(f"📎 Archivo cargado: {st.session_state['excel_filename']}")
 
-    # Subcategorías de navegación
     subcategorias = [
         "Gestión de Datos",
         "Global",
         "Pendiente Total",
+        "Estado restante",           # ✅ NUEVO en el menú
         "Becas ISA - Consolidado",
         "Pendiente Cobro ISA",
     ]
@@ -133,7 +130,7 @@ def deuda_page():
             key="subcategoria_deuda"
         )
     with col2:
-        if st.session_state['role'] == "admin":
+        if st.session_state.get('role') == "admin":
             if st.button("🗑️", key="trash_reset", help="Eliminar archivo y reiniciar"):
                 st.session_state['excel_data'] = None
                 st.session_state['excel_filename'] = None
@@ -144,13 +141,14 @@ def deuda_page():
                     os.remove(TIEMPO_FILENAME)
                 st.rerun()
 
-    # Navegación por subcategorías
     if seccion == "Gestión de Datos":
         gestion_datos.render()
     elif seccion == "Global":
         global_.render()
     elif seccion == "Pendiente Total":
         pendiente.render()
+    elif seccion == "Estado restante":          # ✅ Router a la nueva vista
+        estado_restante.render()
     elif seccion == "Becas ISA - Consolidado":
         becas_unificado.render()
     elif seccion == "Pendiente Cobro ISA":

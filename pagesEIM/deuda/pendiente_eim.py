@@ -70,6 +70,7 @@ def vista_clientes_pendientes():
     mes_actual = datetime.today().month
     meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
              "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
+    mes_actual_nombre = meses[mes_actual - 1]
 
     total_clientes_unicos = set()
 
@@ -133,10 +134,9 @@ def vista_clientes_pendientes():
             "Num_Clientes": [(df2.groupby("Cliente")[c].sum() > 0).sum() for c in cols_22_aa],
         })
 
-        # ⬅️ NUEVO: quitar periodos con 0 € y 0 clientes
+        # quitar periodos sin datos
         resumen2 = resumen2[~((resumen2["Total_Deuda"] == 0) & (resumen2["Num_Clientes"] == 0))].reset_index(drop=True)
 
-        # Mostrar gráfico solo si queda algo que pintar
         if not resumen2.empty:
             fig = px.bar(
                 resumen2, x="Periodo", y="Total_Deuda",
@@ -163,7 +163,7 @@ def vista_clientes_pendientes():
             st.plotly_chart(fig, use_container_width=True)
             _FIG_BARRAS = fig
 
-    # ----- Tarjetas por año (idénticas a EIP)
+    # ----- Tarjetas por año (con mes-actual separado en ROJO)
     def _year_from_total(col):
         try:
             return int(col.split()[-1])
@@ -218,23 +218,45 @@ def vista_clientes_pendientes():
         if total != 0:
             tarjetas.append(("Total " + str(y), total, ncli))
 
-    # Año actual (dividir actual vs futuro)
+    # Año actual → 3 particiones:
+    #   1) "Pendiente actual" = enero..mes-1
+    #   2) "Pendiente {MesActual}" = solo mes actual (card roja)
+    #   3) "Pendiente {AñoActual} futuro" = mes+1..diciembre
     if año_actual in all_years_present:
-        cols_aa = [col for _, col in sorted(meses_por_año.get(año_actual, []))]
-        cols_actual = [f"{m} {año_actual}" for m in meses[:mes_actual] if f"{m} {año_actual}" in df_pend.columns]
-        cols_futuro = [f"{m} {año_actual}" for m in meses[mes_actual:] if f"{m} {año_actual}" in df_pend.columns]
+        cols_mes_año = {m: f"{m} {año_actual}" for m in meses}
+        cols_existentes = set(df_pend.columns)
 
-        if not cols_aa and f"Total {año_actual}" in df_pend.columns:
+        # 1) enero..mes-1
+        meses_pasados = meses[:max(mes_actual - 1, 0)]  # vacío si es enero
+        cols_pasados = [cols_mes_año[m] for m in meses_pasados if cols_mes_año[m] in cols_existentes]
+
+        # 2) mes actual
+        col_mes_actual = cols_mes_año[mes_actual_nombre]
+        cols_mes_actual = [col_mes_actual] if col_mes_actual in cols_existentes else []
+
+        # 3) mes+1..diciembre
+        meses_fut = meses[mes_actual:]  # desde el siguiente
+        cols_futuro = [cols_mes_año[m] for m in meses_fut if cols_mes_año[m] in cols_existentes]
+
+        # Si no hay mensuales pero sí Total del año → único bloque "Pendiente actual"
+        tiene_mensuales_actual = any(c.endswith(f" {año_actual}") for c in cols_existentes)
+        if not tiene_mensuales_actual and f"Total {año_actual}" in cols_existentes:
             total, ncli = _sum_and_clients([f"Total {año_actual}"])
             if total != 0:
                 tarjetas.append(("Pendiente actual", total, ncli))
         else:
-            total_act, ncli_act = _sum_and_clients(cols_actual)
-            total_fut, ncli_fut = _sum_and_clients(cols_futuro)
-            if total_act != 0:
-                tarjetas.append(("Pendiente actual", total_act, ncli_act))
-            if total_fut != 0:
-                tarjetas.append((f"Pendiente {año_actual} futuro", total_fut, ncli_fut))
+            if cols_pasados:
+                total_act, ncli_act = _sum_and_clients(cols_pasados)
+                if total_act != 0:
+                    tarjetas.append(("Pendiente actual", total_act, ncli_act))
+            if cols_mes_actual:
+                total_mes, ncli_mes = _sum_and_clients(cols_mes_actual)
+                if total_mes != 0:
+                    tarjetas.append((f"Pendiente {mes_actual_nombre}", total_mes, ncli_mes, "red"))
+            if cols_futuro:
+                total_fut, ncli_fut = _sum_and_clients(cols_futuro)
+                if total_fut != 0:
+                    tarjetas.append((f"Pendiente {año_actual} futuro", total_fut, ncli_fut))
 
     # Futuros
     for y in [yy for yy in all_years_present if yy > año_actual]:
@@ -254,21 +276,28 @@ def vista_clientes_pendientes():
             cols_stream = st.columns(4)
             for j, col in enumerate(cols_stream):
                 if i + j >= len(tarjetas): break
-                title, amount, ncli = tarjetas[i + j]
-                col.markdown(_card(title, amount, ncli), unsafe_allow_html=True)
+                item = tarjetas[i + j]
+                if len(item) == 4:
+                    title, amount, ncli, variant = item
+                else:
+                    title, amount, ncli = item
+                    variant = "blue"
+                col.markdown(_card(title, amount, ncli, variant), unsafe_allow_html=True)
 
     # ----- Resumen superior: pendiente con deuda | futuro | total
     total_clientes_unicos |= set(df_pend["Cliente"].unique())
     num_clientes_total = len(total_clientes_unicos)
 
-    pendiente_con_deuda = sum(
-        amount for title, amount, __ in tarjetas
-        if title.startswith("Total ") or title == "Pendiente actual"
-    )
-    pendiente_futuro = sum(
-        amount for title, amount, __ in tarjetas
-        if title.startswith("Pendiente ") and title != "Pendiente actual"
-    )
+    pendiente_con_deuda = 0.0
+    pendiente_futuro = 0.0
+    for item in tarjetas:
+        title = item[0]
+        amount = item[1]
+        if title.startswith("Total ") or title == "Pendiente actual" or title == f"Pendiente {mes_actual_nombre}":
+            pendiente_con_deuda += amount
+        elif title.startswith("Pendiente "):
+            pendiente_futuro += amount
+
     total_pendiente = pendiente_con_deuda + pendiente_futuro
 
     st.markdown(
@@ -281,7 +310,7 @@ def vista_clientes_pendientes():
     st.session_state["total_clientes_unicos_eim"] = num_clientes_total
     st.session_state["total_deuda_acumulada_eim"] = total_pendiente
 
-    # ================== DETALLE: igual que pages/deuda/pendiente.py ==================
+    # ================== DETALLE ==================
     st.markdown("### 📋 Detalle de deuda por cliente")
 
     email_col = next((c for c in ["Email", "Correo", "E-mail"] if c in df_pend.columns), None)
@@ -291,7 +320,7 @@ def vista_clientes_pendientes():
     if email_col: columnas_info.append(email_col)
     if tel_col:   columnas_info.append(tel_col)
 
-    # Columnas numéricas candidatas (mismas reglas que arriba)
+    # Columnas numéricas candidatas
     columnas_sumatorias = []
     columnas_sumatorias += [f"Total {a}" for a in range(2018, 2022) if f"Total {a}" in df_pend.columns]
     columnas_sumatorias += (cols_22_aa if cols_22_aa else [])
@@ -303,7 +332,7 @@ def vista_clientes_pendientes():
         df_detalle[columnas_sumatorias] = df_detalle[columnas_sumatorias].apply(pd.to_numeric, errors="coerce").fillna(0)
         df_detalle["Total deuda"] = df_detalle[columnas_sumatorias].sum(axis=1)
 
-        # Agrupar por cliente (texto -> conjuntos únicos; totales -> suma)
+        # Agrupar por cliente
         def _join_unique(series):
             vals = [str(v).strip() for v in series if pd.notna(v) and str(v).strip()]
             return ", ".join(sorted(set(vals)))
@@ -327,10 +356,10 @@ def vista_clientes_pendientes():
                       .reset_index(drop=True)
         )
 
-        # 🔴 Igual que en EIP: excluir filas con Total deuda == 0 (pero mantiene 0,10, etc.)
+        # excluir filas con Total deuda == 0
         df_detalle = df_detalle[df_detalle["Total deuda"] > 0]
 
-        # ===== Filtros ligeros (idénticos) =====
+        # Filtros ligeros
         with st.expander("🔎 Filtros del detalle"):
             col_f1, col_f2, col_f3 = st.columns([1.2, 1, 1])
             texto_cliente = col_f1.text_input("Buscar cliente contiene...", "")
@@ -354,7 +383,7 @@ def vista_clientes_pendientes():
         if rango:
             df_detalle = df_detalle[(df_detalle["Total deuda"] >= rango[0]) & (df_detalle["Total deuda"] <= rango[1])]
 
-        # Mostrar tabla nativa con formato € (igual que en EIP)
+        # Tabla
         column_config = {
             "Total deuda": st.column_config.NumberColumn(
                 "Total deuda", format="€ %.2f",
@@ -376,15 +405,23 @@ def vista_clientes_pendientes():
     st.markdown("---")
 
 
-def _card(title, amount, ncli):
+def _card(title, amount, ncli, variant="blue"):
+    """
+    variant: "blue" (default) | "red" (para 'Pendiente {MesActual}')
+    """
+    if variant == "red":
+        bg = "#fff1f1"; border = "#ffc9c9"; title_color = "#7a1f1f"; amount_color = "#a32020"; people_color = "#7a1f1f"
+    else:
+        bg = "#f1f9ff"; border = "#dbe9ff"; title_color = "#0b5394"; amount_color = "#00335c"; people_color = "#2a6aa5"
+
     return f"""
-    <div style="background:#f1f9ff;border:1px solid #dbe9ff;border-radius:12px;
+    <div style="background:{bg};border:1px solid {border};border-radius:12px;
                 padding:14px 16px;box-shadow:0 2px 6px rgba(0,0,0,.06);
                 display:flex;flex-direction:column;gap:6px;min-height:92px">
-      <div style="font-weight:700;color:#0b5394">{title}</div>
+      <div style="font-weight:700;color:{title_color}">{title}</div>
       <div style="display:flex;gap:12px;align-items:baseline;">
-        <div style="font-size:26px;font-weight:800;color:#00335c">€ {_eu(amount)}</div>
-        <div style="font-size:14px;color:#2a6aa5">👥 {int(ncli)}</div>
+        <div style="font-size:26px;font-weight:800;color:{amount_color}">€ {_eu(amount)}</div>
+        <div style="font-size:14px;color:{people_color}">👥 {int(ncli)}</div>
       </div>
     </div>
     """
