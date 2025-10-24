@@ -97,7 +97,7 @@ def vista_estado_unico_eim():
     </style>
     """, unsafe_allow_html=True)
 
-    st.header("📄 Estado (EIM) — vista individual")
+    st.header("📄 Estados")
 
     if DATA_KEY not in st.session_state or st.session_state[DATA_KEY] is None:
         st.warning("⚠️ No hay archivo EIM cargado. Ve a la sección Gestión de Datos (EIM).")
