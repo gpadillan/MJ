@@ -32,7 +32,51 @@ def _eu(n):
     s = f"{f:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     return s  # ej: -19.858,01
 
+def _bar_chart(resumen_df, title):
+    """
+    Dibuja un bar chart que soporta positivos/negativos y muestra anotaciones arriba/abajo.
+    resumen_df: columnas -> Periodo, Total_Deuda, Num_Clientes
+    """
+    if resumen_df.empty:
+        return None
+
+    fig = px.bar(
+        resumen_df, x="Periodo", y="Total_Deuda",
+        color="Total_Deuda", color_continuous_scale=["#f5eaea", "#0b375b"],
+        template="plotly_white", height=560, title=title
+    )
+    fig.update_traces(marker_line_color="black", marker_line_width=0.6, hovertemplate=None, hoverinfo="skip")
+
+    # Rango Y para incluir negativos/positivos con padding
+    min_y = float(resumen_df["Total_Deuda"].min())
+    max_y = float(resumen_df["Total_Deuda"].max())
+    pad_pos = max_y * 0.22 if max_y > 0 else 0
+    pad_neg = abs(min_y) * 0.22 if min_y < 0 else 0
+    y_min = min(0.0, min_y - pad_neg)
+    y_max = max(0.0, max_y + pad_pos)
+    if y_min == y_max:  # caso extremo todos 0
+        y_min, y_max = -1, 1
+    fig.update_yaxes(range=[y_min, y_max], title="Total")
+    fig.update_xaxes(title="Periodo")
+
+    # Anotaciones: arriba si positivo; un poco por debajo si negativo
+    annotations = []
+    for _, r in resumen_df.iterrows():
+        val = float(r["Total_Deuda"])
+        y_anno = val * (1.045 if val >= 0 else 0.955)
+        annotations.append(dict(
+            x=r["Periodo"], y=y_anno,
+            yanchor="bottom" if val >= 0 else "top",
+            xanchor="center",
+            text=f"€ {_eu(val)}<br>👥 {int(r['Num_Clientes'])}",
+            showarrow=False, font=dict(color="white", size=16),
+            align="center", bgcolor="rgba(0,0,0,0.95)", bordercolor="black", borderwidth=1.2, opacity=1
+        ))
+    fig.update_layout(margin=dict(l=20, r=20, t=40, b=50), annotations=annotations)
+    return fig
+
 resultado_exportacion = {}
+_FIG_18_21 = None
 _FIG_22_25_RESTO = None
 
 # ======================================================
@@ -94,28 +138,43 @@ def vista_estado_unico():
 
     total_clientes_unicos = set()
 
-    # ---------------- 2018–2021 (solo tabla) ----------------
+    # ---------------- 2018–2021 (tabla + gráfico SIEMPRE que haya dato) ----------------
     st.markdown("## 🕰️ Periodo 2018–2021")
     cols_18_21 = [f"Total {a}" for a in range(2018, 2022) if f"Total {a}" in df_target.columns]
+
+    global _FIG_18_21
+    _FIG_18_21 = None
 
     if cols_18_21:
         df1 = df_target[["Cliente"] + cols_18_21].copy()
         df1[cols_18_21] = df1[cols_18_21].apply(pd.to_numeric, errors="coerce").fillna(0)
+        # permitir negativos/positivos distintos de 0
         df1 = df1.groupby("Cliente", as_index=False)[cols_18_21].sum()
-        df1 = df1[df1[cols_18_21].sum(axis=1) != 0]  # permitir negativos/positivos distintos de 0
+        df1 = df1[df1[cols_18_21].sum(axis=1) != 0]
         total_clientes_unicos.update(df1["Cliente"].unique())
 
         st.dataframe(df1, use_container_width=True)
-        total_18_21 = float(df1[cols_18_21].sum().sum())
 
+        total_18_21 = float(df1[cols_18_21].sum().sum())
         st.markdown(
             f"**👥 Clientes (2018–2021):** "
             f"{df1['Cliente'].nunique()} – 🏅 Total: € {_eu(total_18_21)}"
         )
-
         resultado_exportacion["2018_2021"] = df1
 
-    # ---------------- 2022–Año actual ----------------
+        # 👉 Gráfico para 2018–2021 si hay alguna columna con suma != 0
+        resumen_18_21 = pd.DataFrame({
+            "Periodo": cols_18_21,
+            "Total_Deuda": [df1[c].sum() for c in cols_18_21],
+            "Num_Clientes": [(df1.groupby("Cliente")[c].sum() != 0).sum() for c in cols_18_21],
+        })
+        # quitar columnas 0/0
+        resumen_18_21 = resumen_18_21[~((resumen_18_21["Total_Deuda"] == 0) & (resumen_18_21["Num_Clientes"] == 0))].reset_index(drop=True)
+        if not resumen_18_21.empty:
+            _FIG_18_21 = _bar_chart(resumen_18_21, "Totales 2018–2021")
+            st.plotly_chart(_FIG_18_21, use_container_width=True)
+
+    # ---------------- 2022–Año actual (tabla + gráfico si hay dato) ----------------
     st.markdown("## 📅 Periodo 2022–2025")
 
     cols_22_24 = [f"Total {a}" for a in range(2022, 2025) if f"Total {a}" in df_target.columns]
@@ -137,8 +196,7 @@ def vista_estado_unico():
         df2 = df_target[["Cliente"] + cols_22_25].copy()
         df2[cols_22_25] = df2[cols_22_25].apply(pd.to_numeric, errors="coerce").fillna(0)
         df2 = df2.groupby("Cliente", as_index=False)[cols_22_25].sum()
-        # permitir filas con suma total != 0 (positivas o negativas)
-        df2 = df2[df2[cols_22_25].sum(axis=1) != 0]
+        df2 = df2[df2[cols_22_25].sum(axis=1) != 0]  # permitir negativos
         total_clientes_unicos.update(df2["Cliente"].unique())
 
         st.dataframe(df2, use_container_width=True)
@@ -156,50 +214,11 @@ def vista_estado_unico():
             "Total_Deuda": [df2[c].sum() for c in cols_22_25],
             "Num_Clientes": [(df2.groupby("Cliente")[c].sum() != 0).sum() for c in cols_22_25],
         })
-
-        # quitar columnas con 0/0 absolutos
         resumen2 = resumen2[~((resumen2["Total_Deuda"] == 0) & (resumen2["Num_Clientes"] == 0))].reset_index(drop=True)
 
-        # Gráfico: admitir positivos y negativos
         if not resumen2.empty:
-            fig2 = px.bar(
-                resumen2, x="Periodo", y="Total_Deuda",
-                color="Total_Deuda", color_continuous_scale=["#f5eaea", "#0b375b"],
-                template="plotly_white", height=560
-            )
-            fig2.update_traces(marker_line_color="black", marker_line_width=0.6, hovertemplate=None, hoverinfo="skip")
-
-            # Rango Y simétrico/adaptativo para incluir negativos y positivos
-            min_y = float(resumen2["Total_Deuda"].min())
-            max_y = float(resumen2["Total_Deuda"].max())
-            pad_pos = max_y * 0.22 if max_y > 0 else 0
-            pad_neg = abs(min_y) * 0.22 if min_y < 0 else 0
-            y_min = min(0.0, min_y - pad_neg)
-            y_max = max(0.0, max_y + pad_pos)
-            if y_min == y_max:  # caso extremo todos 0
-                y_min, y_max = -1, 1
-            fig2.update_yaxes(range=[y_min, y_max])
-
-            # Anotaciones: arriba si positivo; un poco por debajo si negativo
-            annotations = []
-            for _, r in resumen2.iterrows():
-                val = float(r["Total_Deuda"])
-                y_anno = val * (1.045 if val >= 0 else 0.955)
-                annotations.append(dict(
-                    x=r["Periodo"], y=y_anno,
-                    yanchor="bottom" if val >= 0 else "top",
-                    xanchor="center",
-                    text=f"€ {_eu(val)}<br>👥 {int(r['Num_Clientes'])}",
-                    showarrow=False, font=dict(color="white", size=16),
-                    align="center", bgcolor="rgba(0,0,0,0.95)", bordercolor="black", borderwidth=1.2, opacity=1
-                ))
-            fig2.update_layout(margin=dict(l=20, r=20, t=20, b=50),
-                               xaxis_title="Periodo", yaxis_title="Total",
-                               annotations=annotations)
-
-            st.markdown("### ")
-            st.plotly_chart(fig2, use_container_width=True)
-            _FIG_22_25_RESTO = fig2
+            _FIG_22_25_RESTO = _bar_chart(resumen2, f"Totales 2022–{año_actual}")
+            st.plotly_chart(_FIG_22_25_RESTO, use_container_width=True)
 
     # ---------------- Tarjetas (con mes actual en rojo claro) ----------------
     def _year_from_total(col):
@@ -384,7 +403,6 @@ def vista_estado_unico():
                 max_total = 0.0
 
             if min_total == max_total:
-                # No mostramos slider si no hay rango real
                 col_f3.caption(f"Rango Total importe (€): { _eu(min_total) } (sin rango)")
                 rango = None
             else:
@@ -434,7 +452,6 @@ def _card(title, amount, ncli, variant="blue"):
     else:
         bg = "#f1f9ff"; border = "#dbe9ff"; title_color = "#0b5394"; amount_color = "#00335c"; people_color = "#2a6aa5"
 
-    # Mostrar el signo delante; _eu ya lo hace
     return f"""
     <div style="background:{bg};border:1px solid {border};border-radius:12px;
                 padding:14px 16px;box-shadow:0 2px 6px rgba(0,0,0,0.06);
@@ -505,6 +522,8 @@ def render():
         if "2018_2021" in resultado_exportacion:
             html_buffer.write("<h1>Resumen 2018–2021</h1>")
             html_buffer.write(resultado_exportacion["2018_2021"].to_html(index=False))
+            if _FIG_18_21 is not None:
+                html_buffer.write(to_html(_FIG_18_21, include_plotlyjs='cdn', full_html=False))
         if "2022_2025" in resultado_exportacion:
             html_buffer.write("<h1>Resumen 2022–2025</h1>")
             html_buffer.write(resultado_exportacion["2022_2025"].to_html(index=False))
