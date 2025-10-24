@@ -8,6 +8,7 @@ import streamlit as st
 
 # ✅ importa los módulos reales, NO desde __init__.py
 from pagesEIM.deuda import gestion_datos_eim, global_eim, pendiente_eim
+from pagesEIM.deuda import estado_restante_eim   # ⬅️ nuevo import
 
 # --- rutas de almacenamiento compartidas por EIM ---
 UPLOAD_FOLDER_EIM   = "uploaded_eim"
@@ -98,8 +99,8 @@ def deuda_eim_page():
     if st.session_state["excel_data_eim"] is not None:
         st.success(f"📎 Archivo cargado: {st.session_state['excel_filename_eim']}")
 
-    # selector subpáginas
-    subcategorias = ["Gestión de Datos", "Global", "Pendiente Total"]
+    # selector subpáginas (añadimos "Estado restante")
+    subcategorias = ["Gestión de Datos", "Global", "Pendiente Total", "Estado restante"]
     if "subcategoria_deuda_eim" not in st.session_state:
         st.session_state["subcategoria_deuda_eim"] = subcategorias[0]
 
@@ -123,13 +124,15 @@ def deuda_eim_page():
                     os.remove(TIEMPO_FILENAME_EIM)
                 st.rerun()
 
-    # router de subpáginas  ✅ usa los módulos correctos
+    # router de subpáginas
     if seccion == "Gestión de Datos":
         gestion_datos_eim.render()
     elif seccion == "Global":
         global_eim.render()
     elif seccion == "Pendiente Total":
         pendiente_eim.render()
+    elif seccion == "Estado restante":
+        estado_restante_eim.render()   # ⬅️ nuevo router
 
 
 # Alias para routers antiguos
