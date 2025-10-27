@@ -346,7 +346,7 @@ def app():
 
         st.markdown(f"""
             <div style='padding:1rem;background:#f1f3f6;border-left:5px solid #BF00BF;border-radius:8px;'>
-                <h4 style='margin:0'>Preventas</h4>
+                <h4 style='margin:0'>Prematriculas</h4>
                 <p style='font-size:1.5rem;font-weight:700;margin:0'>{euro_es(total_preventas_importe)} ({total_preventas_count})</p>
             </div>
         """, unsafe_allow_html=True)

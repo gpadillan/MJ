@@ -7,7 +7,6 @@ matplotlib>=3.7.0
 gspread
 google-auth
 xlsxwriter
-msal
 python-dotenv
 office365-rest-python-client
 streamlit-js-eval
@@ -17,4 +16,5 @@ pytz
 streamlit-folium
 geopy
 pycountry
-requests
+msal==1.31.1
+requests==2.32.3
