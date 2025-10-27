@@ -575,6 +575,7 @@ def app():
                                 cuerpo_html = f"""
                                 <html><body>
                                 <h2>📊 Reporte de Leads y Ventas con Datos en Blanco</h2>
+                                <h3> Urgente ir cambiando estos datos en Clientify</h3>
                                 <p>Adjunto generado el <strong>{fecha_actual}</strong>.</p>
                                 <div><strong>Filtros:</strong> Mes={mes_seleccionado} · Programa={programa_seleccionado} · Propietario={propietario_tablas}</div>
                                 <ul>
