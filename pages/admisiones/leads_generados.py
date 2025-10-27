@@ -433,7 +433,7 @@ def app():
             if mes_seleccionado != "Todos":
                 ventas_tablas = ventas_tablas[ventas_tablas["mes_anio"] == mes_seleccionado]
             if programa_seleccionado != "Todos":
-                ventas_tablas = ventas_tablas[ventas_tablas["programa_final"] == programa_seleccionado]
+                ventas_tablas = ventas_tablas[ventas_tablas["programa_final"] == mes_seleccionado] if False else ventas_tablas[ventas_tablas["programa_final"] == programa_seleccionado]
             if propietario_tablas != "Todos" and "propietario" in ventas_tablas.columns:
                 ventas_tablas = ventas_tablas[ventas_tablas["propietario"] == propietario_tablas]
             origen_cols_posibles = ["origen", "origen de la venta", "origen venta", "source"]
@@ -572,22 +572,52 @@ def app():
                                 fecha_actual = datetime.now().strftime("%d/%m/%Y")
                                 asunto = f"Reporte de Leads en Blanco - {fecha_actual}"
                                 destinatarios_html = "<br/>".join([f"• {email}" for email in emails_validos])
+                                # ====== MENSAJE HTML ACTUALIZADO (más sutil) ======
                                 cuerpo_html = f"""
-                                <html><body>
-                                <h2>📊 Reporte de Leads y Ventas con Datos en Blanco</h2>
-                                <h3> Urgente ir cambiando estos datos en Clientify</h3>
-                                <p>Adjunto generado el <strong>{fecha_actual}</strong>.</p>
-                                <div><strong>Filtros:</strong> Mes={mes_seleccionado} · Programa={programa_seleccionado} · Propietario={propietario_tablas}</div>
-                                <ul>
-                                  <li><strong>Programas en blanco:</strong> {len(hoja1)} registros</li>
-                                  <li><strong>Origen Leads en blanco:</strong> {len(hoja2)} registros</li>
-                                  <li><strong>Leads-Venta (Origen en blanco):</strong> {len(hoja3)} registros</li>
-                                </ul>
-                                <p><strong>Total pendientes:</strong> {len(hoja1)+len(hoja2)+len(hoja3)}</p>
-                                <hr/>
-                                <div><strong>Enviado a:</strong><br/>{destinatarios_html}</div>
-                                </body></html>
+                                <html>
+                                <head>
+                                  <meta charset="UTF-8" />
+                                  <style>
+                                    body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color:#111827; }}
+                                    h2 {{ color:#111827; }}
+                                    .note {{
+                                      background:#f9fafb; border-left:4px solid #2563eb; padding:12px 14px;
+                                      border-radius:8px; margin:12px 0 8px 0;
+                                    }}
+                                    ul {{ margin:10px 0; }}
+                                    .meta {{ color:#6b7280; font-size:12px; }}
+                                  </style>
+                                </head>
+                                <body>
+                                  <h2>📊 Reporte de Leads y Ventas con Datos en Blanco</h2>
+
+                                  <div class="note">
+                                    Para una mejor toma de decisión, agradecemos actualizar en <strong>Clientify</strong>
+                                    los campos que figuran en blanco en el Excel adjunto.
+                                  </div>
+
+                                  <p>Adjunto generado el <strong>{fecha_actual}</strong>.</p>
+
+                                  <p><strong>Filtros:</strong> Mes={mes_seleccionado} · Programa={programa_seleccionado} · Propietario={propietario_tablas}</p>
+
+                                  <ul>
+                                    <li><strong>Programas en blanco:</strong> {len(hoja1)} registros</li>
+                                    <li><strong>Origen Leads en blanco:</strong> {len(hoja2)} registros</li>
+                                    <li><strong>Leads-Venta (Origen en blanco):</strong> {len(hoja3)} registros</li>
+                                  </ul>
+
+                                  <p><strong>Total pendientes:</strong> {len(hoja1)+len(hoja2)+len(hoja3)}</p>
+
+                                  <hr/>
+
+                                  <p class="meta"><em>Correo enviado desde la aplicación Streamlit — Grupo Mainjobs.</em></p>
+
+                                  <p><strong>Enviado a:</strong><br/>{destinatarios_html}</p>
+                                </body>
+                                </html>
                                 """
+                                # ====================================================
+
                                 exito, mensaje_resultado = send_email_with_attachment(
                                     recipient_emails=emails_validos,
                                     subject=asunto,
