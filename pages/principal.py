@@ -11,6 +11,13 @@ from utils.geo_utils import normalize_text, PROVINCIAS_COORDS, PAISES_COORDS, ge
 import unicodedata
 import re
 
+# ====== NUEVO: imports para envío por correo (Graph) ======
+import base64
+import requests
+import msal
+import json
+import time
+
 # ===================== UTILS GENERALES =====================
 
 def format_euro(value: float) -> str:
@@ -314,6 +321,176 @@ def _split_pending_like_deuda(df_gestion: pd.DataFrame, anio_actual: int) -> tup
     total = con_deuda + futuro
     return con_deuda, futuro, total
 
+# ===================== ENVÍO POR CORREO (MICROSOFT GRAPH) =====================
+
+def _check_graph_secrets() -> bool:
+    try:
+        _ = st.secrets["graph"]["tenant_id"]
+        _ = st.secrets["graph"]["client_id"]
+        _ = st.secrets["graph"]["client_secret"]
+        _ = st.secrets["graph"]["from_email"]
+        return True
+    except Exception:
+        st.error("❌ Falta configuración en `st.secrets['graph']` (tenant_id, client_id, client_secret, from_email).")
+        return False
+
+def get_graph_access_token(force_renew: bool = False):
+    try:
+        tenant_id = st.secrets["graph"]["tenant_id"]
+        client_id = st.secrets["graph"]["client_id"]
+        client_secret = st.secrets["graph"]["client_secret"]
+        authority = f"https://login.microsoftonline.com/{tenant_id}"
+        scope = ["https://graph.microsoft.com/.default"]
+        app = msal.ConfidentialClientApplication(client_id=client_id, authority=authority, client_credential=client_secret)
+        if not force_renew:
+            result = app.acquire_token_silent(scope, account=None)
+            if result and "access_token" in result:
+                return result["access_token"]
+        result = app.acquire_token_for_client(scopes=scope)
+        if "access_token" in result:
+            return result["access_token"]
+        st.error(f"❌ Error obteniendo token: {result.get('error_description', 'Unknown error')}")
+        return None
+    except Exception as e:
+        st.error(f"❌ Error en autenticación: {str(e)}")
+        return None
+
+def _post_graph_sendmail(from_email: str, payload: dict, token: str, timeout_sec: int = 45):
+    endpoint = f"https://graph.microsoft.com/v1.0/users/{from_email}/sendMail"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    resp = requests.post(endpoint, headers=headers, json=payload, timeout=timeout_sec)
+    return resp.status_code, resp.text, resp.reason
+
+def send_email_with_attachment(recipient_emails, subject, body_html, attachment_bytes, attachment_name, debug_mode=True):
+    if not _check_graph_secrets():
+        return False, "Faltan secrets de Graph."
+
+    try:
+        from_email = st.secrets["graph"]["from_email"]
+
+        attachment_content = base64.b64encode(attachment_bytes).decode('utf-8')
+        to_recipients = [{"emailAddress": {"address": email}} for email in recipient_emails]
+        email_data = {
+            "message": {
+                "subject": subject,
+                "body": {"contentType": "HTML", "content": body_html},
+                "toRecipients": to_recipients,
+                "attachments": [{
+                    "@odata.type": "#microsoft.graph.fileAttachment",
+                    "name": attachment_name,
+                    "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "contentBytes": attachment_content
+                }]
+            },
+            "saveToSentItems": True
+        }
+
+        max_attempts = 4
+        backoff_seconds = [0, 1.5, 3.0, 6.0]
+
+        token = get_graph_access_token()
+        if not token:
+            return False, "❌ No se pudo obtener el token de acceso"
+
+        for attempt in range(max_attempts):
+            try:
+                status, text, reason = _post_graph_sendmail(from_email, email_data, token)
+
+                if debug_mode:
+                    with st.expander("🔍 Debug envío correo", expanded=False):
+                        st.write(f"Intento: {attempt+1}/{max_attempts}")
+                        st.write(f"Status: {status} — {reason}")
+                        try:
+                            st.json(json.loads(text))
+                        except Exception:
+                            if text:
+                                st.code(text)
+
+                if status == 202:
+                    return True, f"✅ Correo enviado exitosamente a {len(recipient_emails)} destinatario(s)"
+
+                if status == 401 and attempt < max_attempts - 1:
+                    token = get_graph_access_token(force_renew=True)
+                    sleep_s = backoff_seconds[attempt]
+                    if debug_mode and sleep_s:
+                        st.info(f"🔐 Token renovado. Reintentando en {sleep_s}s…")
+                    if sleep_s:
+                        time.sleep(sleep_s)
+                    continue
+
+                if (status == 429 or 500 <= status < 600) and attempt < max_attempts - 1:
+                    sleep_s = backoff_seconds[attempt]
+                    if debug_mode:
+                        st.info(f"⏳ {status} recibido. Reintentando en {sleep_s}s…")
+                    if sleep_s:
+                        time.sleep(sleep_s)
+                    continue
+
+                if status == 400:
+                    try:
+                        detail = json.loads(text).get("error", {}).get("message", "")
+                    except Exception:
+                        detail = text
+                    return False, f"❌ Error 400 (Bad Request): {detail}"
+
+                if status == 403:
+                    return False, (
+                        "❌ Error 403: Acceso denegado.\n"
+                        "1) Permiso Mail.Send (Application)\n"
+                        "2) Consentimiento de administrador\n"
+                        "3) Buzón válido para el remitente\n"
+                        f"Detalles: {text}"
+                    )
+
+                return False, f"❌ Error al enviar correo. Código: {status}\nRespuesta: {text}"
+
+            except requests.exceptions.Timeout:
+                if attempt < max_attempts - 1:
+                    sleep_s = backoff_seconds[attempt]
+                    if debug_mode:
+                        st.info(f"⏳ Timeout. Reintentando en {sleep_s}s…")
+                    if sleep_s:
+                        time.sleep(sleep_s)
+                    continue
+                return False, "❌ Timeout: La solicitud tardó demasiado."
+            except requests.exceptions.RequestException as e:
+                return False, f"❌ Error de red: {str(e)}"
+    except Exception as e:
+        import traceback
+        if debug_mode:
+            with st.expander("🔍 Debug: Exception", expanded=True):
+                st.code(traceback.format_exc())
+        return False, f"❌ Error enviando correo: {str(e)}"
+
+def validar_emails(emails_string: str):
+    if not emails_string or emails_string.strip() == "":
+        return False, [], "Por favor ingresa al menos un email"
+    separadores = [',', ';']
+    emails = [emails_string]
+    for sep in separadores:
+        emails = [email.strip() for e in emails for email in e.split(sep)]
+    emails = [e for e in emails if e]
+    if not emails:
+        return False, [], "No se encontraron emails válidos"
+    patron_email = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    dominio_requerido = "@eiposgrados.com"
+    emails_invalidos, emails_dominio_incorrecto, emails_validos = [], [], []
+    for email in emails:
+        if not re.match(patron_email, email):
+            emails_invalidos.append(email)
+        elif not email.endswith(dominio_requerido):
+            emails_dominio_incorrecto.append(email)
+        else:
+            emails_validos.append(email)
+    errores = []
+    if emails_invalidos:
+        errores.append(f"Formato inválido: {', '.join(emails_invalidos)}")
+    if emails_dominio_incorrecto:
+        errores.append(f"Dominio incorrecto (debe ser @eiposgrados.com): {', '.join(emails_dominio_incorrecto)}")
+    if errores:
+        return False, [], " | ".join(errores)
+    return True, emails_validos, f"✓ {len(emails_validos)} email(s) válido(s)"
+
 # ===================== PÁGINA PRINCIPAL =====================
 
 def principal_page():
@@ -432,20 +609,16 @@ def principal_page():
                 no_cobrado       = tot_por_estado.get("NO COBRADO", 0.0)
 
                 # ===== Pendiente (con deuda / futuro) =====
-                # 1) Si venimos de la página de Deuda, usa su cálculo exacto
                 pending_ss = st.session_state.get("EIP_PENDIENTE")
                 if pending_ss:
                     pend_con_deuda = float(pending_ss.get("con_deuda", 0.0))
                     pend_futuro    = float(pending_ss.get("futuro", 0.0))
                     total_pend     = float(pending_ss.get("total", pend_con_deuda + pend_futuro))
                 else:
-                    # 2) Calcula aquí con la misma lógica
                     pend_con_deuda, pend_futuro, total_pend = _split_pending_like_deuda(df_gestion, anio_actual)
 
-                # ✅ Total Generado = Cobrado + Confirmada + Emitida
                 total_generado = cobrado + domic_confirmada + domic_emitida
 
-                # Paleta
                 COLORS = {
                     "COBRADO": "#E3F2FD",
                     "CONFIRMADA": "#FFE0B2",
@@ -457,21 +630,18 @@ def principal_page():
                     "NOCOBRADO": "#ECEFF1",
                 }
 
-                # ===== Fila 1: Cobrado | Confirmada | Emitida | Total Generado =====
                 c1, c2, c3, c4 = st.columns(4)
                 c1.markdown(render_bar_card("Cobrado", cobrado, COLORS["COBRADO"], "💵"), unsafe_allow_html=True)
                 c2.markdown(render_bar_card("Domiciliación Confirmada", domic_confirmada, COLORS["CONFIRMADA"], "💷"), unsafe_allow_html=True)
                 c3.markdown(render_bar_card("Domiciliación Emitida", domic_emitida, COLORS["EMITIDA"], "📤"), unsafe_allow_html=True)
                 c4.markdown(render_bar_card("Total Generado", total_generado, COLORS["TOTAL"], "💰"), unsafe_allow_html=True)
 
-                # ===== Fila 2: Pendiente (CON DEUDA) | Dudoso | Incobrable | No Cobrado =====
                 b1, b2, b3, b4 = st.columns(4)
                 b1.markdown(render_bar_card("Pendiente", pend_con_deuda, COLORS["PENDIENTE"], "⏳"), unsafe_allow_html=True)
                 b2.markdown(render_bar_card("Dudoso Cobro", dudoso, COLORS["DUDOSO"], "❗"), unsafe_allow_html=True)
                 b3.markdown(render_bar_card("Incobrable", incobrable, COLORS["INCOBRABLE"], "⛔"), unsafe_allow_html=True)
                 b4.markdown(render_bar_card("No Cobrado", no_cobrado, COLORS["NOCOBRADO"], "🧾"), unsafe_allow_html=True)
 
-                # Línea resumen como en Deuda
                 st.markdown(
                     f"**📌 Pendiente con deuda (EIP):** {format_euro(pend_con_deuda)} €  &nbsp;|&nbsp; "
                     f"**🔮 Pendiente futuro (EIP):** {format_euro(pend_futuro)} €  &nbsp;|&nbsp; "
@@ -697,15 +867,90 @@ def principal_page():
             st.dataframe(df_incompletos, use_container_width=True)
 
             from io import BytesIO
-            import base64
-
             def to_excel_bytes(df_):
                 output = BytesIO()
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                     df_.to_excel(writer, index=False, sheet_name='Incompletos')
                 return output.getvalue()
 
-            excel_data = to_excel_bytes(df_incompletos)
-            b64 = base64.b64encode(excel_data).decode()
+            excel_bytes = to_excel_bytes(df_incompletos)
+
+            # Descarga rápida
+            b64 = base64.b64encode(excel_bytes).decode()
             href = f'<a href="data:application/octet-stream;base64,{b64}" download="clientes_incompletos.xlsx">📥 Descargar Excel</a>'
             st.markdown(href, unsafe_allow_html=True)
+
+            # ======== NUEVO: envío por correo (SOLO ADMIN) ========
+            es_admin = st.session_state.get("role") == "admin"
+            if es_admin:
+                st.markdown("### 📧 Enviar por correo (incompletos España)")
+                destinatarios_input = st.text_area(
+                    "Email(s) destinatario(s):",
+                    placeholder="mremedios@eiposgrados.com, gpadilla@eiposgrados.com",
+                    height=70,
+                    help="Usa @eiposgrados.com y separa por comas o punto y coma."
+                )
+                debug_mode = st.checkbox("🔍 Modo Debug (mostrar detalles técnicos)", value=False, key="debug_incompletos")
+
+                if st.button("📤 Enviar Excel de 'Clientes incompletos' por Outlook", type="primary", use_container_width=True):
+                    if not destinatarios_input:
+                        st.error("❌ Por favor ingresa al menos un email.")
+                    else:
+                        es_valido, emails_validos, msg = validar_emails(destinatarios_input)
+                        if not es_valido:
+                            st.error(f"❌ {msg}")
+                        else:
+                            with st.spinner(f"Enviando a {len(emails_validos)} destinatario(s)…"):
+                                fecha_actual = datetime.now().strftime("%d/%m/%Y")
+                                asunto = f"Clientes España con Provincia/Localidad vacías — {fecha_actual}"
+
+                                destinatarios_html = "<br/>".join([f"• {e}" for e in emails_validos])
+                                total_reg = len(df_incompletos)
+
+                                cuerpo_html = f"""
+                                <html>
+                                <head>
+                                  <meta charset="UTF-8" />
+                                  <style>
+                                    body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color:#111827; }}
+                                    .note {{
+                                      background:#f9fafb; border-left:4px solid #2563eb; padding:12px 14px;
+                                      border-radius:8px; margin:12px 0 8px 0;
+                                    }}
+                                    .meta {{ color:#6b7280; font-size:12px; }}
+                                  </style>
+                                </head>
+                                <body>
+                                  <h2>🧾 Clientes únicos en España con Provincia o Localidad vacías</h2>
+
+                                  <div class="note">
+                                    Para una mejor toma de decisión, agradecemos actualizar en <strong>FE</strong>
+                                    los campos que figuran en blanco en el Excel adjunto.
+                                  </div>
+
+                                  <p>Adjunto generado el <strong>{fecha_actual}</strong>.</p>
+
+                                  <p><strong>Total de clientes incompletos:</strong> {total_reg}</p>
+
+                                  <hr/>
+                                  <p class="meta"><em>Correo enviado desde la aplicación Streamlit — Grupo Mainjobs.</em></p>
+                                  <p><strong>Enviado a:</strong><br/>{destinatarios_html}</p>
+                                </body>
+                                </html>
+                                """
+
+                                exito, mensaje = send_email_with_attachment(
+                                    recipient_emails=emails_validos,
+                                    subject=asunto,
+                                    body_html=cuerpo_html,
+                                    attachment_bytes=excel_bytes,
+                                    attachment_name=f"clientes_incompletos_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                    debug_mode=debug_mode
+                                )
+                                if exito:
+                                    st.success(mensaje)
+                                    st.balloons()
+                                else:
+                                    st.error(mensaje)
+            # ======== FIN envío por correo ========
+
