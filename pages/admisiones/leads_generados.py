@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
 import os
@@ -11,8 +12,8 @@ import requests
 import msal
 import re
 import json
-import time  # backoff y pausas
-import html  # 👈 para escapar etiquetas en chips/badges
+import time
+import html  # para escapar chips en HTML
 
 # =========================
 # CONFIG BÁSICA Y RUTAS
@@ -33,21 +34,23 @@ CARDS_LIGHTEN_FACTOR = 0.83
 # LISTA CLIENTIFY (FIJA)
 # =========================
 KNOWN_PEOPLE = {
-    "nrodriguez@grupomainjobs.com": "Nuria Rodriguez",
-    "aroldan@eiposgrados.com": "Agata Roldan",
-    "aperez@grupomainjobs.com": "Alicia Perez",
-    "amugica@grupomainjobs.com": "Ana Mugica",
-    "lgonzalez@grupomainjobs.com": "Lorena Gonzalez",
-    "iherreradiaz@eiposgrados.com": "Irene Herrera",
-    "pserrano@grupomainjobs.com": "Paloma Serrano",
-    "pcedeno@eiposgrados.com": "Priscila Cedeno",
-    "cheredia@eiposgrados.com": "Cristina Heredia",
-    "agarcia@grupomainjobs.com": "Angel Garcia",
-    "erueda@eiposgrados.com": "Estrella Rueda",
-    "kmoreno@eiposgrados.com": "Kika Moreno",
-    "vlopez@eiposgrados.com": "Victor Lopez",
-    "clobato@grupomainjobs.com": "Carmen Lobato",
-    "lsanchez@grupomainjobs.com": "Laly Sanchez",
+    "nrodriguez@grupomainjobs.com": "Nuria Rodriguez Barroso",
+    "aroldan@eiposgrados.com":       "Agata Roldan Rodriguez",
+    "aperez@grupomainjobs.com":      "Alicia Pérez Moreno",
+    "amugica@grupomainjobs.com":     "Ana Múgica Jiménez",
+    "lgonzalez@grupomainjobs.com":   "Lorena González Perich",
+    "iherreradiaz@eiposgrados.com":  "Irene Herrera",
+    "pserrano@grupomainjobs.com":    "Paloma Serrano",
+    "pcedeno@eiposgrados.com":       "Priscila Cedeño Loor",
+    "cheredia@eiposgrados.com":      "Cristina Heredia",
+    "agarcia@grupomainjobs.com":     "Ángel Garcia Martin",
+    "erueda@eiposgrados.com":        "Estrella Rueda Sanz",
+    "kmoreno@eiposgrados.com":       "Kika Moreno",
+    "vlopez@eiposgrados.com":        "Victor López Hernanz",
+    "clobato@grupomainjobs.com":     "Carmen Lobato Rosa",
+    "lsanchez@grupomainjobs.com":    "Laly Sánchez Arjona",
+    "cmoreno@grupomainjobs.com":     "Chelo Moreno Cabeza",
+    "marceiz@grupomainjobs.com":     "Miguel Arcéiz",
 }
 KNOWN_EMAILS = sorted(KNOWN_PEOPLE.keys())
 
@@ -62,8 +65,7 @@ def _check_graph_secrets() -> bool:
         _ = st.secrets["graph"]["client_secret"]
         _ = st.secrets["graph"]["from_email"]
     except Exception:
-        st.error("❌ Falta configuración en `st.secrets['graph']` "
-                 "(tenant_id, client_id, client_secret, from_email).")
+        st.error("❌ Falta configuración en st.secrets['graph'] (tenant_id, client_id, client_secret, from_email).")
         ok = False
     return ok
 
@@ -72,7 +74,6 @@ def get_access_token(force_renew: bool = False):
         tenant_id = st.secrets["graph"]["tenant_id"]
         client_id = st.secrets["graph"]["client_id"]
         client_secret = st.secrets["graph"]["client_secret"]
-
         authority = f"https://login.microsoftonline.com/{tenant_id}"
         scope = ["https://graph.microsoft.com/.default"]
 
@@ -133,68 +134,52 @@ def send_email_with_attachment(recipient_emails, subject, body_html, attachment_
             return False, "❌ No se pudo obtener el token de acceso"
 
         for attempt in range(max_attempts):
-            try:
-                status, text, reason = _post_graph_sendmail(from_email, email_data, token)
+            status, text, reason = _post_graph_sendmail(from_email, email_data, token)
 
+            if debug_mode:
+                with st.expander("🔍 Debug: Request/Response", expanded=False):
+                    st.write(f"**Intento:** {attempt + 1}/{max_attempts}")
+                    st.write(f"**Status Code:** {status} — {reason}")
+                    if text:
+                        try:
+                            st.json(json.loads(text))
+                        except Exception:
+                            st.code(text)
+
+            if status == 202:
+                return True, f"✅ Correo enviado exitosamente a {len(recipient_emails)} destinatario(s)"
+
+            if status == 401 and attempt < max_attempts - 1:
+                token = get_access_token(force_renew=True)
+                sleep_s = backoff_seconds[attempt]
+                if debug_mode and sleep_s:
+                    st.info(f"🔐 Token renovado. Reintentando en {sleep_s}s…")
+                if sleep_s:
+                    time.sleep(sleep_s)
+                continue
+
+            if (status == 429 or 500 <= status < 600) and attempt < max_attempts - 1:
+                sleep_s = backoff_seconds[attempt]
                 if debug_mode:
-                    with st.expander("🔍 Debug: Request/Response", expanded=False):
-                        st.write(f"**Intento:** {attempt + 1}/{max_attempts}")
-                        st.write(f"**Status Code:** {status} — {reason}")
-                        if text:
-                            try:
-                                st.json(json.loads(text))
-                            except Exception:
-                                st.code(text)
+                    st.info(f"⏳ {status} recibido. Reintentando en {sleep_s}s…")
+                if sleep_s:
+                    time.sleep(sleep_s)
+                continue
 
-                if status == 202:
-                    return True, f"✅ Correo enviado exitosamente a {len(recipient_emails)} destinatario(s)"
+            if status == 400:
+                try:
+                    detail = json.loads(text).get("error", {}).get("message", "")
+                except Exception:
+                    detail = text
+                return False, f"❌ Error 400 (Bad Request): {detail}"
 
-                if status == 401 and attempt < max_attempts - 1:
-                    token = get_access_token(force_renew=True)
-                    sleep_s = backoff_seconds[attempt]
-                    if debug_mode and sleep_s:
-                        st.info(f"🔐 Token renovado. Reintentando en {sleep_s}s…")
-                    if sleep_s:
-                        time.sleep(sleep_s)
-                    continue
+            if status == 403:
+                return False, ("❌ Error 403: Acceso denegado (Mail.Send, consentimiento admin, buzón válido). "
+                               f"Detalles: {text}")
 
-                if (status == 429 or 500 <= status < 600) and attempt < max_attempts - 1:
-                    sleep_s = backoff_seconds[attempt]
-                    if debug_mode:
-                        st.info(f"⏳ {status} recibido. Reintentando en {sleep_s}s…")
-                    if sleep_s:
-                        time.sleep(sleep_s)
-                    continue
+            return False, f"❌ Error al enviar correo. Código: {status}\nRespuesta: {text}"
 
-                if status == 400:
-                    try:
-                        detail = json.loads(text).get("error", {}).get("message", "")
-                    except Exception:
-                        detail = text
-                    return False, f"❌ Error 400 (Bad Request): {detail}"
-
-                if status == 403:
-                    return False, (
-                        "❌ Error 403: Acceso denegado.\n"
-                        "1) Permiso **Mail.Send (Application)**\n"
-                        "2) Consentimiento de admin\n"
-                        f"3) Buzón válido para {from_email}\n"
-                        f"Detalles: {text}"
-                    )
-
-                return False, f"❌ Error al enviar correo. Código: {status}\nRespuesta: {text}"
-
-            except requests.exceptions.Timeout:
-                if attempt < max_attempts - 1:
-                    sleep_s = backoff_seconds[attempt]
-                    if debug_mode:
-                        st.info(f"⏳ Timeout. Reintentando en {sleep_s}s…")
-                    if sleep_s:
-                        time.sleep(sleep_s)
-                    continue
-                return False, "❌ Timeout: La solicitud tardó demasiado."
-            except requests.exceptions.RequestException as e:
-                return False, f"❌ Error de red: {str(e)}"
+        return False, "❌ Error desconocido."
     except Exception as e:
         import traceback
         if debug_mode:
@@ -237,34 +222,16 @@ def validar_emails(emails_string):
     return True, emails_validos, f"✓ {len(emails_validos)} email(s) válido(s)"
 
 # =========================================================
-# HELPERS NOMBRE↔EXCEL (verde/rojo)
+# NORMALIZACIÓN NOMBRES
 # =========================================================
-CONNECTORS = {"de","del","la","las","los","y","da","das","do","dos"}
-
-def _norm_ascii(s: str) -> str:
-    s = str(s) if s is not None else ""
-    s = s.lower().strip()
-    s = unicodedata.normalize('NFD', s).encode('ascii', 'ignore').decode('utf-8')
+def _norm_name(s: str) -> str:
+    """minúsculas, sin tildes, espacios colapsados"""
+    if s is None:
+        return ""
+    s = str(s).strip().lower()
+    s = unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode("utf-8")
+    s = " ".join(s.split())
     return s
-
-def _tokens_name(s: str):
-    return [t for t in re.findall(r"[a-z]+", _norm_ascii(s)) if t not in CONNECTORS]
-
-def _name_in_series(name: str, series: pd.Series) -> bool:
-    if series is None or series.empty:
-        return False
-    name_norm = " ".join(_tokens_name(name))
-    if not name_norm:
-        return False
-    props = series.dropna().astype(str).map(_norm_ascii).tolist()
-    return any(name_norm in p for p in props) or any(
-        " ".join(_tokens_name(name)) == " ".join(_tokens_name(p)) for p in props
-    )
-
-def name_in_propietarios(full_name: str, df_leads: pd.DataFrame, df_sales: pd.DataFrame) -> bool:
-    serie_leads = df_leads["propietario"] if ("propietario" in df_leads.columns) else pd.Series(dtype=str)
-    serie_sales = df_sales["propietario"] if (not df_sales.empty and "propietario" in df_sales.columns) else pd.Series(dtype=str)
-    return _name_in_series(full_name, serie_leads) or _name_in_series(full_name, serie_sales)
 
 # =========================================================
 # APP
@@ -276,7 +243,7 @@ def app():
     st.session_state.setdefault("email_balloons_shown_for", None)
     st.session_state.setdefault("email_attempt_counter", 0)
 
-    width, height = get_screen_size()
+    width, _ = get_screen_size()
     is_mobile = width <= 400
 
     traducciones_meses = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
@@ -385,7 +352,6 @@ def app():
                 df_ventas["programa_final"] = df_ventas.apply(lambda r: r["programa_bruto"] if r.get("programa_categoria", "SIN CLASIFICAR") == "SIN CLASIFICAR" else r.get("programa_categoria"), axis=1)
             else:
                 df_ventas["programa_final"] = "(Desconocido)"
-            # Si hay alguna columna de fecha en ventas, añadimos mes/año:
             if any(c in df_ventas.columns for c in ["creado", "fecha", "fecha_creacion"]):
                 df_ventas = add_mes_cols(df_ventas)
         except Exception as e:
@@ -436,14 +402,9 @@ def app():
     fig_leads.update_layout(xaxis_title="Cantidad", yaxis_title=None, showlegend=False, height=420 if is_mobile else None)
     st.plotly_chart(fig_leads, use_container_width=True)
 
-    # ================= TABLAS =================
+    # ================= TABLAS (USADAS PARA EXPORTS) =================
     st.markdown("### Selecciona un Propietario:")
-    df_tablas_global = df.copy()
-    if mes_seleccionado != "Todos":
-        df_tablas_global = df_tablas_global[df_tablas_global["mes_anio"] == mes_seleccionado]
-    if programa_seleccionado != "Todos":
-        df_tablas_global = df_tablas_global[df_tablas_global["programa_final"] == programa_seleccionado]
-
+    df_tablas_global = df_filtrado.copy()  # 👈 Importante: solo el DF filtrado
     propietarios_tablas = ["Todos"] + sorted(df_tablas_global["propietario"].unique().tolist())
     propietario_tablas = st.selectbox("Propietario", propietarios_tablas, key="prop_tabs")
 
@@ -482,7 +443,7 @@ def app():
             if mes_seleccionado != "Todos":
                 ventas_tablas = ventas_tablas[ventas_tablas["mes_anio"] == mes_seleccionado]
             if programa_seleccionado != "Todos":
-                ventas_tablas = ventas_tablas[ventas_tablas["programa_final"] == mes_seleccionado] if False else ventas_tablas[ventas_tablas["programa_final"] == programa_seleccionado]
+                ventas_tablas = ventas_tablas[ventas_tablas["programa_final"] == programa_seleccionado]
             if propietario_tablas != "Todos" and "propietario" in ventas_tablas.columns:
                 ventas_tablas = ventas_tablas[ventas_tablas["propietario"] == propietario_tablas]
             origen_cols_posibles = ["origen", "origen de la venta", "origen venta", "source"]
@@ -502,7 +463,7 @@ def app():
             conteo_origen_v = pd.concat([pd.DataFrame([{"Origen": f"TOTAL — {propietario_tablas}", "Cantidad": total3}]), conteo_origen_v], ignore_index=True)
         st.dataframe(conteo_origen_v.style.background_gradient(cmap="Purples"), use_container_width=True)
 
-    # ================= EXPORT A EXCEL =================
+    # ================= EXPORT A EXCEL (SOLO EN BLANCO) =================
     def _find_col(cols, candidates): return next((c for c in candidates if c in cols), None)
 
     leads_detalle = df_tablas.copy()
@@ -569,15 +530,42 @@ def app():
             help="Descarga únicamente las filas en '(En Blanco)'."
         )
 
-    # ============= ENVÍO POR CORREO — SOLO ADMIN (multiselect CLIENTIFY) =============
+    # ================== PROPIETARIOS CON BLANCOS (FRANJA AMARILLA) ==================
+    # Conjuntos normalizados de propietarios con BLANCOS
+    props_prog_blank   = set(_norm_name(p) for p in hoja1["Propietario"].dropna().astype(str))  # Programa en blanco (Leads)
+    props_origen_blank = set(_norm_name(p) for p in hoja2["Propietario"].dropna().astype(str))  # Origen Lead en blanco (Leads)
+    props_vta_blank    = set(_norm_name(p) for p in hoja3["Propietario"].dropna().astype(str))  # Origen en blanco (Ventas)
+
+    # Unión: propietarios que NECESITAN actualización (aparecen en cualquier hoja en blanco)
+    props_need_update_norm = props_prog_blank | props_origen_blank | props_vta_blank
+
+    # Mapa normalizado de los nombres conocidos (para compararlos)
+    known_norm_map = {_norm_name(name): email for email, name in KNOWN_PEOPLE.items()}
+    known_norm_names = set(known_norm_map.keys())
+
+    # Lista amarilla = propietarios con blancos PERO que no están en KNOWN_PEOPLE
+    faltantes_norm = sorted(n for n in props_need_update_norm if n not in known_norm_names)
+
+    # Para mostrar “bonito” según aparece en el Excel (capitalización original):
+    norm_to_original = {}
+    for v in pd.concat([
+            hoja1.get("Propietario", pd.Series(dtype=str)).dropna().astype(str),
+            hoja2.get("Propietario", pd.Series(dtype=str)).dropna().astype(str),
+            hoja3.get("Propietario", pd.Series(dtype=str)).dropna().astype(str),
+        ], ignore_index=True).unique().tolist():
+        norm_to_original[_norm_name(v)] = v
+    faltantes_pretty = [norm_to_original.get(n, n) for n in faltantes_norm]
+
+    # ============= ENVÍO POR CORREO — ADMIN (multiselect + entrada manual) =============
     with col_email:
         es_admin = st.session_state.get('role') == 'admin'
         if es_admin:
             st.markdown("#### 📧 Enviar por correo")
             st.markdown(
                 "<div style='background:#e3f2fd;padding:10px;border-radius:8px;margin-bottom:10px;font-size:12px;'>"
-                "Selecciona ÚNICAMENTE de la lista CLIENTIFY. "
-                "El badge será <b>verde</b> si su nombre aparece en el Excel (propietario) y <b>rojo</b> si no.</div>",
+                "Selecciona de la lista CLIENTIFY o <b>añade correos manualmente</b> (coma / punto y coma). "
+                "Badge <b>verde</b>: el nombre está en el Excel (propietario, filtro actual); "
+                "<b>rojo</b>: no aparece. La franja <b>amarilla</b> muestra <u>propietarios con datos en blanco</u> sin correo registrado.</div>",
                 unsafe_allow_html=True
             )
 
@@ -590,23 +578,45 @@ def app():
                 options=KNOWN_EMAILS,
                 default=[],
                 format_func=_format_email_label,
-                help="La lista está restringida a los correos que nos has facilitado."
+                help="Lista restringida a correos proporcionados."
             )
 
-            # ------ Previsualización chips (escapando HTML) ------
+            # Entrada manual de correos
+            otros_emails_input = st.text_input(
+                "Añade otros correos (separados por , o ;):",
+                value="",
+                help="Solo dominios @eiposgrados.com y @grupomainjobs.com"
+            )
+
+            extra_validos = []
+            extra_error_msg = ""
+            if otros_emails_input.strip():
+                es_ok, lista, msg = validar_emails(otros_emails_input)
+                if not es_ok:
+                    extra_error_msg = msg
+                else:
+                    extra_validos = lista
+            if extra_error_msg:
+                st.error(extra_error_msg)
+
+            destinatarios_totales = sorted(set(seleccion_emails + extra_validos))
+
+            # Conjunto normalizado de propietarios del DF filtrado (para chips)
+            props_norm_df = set(_norm_name(v) for v in df_tablas_global["propietario"].dropna().astype(str).unique())
+
+            # Chips verde/rojo por presencia exacta normalizada en propietario (DF filtrado)
             def _chip_style(is_green: bool) -> str:
                 return ("background:#dcfce7;border:1px solid #16a34a;color:#065f46"
                         if is_green else
                         "background:#fee2e2;border:1px solid #ef4444;color:#991b1b")
 
             chips = []
-            for em in seleccion_emails:
-                nombre = KNOWN_PEOPLE.get(em, em)
-                in_excel = name_in_propietarios(nombre, df, df_ventas)
-
-                label_ui = _format_email_label(em)   # "Nombre <email>"
-                label_html = html.escape(label_ui)   # "Nombre &lt;email&gt;"
-
+            for em in destinatarios_totales:
+                # Si está en KNOWN_PEOPLE uso el nombre; si no, uso el propio correo como etiqueta
+                nombre = KNOWN_PEOPLE.get(em, None)
+                in_excel = (_norm_name(nombre) in props_norm_df) if nombre else False
+                label_ui = _format_email_label(em) if nombre else em
+                label_html = html.escape(label_ui)
                 chips.append(
                     f"<span style='display:inline-block;margin:3px 6px 0 0;padding:4px 8px;"
                     f"border-radius:8px;{_chip_style(in_excel)}'>{label_html}</span>"
@@ -614,6 +624,37 @@ def app():
             if chips:
                 st.markdown("<div>Previsualización:</div>" + "".join(chips), unsafe_allow_html=True)
 
+            # ======== FRANJA AMARILLA: PROPIETARIOS CON BLANCOS SIN CORREO ========
+            if faltantes_pretty:
+                st.markdown(
+                    "<div style='background:#fff8e1;border:1px solid #f59e0b;color:#92400e;"
+                    "padding:10px;border-radius:10px;margin-top:10px;'>"
+                    "<b>👤 Nombres con campos EN BLANCO (Programa / Origen Lead / Origen Venta) sin correo en la lista</b>"
+                    "</div>",
+                    unsafe_allow_html=True
+                )
+                chips_y = [
+                    f"<span style='display:inline-block;margin:4px 6px 0 0;padding:6px 10px;"
+                    f"border-radius:10px;background:#fef9c3;border:1px solid #f59e0b;color:#92400e'>{html.escape(n)}</span>"
+                    for n in faltantes_pretty
+                ]
+                st.markdown("".join(chips_y), unsafe_allow_html=True)
+
+                # Descarga lista
+                buf_falt = BytesIO()
+                pd.DataFrame({"Propietario (con blancos, sin correo)": faltantes_pretty}).to_excel(
+                    buf_falt, index=False, sheet_name="faltan_correos"
+                )
+                st.download_button(
+                    "⬇️ Descargar lista de propietarios (con blancos) sin correo",
+                    data=buf_falt.getvalue(),
+                    file_name="propietarios_con_blancos_sin_correo.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            else:
+                st.info("No hay propietarios con campos en blanco sin correo para el filtro actual.")
+
+            # ------------- Envío por correo -------------
             debug_mode = st.checkbox("🔍 Modo Debug (mostrar detalles técnicos)", value=False)
             clicked = st.button("📤 Enviar Excel por Outlook", use_container_width=True, type="primary")
 
@@ -625,11 +666,11 @@ def app():
                 st.session_state["email_last_attempt_id"] = current_attempt
                 st.info(f"🚀 Envío iniciado… (intento #{current_attempt})")
 
-                if not seleccion_emails:
+                if not destinatarios_totales:
                     st.session_state["email_last_ok"] = False
-                    st.session_state["email_last_msg"] = "❌ Selecciona al menos un destinatario"
+                    st.session_state["email_last_msg"] = "❌ Selecciona o añade al menos un destinatario"
                 else:
-                    joined_for_validation = ", ".join(seleccion_emails)
+                    joined_for_validation = ", ".join(destinatarios_totales)
                     es_valido, emails_validos, mensaje = validar_emails(joined_for_validation)
                     if not es_valido:
                         st.session_state["email_last_ok"] = False
@@ -644,11 +685,12 @@ def app():
                                 asunto = f"Reporte de Leads en Blanco - {fecha_actual}"
 
                                 def _badge(email: str) -> str:
-                                    nombre = KNOWN_PEOPLE.get(email, email)
-                                    ok = name_in_propietarios(nombre, df, df_ventas)
-                                    style = _chip_style(ok)
-                                    label_ui = _format_email_label(email)
-                                    safe = html.escape(label_ui)  # 👈 evita InvalidCharacterError
+                                    nombre = KNOWN_PEOPLE.get(email, None)
+                                    ok = (_norm_name(nombre) in props_norm_df) if nombre else False
+                                    style = ("background:#dcfce7;border:1px solid #16a34a;color:#065f46"
+                                             if ok else "background:#fee2e2;border:1px solid #ef4444;color:#991b1b")
+                                    label_ui = _format_email_label(email) if nombre else email
+                                    safe = html.escape(label_ui)
                                     return (f"<span style='display:inline-block;margin:2px 0;padding:2px 6px;"
                                             f"border-radius:6px;{style}'>{safe}</span>")
 
