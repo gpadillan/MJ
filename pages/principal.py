@@ -953,4 +953,3 @@ def principal_page():
                                 else:
                                     st.error(mensaje)
             # ======== FIN envío por correo ========
-

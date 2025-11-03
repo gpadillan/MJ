@@ -207,16 +207,13 @@ def vista_clientes_pendientes():
         if total != 0:
             tarjetas.append(("Total " + str(y), total, ncli))
 
-    # Año actual → tres particiones:
-    #   1) "Pendiente actual" = enero..mes-1
-    #   2) "Pendiente {MesActual}" = sólo mes actual (card roja clara)
-    #   3) "Pendiente {AñoActual} futuro" = mes+1..diciembre
+    # Año actual → tres particiones
     if año_actual in all_years_present:
         cols_mes_año = {m: f"{m} {año_actual}" for m in meses}
         cols_existentes = set(df_pendiente.columns)
 
         # 1) enero..mes-1
-        meses_pasados = meses[:max(mes_actual - 1, 0)]  # vacío si enero
+        meses_pasados = meses[:max(mes_actual - 1, 0)]
         cols_pasados = [cols_mes_año[m] for m in meses_pasados if cols_mes_año[m] in cols_existentes]
 
         # 2) mes actual
@@ -224,27 +221,23 @@ def vista_clientes_pendientes():
         cols_mes_actual = [col_mes_actual] if col_mes_actual in cols_existentes else []
 
         # 3) mes+1..diciembre
-        meses_fut = meses[mes_actual:]  # desde el siguiente (mes_actual es 1-based; slicing ya toma el siguiente índice)
+        meses_fut = meses[mes_actual:]
         cols_futuro = [cols_mes_año[m] for m in meses_fut if cols_mes_año[m] in cols_existentes]
 
-        # Si no hay columnas mensuales y existe Total año → cae a "Pendiente actual" con Total año
         tiene_mensuales_actual = any(c.endswith(f" {año_actual}") for c in cols_existentes)
         if not tiene_mensuales_actual and f"Total {año_actual}" in cols_existentes:
             total, ncli = _sum_and_clients([f"Total {año_actual}"])
             if total != 0:
                 tarjetas.append(("Pendiente actual", total, ncli))
         else:
-            # 1) Pasados (enero..mes-1)
             if cols_pasados:
                 total_pas, ncli_pas = _sum_and_clients(cols_pasados)
                 if total_pas != 0:
                     tarjetas.append(("Pendiente actual", total_pas, ncli_pas))
-            # 2) Mes actual (card roja)
             if cols_mes_actual:
                 total_act, ncli_act = _sum_and_clients(cols_mes_actual)
                 if total_act != 0:
                     tarjetas.append((f"Pendiente {mes_actual_nombre}", total_act, ncli_act, "red"))
-            # 3) Futuro (mes+1..dic)
             if cols_futuro:
                 total_fut, ncli_fut = _sum_and_clients(cols_futuro)
                 if total_fut != 0:
@@ -270,7 +263,6 @@ def vista_clientes_pendientes():
                 if i + j >= len(tarjetas):
                     break
                 item = tarjetas[i + j]
-                # item puede ser (title, amount, ncli) o (title, amount, ncli, variant)
                 if len(item) == 4:
                     title, amount, ncli, variant = item
                 else:
@@ -285,14 +277,14 @@ def vista_clientes_pendientes():
     # Suma de importes de todas las tarjetas
     suma_tarjetas = sum(item[1] for item in tarjetas)
 
-    # Pendiente con deuda = "Total YYYY" + "Pendiente actual" + "Pendiente {MesActual}"
+    # Pendiente con deuda
     pendiente_con_deuda = 0.0
     for item in tarjetas:
         title = item[0]
         if title.startswith("Total ") or title == "Pendiente actual" or title == f"Pendiente {mes_actual_nombre}":
             pendiente_con_deuda += item[1]
 
-    # Pendiente futuro = resto de "Pendiente ..." que no sea actual ni mes actual
+    # Pendiente futuro
     pendiente_futuro = 0.0
     for item in tarjetas:
         title = item[0]
@@ -310,89 +302,102 @@ def vista_clientes_pendientes():
     st.session_state["total_clientes_unicos"] = num_clientes_total
     st.session_state["total_deuda_acumulada"] = suma_tarjetas
 
-    # ---------------- DETALLE: TABLA SIMPLE (con filtros) ----------------
+    # ---------------- DETALLE: TABLA PLANA (todas las columnas solicitadas) ----------------
     st.markdown("### 📋 Detalle de deuda por cliente")
 
+    # Normalización de posibles nombres para email/teléfono
     email_col = next((c for c in ["Email", "Correo", "E-mail"] if c in df_pendiente.columns), None)
     tel_col   = next((c for c in ["Teléfono", "Telefono", "Tel"] if c in df_pendiente.columns), None)
 
-    columnas_info = ["Cliente", "Proyecto", "Curso", "Comercial", "Forma Pago"]
-    if email_col: columnas_info.append(email_col)
-    if tel_col:   columnas_info.append(tel_col)
+    # Columnas base pedidas (se tomarán solo si existen)
+    base_cols = [
+        "ID Factura","Proyecto","Curso","Cliente",
+        "Provincia","Localidad","Nacionalidad","País",
+        "Nº Factura","Importe Total Factura","Fecha Factura",
+        "Fecha Inicio","Fecha Fin","Forma Pago","Estado",
+        "Comercial","Observaciones","Cobrados mes actual",
+        "Pendientes mes actual","Fecha estimada mes actual","Periodo"
+    ]
 
-    # Columnas numéricas candidatas
-    columnas_sumatorias = []
-    columnas_sumatorias += [f"Total {a}" for a in range(2018, 2022) if f"Total {a}" in df_pendiente.columns]
-    columnas_sumatorias += cols_22_25
-    columnas_sumatorias = [c for c in columnas_sumatorias if c in df_pendiente.columns]
+    # Insertamos dinámicos equivalentes para Email/Teléfono si existen
+    if email_col: base_cols.insert(4, email_col)  # después de "Cliente"
+    if tel_col:   base_cols.insert(5 if email_col else 4, tel_col)
 
-    if columnas_sumatorias:
-        columnas_finales = list(dict.fromkeys(columnas_info + columnas_sumatorias))
-        df_detalle = df_pendiente[columnas_finales].copy()
-        df_detalle[columnas_sumatorias] = df_detalle[columnas_sumatorias].apply(pd.to_numeric, errors="coerce").fillna(0)
-        df_detalle["Total deuda"] = df_detalle[columnas_sumatorias].sum(axis=1)
+    # Columnas mes-a-mes y totales por año 2018-2029
+    meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio",
+             "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
 
-        # Agrupar por cliente
-        def _join_unique(series):
-            vals = [str(v).strip() for v in series if pd.notna(v) and str(v).strip()]
-            return ", ".join(sorted(set(vals)))
+    mensual_cols = []
+    total_cols   = []
+    for year in range(2018, 2030):  # 2018..2029 inclusive
+        total_name = f"Total {year}"
+        if total_name in df_pendiente.columns:
+            total_cols.append(total_name)
+        for m in meses:
+            col = f"{m} {year}"
+            if col in df_pendiente.columns:
+                mensual_cols.append(col)
 
-        agg_dict = {
-            "Proyecto": _join_unique,
-            "Curso": _join_unique,
-            "Comercial": _join_unique,
-            "Forma Pago": lambda x: ", ".join(sorted(set(str(i) for i in x if pd.notna(i) and str(i).strip()))),
-            "Total deuda": "sum",
-        }
-        if email_col:
-            agg_dict[email_col] = _join_unique
-        if tel_col:
-            agg_dict[tel_col] = _join_unique
+    # Construimos la lista final en el orden solicitado
+    desired_cols = base_cols + mensual_cols + total_cols
 
-        df_detalle = (
-            df_detalle.groupby(["Cliente"], as_index=False)
-            .agg(agg_dict)
-            .sort_values(by="Total deuda", ascending=False)
-            .reset_index(drop=True)
-        )
+    # Nos quedamos solo con las que existan realmente para evitar KeyError
+    final_cols = [c for c in desired_cols if c in df_pendiente.columns]
 
-        # Ocultar filas con "Total deuda" exactamente 0
-        df_detalle = df_detalle[df_detalle["Total deuda"] > 0]
+    if not final_cols:
+        st.info("No se han encontrado en el archivo las columnas solicitadas para el detalle.")
+        return
 
-        # ===== Filtros ligeros =====
-        with st.expander("🔎 Filtros del detalle"):
-            col_f1, col_f2, col_f3 = st.columns([1.2, 1, 1])
-            texto_cliente = col_f1.text_input("Buscar cliente contiene...", "")
-            lista_comerciales = sorted({c.strip() for s in df_detalle["Comercial"].dropna().astype(str)
-                                        for c in s.split(",") if c.strip()})
-            sel_comerciales = col_f2.multiselect("Comercial", options=lista_comerciales)
-            max_total = float(df_detalle["Total deuda"].max()) if not df_detalle.empty else 0.0
-            rango = col_f3.slider("Rango Total deuda (€)", 0.0, max_total, (0.0, max_total), step=max(1.0, max_total/100))
+    df_detalle = df_pendiente[final_cols].copy()
 
-        if texto_cliente:
-            df_detalle = df_detalle[df_detalle["Cliente"].str.contains(texto_cliente, case=False, na=False)]
-        if sel_comerciales:
-            df_detalle = df_detalle[df_detalle["Comercial"].apply(
-                lambda s: any(c in [x.strip() for x in str(s).split(",")] for c in sel_comerciales)
-            )]
-        if rango:
-            df_detalle = df_detalle[(df_detalle["Total deuda"] >= rango[0]) & (df_detalle["Total deuda"] <= rango[1])]
+    # Detectar columnas numéricas (mensuales + totales + Importe Total Factura si existe) y convertir
+    numeric_candidates = set(mensual_cols + total_cols)
+    if "Importe Total Factura" in df_detalle.columns:
+        numeric_candidates.add("Importe Total Factura")
+    numeric_cols_present = [c for c in numeric_candidates if c in df_detalle.columns]
+    if numeric_cols_present:
+        df_detalle[numeric_cols_present] = df_detalle[numeric_cols_present].apply(pd.to_numeric, errors="coerce").fillna(0)
 
-        # Mostrar tabla nativa con formato €
-        column_config = {
-            "Total deuda": st.column_config.NumberColumn("Total deuda", format="€ %.2f", help="Suma de todas las columnas de deuda seleccionadas"),
-        }
-        st.dataframe(
-            df_detalle,
-            use_container_width=True,
-            hide_index=True,
-            column_config=column_config
-        )
-
-        resultado_exportacion["ResumenClientes"] = df_detalle
-        st.session_state["detalle_filtrado"] = df_detalle
+    # Total deuda por fila (suma de todos los meses+totales presentes)
+    cols_suma_fila = [c for c in (mensual_cols + total_cols) if c in df_detalle.columns]
+    if cols_suma_fila:
+        df_detalle["Total deuda (fila)"] = df_detalle[cols_suma_fila].sum(axis=1)
     else:
-        st.info("No hay columnas seleccionadas o disponibles para calcular el detalle.")
+        df_detalle["Total deuda (fila)"] = 0.0
+
+    # ===== Filtros ligeros =====
+    with st.expander("🔎 Filtros del detalle"):
+        col_f1, col_f2, col_f3 = st.columns([1.2, 1, 1])
+        texto_cliente = col_f1.text_input("Buscar cliente contiene...", "")
+        lista_comerciales = sorted(df_detalle["Comercial"].dropna().astype(str).unique()) if "Comercial" in df_detalle.columns else []
+        sel_comerciales = col_f2.multiselect("Comercial", options=lista_comerciales)
+        max_total = float(df_detalle["Total deuda (fila)"].max()) if not df_detalle.empty else 0.0
+        rango = col_f3.slider("Rango Total deuda (€)", 0.0, max_total, (0.0, max_total), step=max(1.0, max_total/100 if max_total else 1.0))
+
+    if texto_cliente and "Cliente" in df_detalle.columns:
+        df_detalle = df_detalle[df_detalle["Cliente"].str.contains(texto_cliente, case=False, na=False)]
+    if sel_comerciales and "Comercial" in df_detalle.columns:
+        df_detalle = df_detalle[df_detalle["Comercial"].isin(sel_comerciales)]
+    if rango:
+        df_detalle = df_detalle[(df_detalle["Total deuda (fila)"] >= rango[0]) & (df_detalle["Total deuda (fila)"] <= rango[1])]
+
+    # Configuración de formato €
+    column_config = {
+        "Total deuda (fila)": st.column_config.NumberColumn("Total deuda (fila)", format="€ %.2f"),
+    }
+    for c in numeric_cols_present:
+        column_config[c] = st.column_config.NumberColumn(c, format="€ %.2f")
+
+    st.dataframe(
+        df_detalle,
+        use_container_width=True,
+        hide_index=True,
+        column_config=column_config
+    )
+
+    # Guardamos para exportación
+    resultado_exportacion["DetalleFilas"] = df_detalle.copy()
+    st.session_state["detalle_filtrado"] = df_detalle
 
     st.markdown("---")
 
@@ -487,6 +492,9 @@ def render():
         if "Totales_Años_Meses" in resultado_exportacion:
             html_buffer.write("<h2>Totales por año (deuda anual)</h2>")
             html_buffer.write(resultado_exportacion["Totales_Años_Meses"].to_html(index=False))
+        if "DetalleFilas" in resultado_exportacion:
+            html_buffer.write("<h2>Detalle de deuda por cliente (filas)</h2>")
+            html_buffer.write(resultado_exportacion["DetalleFilas"].to_html(index=False))
         html_buffer.write("</body></html>")
         st.download_button(
             label="🌐 Descargar reporte HTML completo",

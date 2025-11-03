@@ -11,8 +11,8 @@ import requests
 import msal
 import re
 import json
-import copy
 import time  # backoff y pausas
+import html  # 👈 para escapar etiquetas en chips/badges
 
 # =========================
 # CONFIG BÁSICA Y RUTAS
@@ -29,6 +29,28 @@ MES_COLORS_BAR = {
 USE_SAME_COLORS_FOR_CARDS = False
 CARDS_LIGHTEN_FACTOR = 0.83
 
+# =========================
+# LISTA CLIENTIFY (FIJA)
+# =========================
+KNOWN_PEOPLE = {
+    "nrodriguez@grupomainjobs.com": "Nuria Rodriguez",
+    "aroldan@eiposgrados.com": "Agata Roldan",
+    "aperez@grupomainjobs.com": "Alicia Perez",
+    "amugica@grupomainjobs.com": "Ana Mugica",
+    "lgonzalez@grupomainjobs.com": "Lorena Gonzalez",
+    "iherreradiaz@eiposgrados.com": "Irene Herrera",
+    "pserrano@grupomainjobs.com": "Paloma Serrano",
+    "pcedeno@eiposgrados.com": "Priscila Cedeno",
+    "cheredia@eiposgrados.com": "Cristina Heredia",
+    "agarcia@grupomainjobs.com": "Angel Garcia",
+    "erueda@eiposgrados.com": "Estrella Rueda",
+    "kmoreno@eiposgrados.com": "Kika Moreno",
+    "vlopez@eiposgrados.com": "Victor Lopez",
+    "clobato@grupomainjobs.com": "Carmen Lobato",
+    "lsanchez@grupomainjobs.com": "Laly Sanchez",
+}
+KNOWN_EMAILS = sorted(KNOWN_PEOPLE.keys())
+
 # =========================================================
 #  UTILIDADES GRAPH (TOKEN + ENVÍO CON REINTENTOS)
 # =========================================================
@@ -39,14 +61,13 @@ def _check_graph_secrets() -> bool:
         _ = st.secrets["graph"]["client_id"]
         _ = st.secrets["graph"]["client_secret"]
         _ = st.secrets["graph"]["from_email"]
-    except Exception as e:
+    except Exception:
         st.error("❌ Falta configuración en `st.secrets['graph']` "
                  "(tenant_id, client_id, client_secret, from_email).")
         ok = False
     return ok
 
 def get_access_token(force_renew: bool = False):
-    """Obtiene token con Client Credentials. Si force_renew, ignora cache."""
     try:
         tenant_id = st.secrets["graph"]["tenant_id"]
         client_id = st.secrets["graph"]["client_id"]
@@ -81,7 +102,6 @@ def _post_graph_sendmail(from_email: str, payload: dict, token: str, timeout_sec
     return resp.status_code, resp.text, resp.reason
 
 def send_email_with_attachment(recipient_emails, subject, body_html, attachment_bytes, attachment_name, debug_mode=True):
-    """Envía correo por Graph con reintentos/backoff y renovación de token."""
     if not _check_graph_secrets():
         return False, "Faltan secrets de Graph."
 
@@ -112,12 +132,9 @@ def send_email_with_attachment(recipient_emails, subject, body_html, attachment_
         if not token:
             return False, "❌ No se pudo obtener el token de acceso"
 
-        last_status, last_text, last_reason = None, None, None
-
         for attempt in range(max_attempts):
             try:
                 status, text, reason = _post_graph_sendmail(from_email, email_data, token)
-                last_status, last_text, last_reason = status, text, reason
 
                 if debug_mode:
                     with st.expander("🔍 Debug: Request/Response", expanded=False):
@@ -200,29 +217,59 @@ def validar_emails(emails_string):
         return False, [], "No se encontraron emails válidos"
 
     patron_email = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    dominio_requerido = "@eiposgrados.com"
+    dominios_permitidos = {"@eiposgrados.com", "@grupomainjobs.com"}
 
     emails_invalidos, emails_dominio_incorrecto, emails_validos = [], [], []
     for email in emails:
         if not re.match(patron_email, email):
             emails_invalidos.append(email)
-        elif not email.endswith(dominio_requerido):
+        elif not any(email.endswith(d) for d in dominios_permitidos):
             emails_dominio_incorrecto.append(email)
         else:
             emails_validos.append(email)
 
     errores = []
     if emails_invalidos: errores.append(f"Formato inválido: {', '.join(emails_invalidos)}")
-    if emails_dominio_incorrecto: errores.append(f"Dominio incorrecto (debe ser @eiposgrados.com): {', '.join(emails_dominio_incorrecto)}")
+    if emails_dominio_incorrecto: errores.append(
+        "Dominio incorrecto (permitidos: @eiposgrados.com, @grupomainjobs.com): " + ", ".join(emails_dominio_incorrecto)
+    )
     if errores: return False, [], " | ".join(errores)
     return True, emails_validos, f"✓ {len(emails_validos)} email(s) válido(s)"
+
+# =========================================================
+# HELPERS NOMBRE↔EXCEL (verde/rojo)
+# =========================================================
+CONNECTORS = {"de","del","la","las","los","y","da","das","do","dos"}
+
+def _norm_ascii(s: str) -> str:
+    s = str(s) if s is not None else ""
+    s = s.lower().strip()
+    s = unicodedata.normalize('NFD', s).encode('ascii', 'ignore').decode('utf-8')
+    return s
+
+def _tokens_name(s: str):
+    return [t for t in re.findall(r"[a-z]+", _norm_ascii(s)) if t not in CONNECTORS]
+
+def _name_in_series(name: str, series: pd.Series) -> bool:
+    if series is None or series.empty:
+        return False
+    name_norm = " ".join(_tokens_name(name))
+    if not name_norm:
+        return False
+    props = series.dropna().astype(str).map(_norm_ascii).tolist()
+    return any(name_norm in p for p in props) or any(
+        " ".join(_tokens_name(name)) == " ".join(_tokens_name(p)) for p in props
+    )
+
+def name_in_propietarios(full_name: str, df_leads: pd.DataFrame, df_sales: pd.DataFrame) -> bool:
+    serie_leads = df_leads["propietario"] if ("propietario" in df_leads.columns) else pd.Series(dtype=str)
+    serie_sales = df_sales["propietario"] if (not df_sales.empty and "propietario" in df_sales.columns) else pd.Series(dtype=str)
+    return _name_in_series(full_name, serie_leads) or _name_in_series(full_name, serie_sales)
 
 # =========================================================
 # APP
 # =========================================================
 def app():
-    # ---------- Estado persistente mínimo para el envío ----------
-    st.session_state.setdefault("email_destinatarios_val", "")
     st.session_state.setdefault("email_last_ok", None)
     st.session_state.setdefault("email_last_msg", "")
     st.session_state.setdefault("email_last_attempt_id", None)
@@ -338,7 +385,9 @@ def app():
                 df_ventas["programa_final"] = df_ventas.apply(lambda r: r["programa_bruto"] if r.get("programa_categoria", "SIN CLASIFICAR") == "SIN CLASIFICAR" else r.get("programa_categoria"), axis=1)
             else:
                 df_ventas["programa_final"] = "(Desconocido)"
-            df_ventas = add_mes_cols(df_ventas)
+            # Si hay alguna columna de fecha en ventas, añadimos mes/año:
+            if any(c in df_ventas.columns for c in ["creado", "fecha", "fecha_creacion"]):
+                df_ventas = add_mes_cols(df_ventas)
         except Exception as e:
             ventas_ok = False
             st.warning(f"⚠️ No se pudo leer ventas.xlsx: {e}")
@@ -462,11 +511,11 @@ def app():
     origen_col_L = _find_col(leads_detalle.columns, ["origen", "origen lead"])
 
     leads_export_cols = pd.DataFrame({
-        "Propietario": leads_detalle.get("propietario", pd.Series(dtype=str)),
-        "Nombre": leads_detalle.get(nombre_col_L, pd.Series(dtype=str)),
-        "Apellidos": leads_detalle.get(apell_col_L, pd.Series(dtype=str)),
-        "Programa": leads_detalle.get("programa_final", pd.Series(dtype=str)),
-        "Origen Lead": leads_detalle.get(origen_col_L, pd.Series([""]*len(leads_detalle))) if origen_col_L else pd.Series([""]*len(leads_detalle)),
+      "Propietario": leads_detalle.get("propietario", pd.Series(dtype=str)),
+      "Nombre": leads_detalle.get(nombre_col_L, pd.Series(dtype=str)),
+      "Apellidos": leads_detalle.get(apell_col_L, pd.Series(dtype=str)),
+      "Programa": leads_detalle.get("programa_final", pd.Series(dtype=str)),
+      "Origen Lead": leads_detalle.get(origen_col_L, pd.Series([""]*len(leads_detalle))) if origen_col_L else pd.Series([""]*len(leads_detalle)),
     })
     leads_export_cols["Programa"] = _to_blank_label(leads_export_cols["Programa"])
     leads_export_cols["Origen Lead"] = _to_blank_label(leads_export_cols["Origen Lead"])
@@ -487,11 +536,11 @@ def app():
     origen_col_V = _find_col(ventas_detalle.columns, ["origen", "origen de la venta", "origen venta", "source"])
 
     ventas_export_cols = pd.DataFrame({
-        "Propietario": ventas_detalle.get("propietario", pd.Series(dtype=str)),
-        "Nombre": ventas_detalle.get(nombre_col_V, pd.Series(dtype=str)),
-        "Apellidos": ventas_detalle.get(apell_col_V, pd.Series(dtype=str)),
-        "Programa": ventas_detalle.get("programa_final", pd.Series(dtype=str)),
-        "Origen": ventas_detalle.get(origen_col_V, pd.Series([""]*len(ventas_detalle))) if origen_col_V else pd.Series([""]*len(ventas_detalle))
+      "Propietario": ventas_detalle.get("propietario", pd.Series(dtype=str)),
+      "Nombre": ventas_detalle.get(nombre_col_V, pd.Series(dtype=str)),
+      "Apellidos": ventas_detalle.get(apell_col_V, pd.Series(dtype=str)),
+      "Programa": ventas_detalle.get("programa_final", pd.Series(dtype=str)),
+      "Origen": ventas_detalle.get(origen_col_V, pd.Series([""]*len(ventas_detalle))) if origen_col_V else pd.Series([""]*len(ventas_detalle))
     })
     ventas_export_cols["Origen"] = _to_blank_label(ventas_export_cols["Origen"])
 
@@ -520,34 +569,55 @@ def app():
             help="Descarga únicamente las filas en '(En Blanco)'."
         )
 
-    # ============= ENVÍO POR CORREO — SOLO ADMIN =============
+    # ============= ENVÍO POR CORREO — SOLO ADMIN (multiselect CLIENTIFY) =============
     with col_email:
         es_admin = st.session_state.get('role') == 'admin'
         if es_admin:
             st.markdown("#### 📧 Enviar por correo")
             st.markdown(
                 "<div style='background:#e3f2fd;padding:10px;border-radius:8px;margin-bottom:10px;font-size:12px;'>"
-                "💡 <strong>Formato:</strong> usa correos <code>@eiposgrados.com</code> separados por comas o punto y coma."
-                "</div>",
+                "Selecciona ÚNICAMENTE de la lista CLIENTIFY. "
+                "El badge será <b>verde</b> si su nombre aparece en el Excel (propietario) y <b>rojo</b> si no.</div>",
                 unsafe_allow_html=True
             )
 
-            destinatarios_input = st.text_area(
-                "Email(s) destinatario(s):",
-                value=st.session_state["email_destinatarios_val"],
-                placeholder="mremedios@eiposgrados.com, gpadilla@eiposgrados.com",
-                height=80,
-                help="Separa múltiples emails con comas (,) o punto y coma (;)",
-                key="email_textarea"
+            def _format_email_label(email: str) -> str:
+                name = KNOWN_PEOPLE.get(email, "")
+                return f"{name} <{email}>" if name else email
+
+            seleccion_emails = st.multiselect(
+                "Selecciona destinatarios (CLIENTIFY):",
+                options=KNOWN_EMAILS,
+                default=[],
+                format_func=_format_email_label,
+                help="La lista está restringida a los correos que nos has facilitado."
             )
-            st.session_state["email_destinatarios_val"] = destinatarios_input
 
-            debug_mode = st.checkbox("🔍 Modo Debug (mostrar detalles técnicos)", value=False, key="debug_checkbox")
+            # ------ Previsualización chips (escapando HTML) ------
+            def _chip_style(is_green: bool) -> str:
+                return ("background:#dcfce7;border:1px solid #16a34a;color:#065f46"
+                        if is_green else
+                        "background:#fee2e2;border:1px solid #ef4444;color:#991b1b")
 
-            clicked = st.button("📤 Enviar Excel por Outlook", use_container_width=True, type="primary", key="send_button")
+            chips = []
+            for em in seleccion_emails:
+                nombre = KNOWN_PEOPLE.get(em, em)
+                in_excel = name_in_propietarios(nombre, df, df_ventas)
+
+                label_ui = _format_email_label(em)   # "Nombre <email>"
+                label_html = html.escape(label_ui)   # "Nombre &lt;email&gt;"
+
+                chips.append(
+                    f"<span style='display:inline-block;margin:3px 6px 0 0;padding:4px 8px;"
+                    f"border-radius:8px;{_chip_style(in_excel)}'>{label_html}</span>"
+                )
+            if chips:
+                st.markdown("<div>Previsualización:</div>" + "".join(chips), unsafe_allow_html=True)
+
+            debug_mode = st.checkbox("🔍 Modo Debug (mostrar detalles técnicos)", value=False)
+            clicked = st.button("📤 Enviar Excel por Outlook", use_container_width=True, type="primary")
 
             if clicked:
-                # Nuevo intento
                 st.session_state["email_attempt_counter"] += 1
                 current_attempt = st.session_state["email_attempt_counter"]
                 st.session_state["email_last_ok"] = None
@@ -555,11 +625,12 @@ def app():
                 st.session_state["email_last_attempt_id"] = current_attempt
                 st.info(f"🚀 Envío iniciado… (intento #{current_attempt})")
 
-                if not destinatarios_input:
+                if not seleccion_emails:
                     st.session_state["email_last_ok"] = False
-                    st.session_state["email_last_msg"] = "❌ Por favor ingresa al menos un email"
+                    st.session_state["email_last_msg"] = "❌ Selecciona al menos un destinatario"
                 else:
-                    es_valido, emails_validos, mensaje = validar_emails(destinatarios_input)
+                    joined_for_validation = ", ".join(seleccion_emails)
+                    es_valido, emails_validos, mensaje = validar_emails(joined_for_validation)
                     if not es_valido:
                         st.session_state["email_last_ok"] = False
                         st.session_state["email_last_msg"] = f"❌ {mensaje}"
@@ -571,8 +642,18 @@ def app():
                             else:
                                 fecha_actual = datetime.now().strftime("%d/%m/%Y")
                                 asunto = f"Reporte de Leads en Blanco - {fecha_actual}"
-                                destinatarios_html = "<br/>".join([f"• {email}" for email in emails_validos])
-                                # ====== MENSAJE HTML ACTUALIZADO (más sutil) ======
+
+                                def _badge(email: str) -> str:
+                                    nombre = KNOWN_PEOPLE.get(email, email)
+                                    ok = name_in_propietarios(nombre, df, df_ventas)
+                                    style = _chip_style(ok)
+                                    label_ui = _format_email_label(email)
+                                    safe = html.escape(label_ui)  # 👈 evita InvalidCharacterError
+                                    return (f"<span style='display:inline-block;margin:2px 0;padding:2px 6px;"
+                                            f"border-radius:6px;{style}'>{safe}</span>")
+
+                                destinatarios_html = "<br/>".join(_badge(email) for email in emails_validos)
+
                                 cuerpo_html = f"""
                                 <html>
                                 <head>
@@ -606,17 +687,13 @@ def app():
                                     <li><strong>Leads-Venta (Origen en blanco):</strong> {len(hoja3)} registros</li>
                                   </ul>
 
-                                  <p><strong>Total pendientes:</strong> {len(hoja1)+len(hoja2)+len(hoja3)}</p>
+                                  <p><strong>Enviado a:</strong><br/>{destinatarios_html}</p>
 
                                   <hr/>
-
                                   <p class="meta"><em>Correo enviado desde la aplicación Streamlit — Grupo Mainjobs.</em></p>
-
-                                  <p><strong>Enviado a:</strong><br/>{destinatarios_html}</p>
                                 </body>
                                 </html>
                                 """
-                                # ====================================================
 
                                 exito, mensaje_resultado = send_email_with_attachment(
                                     recipient_emails=emails_validos,
@@ -630,7 +707,7 @@ def app():
                                 st.session_state["email_last_msg"] = mensaje_resultado
                                 st.session_state["email_last_attempt_id"] = current_attempt
 
-            # Mostrar resultado del último intento + globos solo si hubo 202 (solo admin ve esto)
+            # Resultado del envío
             last_attempt = st.session_state.get("email_last_attempt_id")
             last_ok = st.session_state.get("email_last_ok")
             last_msg = st.session_state.get("email_last_msg")
@@ -645,7 +722,6 @@ def app():
                     st.info("💡 Si no llega a ciertos destinatarios, puede ser política de Exchange/antispam.")
                 else:
                     st.error(last_msg)
-        # Si NO es admin: no mostramos nada aquí (no se renderiza la sección de correo)
 
     # ================= TARJETAS POR PROPIETARIO =================
     st.subheader("Desglose por Propietario")
