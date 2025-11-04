@@ -585,7 +585,7 @@ def app():
         norm_to_original[_norm_name(v)] = v
     faltantes_pretty = [norm_to_original.get(n, n) for n in faltantes_norm]
 
-    # ============= ENVÍO POR CORREO — ADMIN =============
+    # ============= ENVÍO POR CORREO — ADMIN (chips 3 estados) =============
     with col_email:
         es_admin = st.session_state.get('role') == 'admin'
         if es_admin:
@@ -593,8 +593,10 @@ def app():
             st.markdown(
                 "<div style='background:#e3f2fd;padding:10px;border-radius:8px;margin-bottom:10px;font-size:12px;'>"
                 "Selecciona de la lista CLIENTIFY o <b>añade correos manualmente</b> (coma / punto y coma). "
-                "Badge <b>verde</b>: el nombre está en el Excel (propietario, filtro actual); "
-                "<b>rojo</b>: no aparece. La franja <b>amarilla</b> muestra <u>propietarios con datos en blanco</u> sin correo registrado.</div>",
+                "🟩 <b>pendiente</b> (con blancos) · "
+                "🌸 <b>presente sin pendientes</b> · "
+                "🟥 <b>no encontrado</b>."
+                "</div>",
                 unsafe_allow_html=True
             )
 
@@ -628,26 +630,47 @@ def app():
                 st.error(extra_error_msg)
 
             destinatarios_totales = sorted(set(seleccion_emails + extra_validos))
+
+            # --- Estados
             props_norm_df = set(_norm_name(v) for v in df_tablas_global["propietario"].dropna().astype(str).unique())
 
-            def _chip_style(is_green: bool) -> str:
-                return ("background:#dcfce7;border:1px solid #16a34a;color:#065f46"
-                        if is_green else
-                        "background:#fee2e2;border:1px solid #ef4444;color:#991b1b")
+            def _recipient_status(email: str) -> str:
+                nombre = KNOWN_PEOPLE.get(email, None)
+                if not nombre:
+                    return "unknown"
+                n = _norm_name(nombre)
+                if n in props_need_update_norm:
+                    return "pending"   # 🟩
+                if n in props_norm_df:
+                    return "present"   # 🌸
+                return "unknown"       # 🟥
+
+            def _chip_css(status: str) -> str:
+                if status == "pending":   # verde
+                    return "background:#dcfce7;border:1px solid #16a34a;color:#065f46"
+                if status == "present":   # rosa
+                    return "background:#ffe4f1;border:1px solid #d63384;color:#ad1466"
+                return "background:#fee2e2;border:1px solid #ef4444;color:#991b1b"  # rojo
 
             chips = []
             for em in destinatarios_totales:
-                nombre = KNOWN_PEOPLE.get(em, None)
-                in_excel = (_norm_name(nombre) in props_norm_df) if nombre else False
-                label_ui = _format_email_label(em) if nombre else em
-                label_html = html.escape(label_ui)
+                name = KNOWN_PEOPLE.get(em, None)
+                label_ui = f"{name} <{em}>" if name else em
+                status = _recipient_status(em)
                 chips.append(
                     f"<span style='display:inline-block;margin:3px 6px 0 0;padding:4px 8px;"
-                    f"border-radius:8px;{_chip_style(in_excel)}'>{label_html}</span>"
+                    f"border-radius:8px;{_chip_css(status)}'>{html.escape(label_ui)}</span>"
                 )
             if chips:
-                st.markdown("<div>Previsualización:</div>" + "".join(chips), unsafe_allow_html=True)
+                st.markdown(
+                    "<div>Previsualización:</div>" + "".join(chips) +
+                    "<div style='margin-top:6px;font-size:12px;color:#6b7280'>"
+                    "🟩 Pendiente · 🌸 Presente sin pendientes · 🟥 No encontrado"
+                    "</div>",
+                    unsafe_allow_html=True
+                )
 
+            # -------- Franja amarilla: propietarios con blancos sin correo en la lista
             if faltantes_pretty:
                 st.markdown(
                     "<div style='background:#fff8e1;border:1px solid #f59e0b;color:#92400e;"
@@ -706,14 +729,14 @@ def app():
                                 asunto = f"Reporte de Leads en Blanco - {fecha_actual}"
 
                                 def _badge(email: str) -> str:
-                                    nombre = KNOWN_PEOPLE.get(email, None)
-                                    ok = (_norm_name(nombre) in props_norm_df) if nombre else False
-                                    style = ("background:#dcfce7;border:1px solid #16a34a;color:#065f46"
-                                             if ok else "background:#fee2e2;border:1px solid #ef4444;color:#991b1b")
-                                    label_ui = _format_email_label(email) if nombre else email
-                                    safe = html.escape(label_ui)
-                                    return (f"<span style='display:inline-block;margin:2px 0;padding:2px 6px;"
-                                            f"border-radius:6px;{style}'>{safe}</span>")
+                                    name = KNOWN_PEOPLE.get(email, None)
+                                    label_ui = f"{name} <{email}>" if name else email
+                                    status = _recipient_status(email)
+                                    style = _chip_css(status)
+                                    return (
+                                        f"<span style='display:inline-block;margin:2px 4px 2px 0;padding:2px 6px;"
+                                        f"border-radius:6px;{style}'>{html.escape(label_ui)}</span>"
+                                    )
 
                                 destinatarios_html = "<br/>".join(_badge(email) for email in emails_validos)
 
