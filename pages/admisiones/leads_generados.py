@@ -717,7 +717,7 @@ def app():
 
                                   <div class="note">
                                     Para una mejor toma de decisión, agradecemos actualizar en <strong>Clientify</strong>
-                                    los campos que figuran en blanco en el Excel adjunto.
+                                    los campos que figuran en blanco en el Excel adjunto. Filtren en el Excel por su nombre para identificar los registros que deben modificar.
                                   </div>
 
                                   <p>Adjunto generado el <strong>{fecha_actual}</strong>.</p>
