@@ -52,6 +52,7 @@ KNOWN_PEOPLE = {
     "cmoreno@grupomainjobs.com":     "Chelo Moreno Cabeza",
     "marceiz@grupomainjobs.com":     "Miguel Arcéiz",
     "mdiazf@grupomainjobs.com":      "Mónica Díaz",
+    "mavalle@grupomainjobs.com":     "María Ángeles Valle Rodríguez",
 }
 KNOWN_EMAILS = sorted(KNOWN_PEOPLE.keys())
 
