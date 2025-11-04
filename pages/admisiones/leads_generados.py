@@ -350,7 +350,10 @@ def app():
             if prog_col:
                 df_ventas["programa_bruto"] = df_ventas[prog_col].astype(str)
                 df_ventas["programa_categoria"] = df_ventas["programa_bruto"].apply(clasificar_programa)
-                df_ventas["programa_final"] = df_ventas.apply(lambda r: r["programa_bruto"] if r.get("programa_categoria", "SIN CLASIFICAR") == "SIN CLASIFICAR" else r.get("programa_categoria"), axis=1)
+                df_ventas["programa_final"] = df_ventas.apply(
+                    lambda r: r["programa_bruto"] if r.get("programa_categoria", "SIN CLASIFICAR") == "SIN CLASIFICAR" else r.get("programa_categoria"),
+                    axis=1
+                )
             else:
                 df_ventas["programa_final"] = "(Desconocido)"
             if any(c in df_ventas.columns for c in ["creado", "fecha", "fecha_creacion"]):
@@ -465,8 +468,10 @@ def app():
         st.dataframe(conteo_origen_v.style.background_gradient(cmap="Purples"), use_container_width=True)
 
     # ================= EXPORT A EXCEL (SOLO EN BLANCO) =================
-    def _find_col(cols, candidates): return next((c for c in candidates if c in cols), None)
+    def _find_col(cols, candidates):
+        return next((c for c in candidates if c in cols), None)
 
+    # ---------- LEADS
     leads_detalle = df_tablas.copy()
     nombre_col_L = _find_col(leads_detalle.columns, ["nombre", "first name", "firstname"])
     apell_col_L  = _find_col(leads_detalle.columns, ["apellidos", "apellido", "last name", "lastname"])
@@ -482,6 +487,7 @@ def app():
     leads_export_cols["Programa"] = _to_blank_label(leads_export_cols["Programa"])
     leads_export_cols["Origen Lead"] = _to_blank_label(leads_export_cols["Origen Lead"])
 
+    # ---------- VENTAS
     if ventas_ok and not df_ventas.empty:
         ventas_detalle = df_ventas.copy()
         if mes_seleccionado != "Todos":
@@ -493,24 +499,52 @@ def app():
     else:
         ventas_detalle = pd.DataFrame(columns=["propietario","programa_final"])
 
-    nombre_col_V = _find_col(ventas_detalle.columns, ["nombre", "first name", "firstname"])
-    apell_col_V  = _find_col(ventas_detalle.columns, ["apellidos", "apellido", "last name", "lastname"])
+    # Prioridad contacto directo
+    contacto_directo = _find_col(
+        ventas_detalle.columns,
+        ["contacto", "contact", "contact name", "contact_name", "nombre contacto", "nombre del contacto"]
+    )
+    # Si no, first/last
+    first_col = _find_col(ventas_detalle.columns, ["first name", "firstname", "nombre contacto", "nombre del contacto"])
+    last_col  = _find_col(ventas_detalle.columns, ["last name", "lastname", "apellidos contacto", "apellidos del contacto", "apellidos"])
+
+    def _serie_vacia(n): return pd.Series([""] * n, dtype=str)
+    def _safe_series(df_, col): return df_.get(col, _serie_vacia(len(df_))).astype(str)
+
+    if len(ventas_detalle) == 0:
+        contacto_v = _serie_vacia(0)
+    else:
+        if contacto_directo:
+            contacto_v = _safe_series(ventas_detalle, contacto_directo).str.strip()
+        else:
+            nombre_v = _safe_series(ventas_detalle, first_col) if first_col else _serie_vacia(len(ventas_detalle))
+            apell_v  = _safe_series(ventas_detalle, last_col)  if last_col  else _serie_vacia(len(ventas_detalle))
+            contacto_v = (nombre_v.fillna("") + " " + apell_v.fillna("")).str.strip()
+        contacto_v = contacto_v.replace(["", "nan", "NaN", "NONE", "None", "NULL"], "(En Blanco)")
+
     origen_col_V = _find_col(ventas_detalle.columns, ["origen", "origen de la venta", "origen venta", "source"])
 
     ventas_export_cols = pd.DataFrame({
       "Propietario": ventas_detalle.get("propietario", pd.Series(dtype=str)),
-      "Nombre": ventas_detalle.get(nombre_col_V, pd.Series(dtype=str)),
-      "Apellidos": ventas_detalle.get(apell_col_V, pd.Series(dtype=str)),
-      "Programa": ventas_detalle.get("programa_final", pd.Series(dtype=str)),
-      "Origen": ventas_detalle.get(origen_col_V, pd.Series([""]*len(ventas_detalle))) if origen_col_V else pd.Series([""]*len(ventas_detalle))
+      "Contacto": contacto_v,  # persona
+      "Origen": ventas_detalle.get(origen_col_V, pd.Series([""]*len(ventas_detalle))) if origen_col_V else pd.Series([""]*len(ventas_detalle)),
     })
     ventas_export_cols["Origen"] = _to_blank_label(ventas_export_cols["Origen"])
+    # Aliases para evitar KeyError por mayúsculas/minúsculas
+    ventas_export_cols["contacto"] = ventas_export_cols["Contacto"]
+    # Nombre = programa/máster
+    ventas_export_cols["Nombre"] = ventas_detalle.get("programa_final", pd.Series([""]*len(ventas_detalle))).astype(str)
+    ventas_export_cols["nombre"] = ventas_export_cols["Nombre"]
 
+    # ---------- Hojas de exportación
     hoja1 = leads_export_cols[["Propietario","Nombre","Apellidos","Programa","Origen Lead"]].copy()
     hoja1 = hoja1[hoja1["Programa"] == "(En Blanco)"]
+
     hoja2 = leads_export_cols[["Propietario","Nombre","Apellidos","Programa","Origen Lead"]].copy()
     hoja2 = hoja2[hoja2["Origen Lead"] == "(En Blanco)"]
-    hoja3 = ventas_export_cols[["Propietario","Nombre","Apellidos","Programa","Origen"]].copy()
+
+    # En ventas mostramos Propietario, Nombre (máster), Contacto (persona) y Origen
+    hoja3 = ventas_export_cols[["Propietario","Nombre","Contacto","Origen"]].copy()
     hoja3 = hoja3[hoja3["Origen"] == "(En Blanco)"]
 
     buffer = BytesIO()
@@ -532,22 +566,16 @@ def app():
         )
 
     # ================== PROPIETARIOS CON BLANCOS (FRANJA AMARILLA) ==================
-    # Conjuntos normalizados de propietarios con BLANCOS
-    props_prog_blank   = set(_norm_name(p) for p in hoja1["Propietario"].dropna().astype(str))  # Programa en blanco (Leads)
-    props_origen_blank = set(_norm_name(p) for p in hoja2["Propietario"].dropna().astype(str))  # Origen Lead en blanco (Leads)
-    props_vta_blank    = set(_norm_name(p) for p in hoja3["Propietario"].dropna().astype(str))  # Origen en blanco (Ventas)
-
-    # Unión: propietarios que NECESITAN actualización (aparecen en cualquier hoja en blanco)
+    props_prog_blank   = set(_norm_name(p) for p in hoja1["Propietario"].dropna().astype(str))
+    props_origen_blank = set(_norm_name(p) for p in hoja2["Propietario"].dropna().astype(str))
+    props_vta_blank    = set(_norm_name(p) for p in hoja3["Propietario"].dropna().astype(str))
     props_need_update_norm = props_prog_blank | props_origen_blank | props_vta_blank
 
-    # Mapa normalizado de los nombres conocidos (para compararlos)
     known_norm_map = {_norm_name(name): email for email, name in KNOWN_PEOPLE.items()}
     known_norm_names = set(known_norm_map.keys())
 
-    # Lista amarilla = propietarios con blancos PERO que no están en KNOWN_PEOPLE
     faltantes_norm = sorted(n for n in props_need_update_norm if n not in known_norm_names)
 
-    # Para mostrar “bonito” según aparece en el Excel (capitalización original):
     norm_to_original = {}
     for v in pd.concat([
             hoja1.get("Propietario", pd.Series(dtype=str)).dropna().astype(str),
@@ -557,7 +585,7 @@ def app():
         norm_to_original[_norm_name(v)] = v
     faltantes_pretty = [norm_to_original.get(n, n) for n in faltantes_norm]
 
-    # ============= ENVÍO POR CORREO — ADMIN (multiselect + entrada manual) =============
+    # ============= ENVÍO POR CORREO — ADMIN =============
     with col_email:
         es_admin = st.session_state.get('role') == 'admin'
         if es_admin:
@@ -582,7 +610,6 @@ def app():
                 help="Lista restringida a correos proporcionados."
             )
 
-            # Entrada manual de correos
             otros_emails_input = st.text_input(
                 "Añade otros correos (separados por , o ;):",
                 value="",
@@ -601,11 +628,8 @@ def app():
                 st.error(extra_error_msg)
 
             destinatarios_totales = sorted(set(seleccion_emails + extra_validos))
-
-            # Conjunto normalizado de propietarios del DF filtrado (para chips)
             props_norm_df = set(_norm_name(v) for v in df_tablas_global["propietario"].dropna().astype(str).unique())
 
-            # Chips verde/rojo por presencia exacta normalizada en propietario (DF filtrado)
             def _chip_style(is_green: bool) -> str:
                 return ("background:#dcfce7;border:1px solid #16a34a;color:#065f46"
                         if is_green else
@@ -613,7 +637,6 @@ def app():
 
             chips = []
             for em in destinatarios_totales:
-                # Si está en KNOWN_PEOPLE uso el nombre; si no, uso el propio correo como etiqueta
                 nombre = KNOWN_PEOPLE.get(em, None)
                 in_excel = (_norm_name(nombre) in props_norm_df) if nombre else False
                 label_ui = _format_email_label(em) if nombre else em
@@ -625,7 +648,6 @@ def app():
             if chips:
                 st.markdown("<div>Previsualización:</div>" + "".join(chips), unsafe_allow_html=True)
 
-            # ======== FRANJA AMARILLA: PROPIETARIOS CON BLANCOS SIN CORREO ========
             if faltantes_pretty:
                 st.markdown(
                     "<div style='background:#fff8e1;border:1px solid #f59e0b;color:#92400e;"
@@ -641,7 +663,6 @@ def app():
                 ]
                 st.markdown("".join(chips_y), unsafe_allow_html=True)
 
-                # Descarga lista
                 buf_falt = BytesIO()
                 pd.DataFrame({"Propietario (con blancos, sin correo)": faltantes_pretty}).to_excel(
                     buf_falt, index=False, sheet_name="faltan_correos"
@@ -655,7 +676,6 @@ def app():
             else:
                 st.info("No hay propietarios con campos en blanco sin correo para el filtro actual.")
 
-            # ------------- Envío por correo -------------
             debug_mode = st.checkbox("🔍 Modo Debug (mostrar detalles técnicos)", value=False)
             clicked = st.button("📤 Enviar Excel por Outlook", use_container_width=True, type="primary")
 
@@ -750,7 +770,6 @@ def app():
                                 st.session_state["email_last_msg"] = mensaje_resultado
                                 st.session_state["email_last_attempt_id"] = current_attempt
 
-            # Resultado del envío
             last_attempt = st.session_state.get("email_last_attempt_id")
             last_ok = st.session_state.get("email_last_ok")
             last_msg = st.session_state.get("email_last_msg")
