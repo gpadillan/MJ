@@ -523,18 +523,30 @@ def app():
             contacto_v = (nombre_v.fillna("") + " " + apell_v.fillna("")).str.strip()
         contacto_v = contacto_v.replace(["", "nan", "NaN", "NONE", "None", "NULL"], "(En Blanco)")
 
+    # NUEVO: Forma de Pago (con alias)
+    forma_pago_col = _find_col(
+        ventas_detalle.columns,
+        ["forma de pago", "forma_pago", "payment method", "payment_method", "forma de cobro"]
+    )
+    forma_pago_series = (
+        ventas_detalle.get(forma_pago_col, pd.Series([""] * len(ventas_detalle)))
+        if forma_pago_col else pd.Series([""] * len(ventas_detalle))
+    )
+    forma_pago_series = _to_blank_label(forma_pago_series)
+
     origen_col_V = _find_col(ventas_detalle.columns, ["origen", "origen de la venta", "origen venta", "source"])
 
     ventas_export_cols = pd.DataFrame({
       "Propietario": ventas_detalle.get("propietario", pd.Series(dtype=str)),
+      "Nombre": ventas_detalle.get("programa_final", pd.Series([""]*len(ventas_detalle))).astype(str),  # Máster/Programa
       "Contacto": contacto_v,  # persona
       "Origen": ventas_detalle.get(origen_col_V, pd.Series([""]*len(ventas_detalle))) if origen_col_V else pd.Series([""]*len(ventas_detalle)),
+      "Forma de Pago": forma_pago_series,  # 👈 NUEVO EN EXPORT
     })
     ventas_export_cols["Origen"] = _to_blank_label(ventas_export_cols["Origen"])
+
     # Aliases para evitar KeyError por mayúsculas/minúsculas
     ventas_export_cols["contacto"] = ventas_export_cols["Contacto"]
-    # Nombre = programa/máster
-    ventas_export_cols["Nombre"] = ventas_detalle.get("programa_final", pd.Series([""]*len(ventas_detalle))).astype(str)
     ventas_export_cols["nombre"] = ventas_export_cols["Nombre"]
 
     # ---------- Hojas de exportación
@@ -544,9 +556,9 @@ def app():
     hoja2 = leads_export_cols[["Propietario","Nombre","Apellidos","Programa","Origen Lead"]].copy()
     hoja2 = hoja2[hoja2["Origen Lead"] == "(En Blanco)"]
 
-    # En ventas mostramos Propietario, Nombre (máster), Contacto (persona) y Origen
-    hoja3 = ventas_export_cols[["Propietario","Nombre","Contacto","Origen"]].copy()
-    hoja3 = hoja3[hoja3["Origen"] == "(En Blanco)"]
+    # En ventas mostramos Propietario, Nombre (máster), Contacto (persona), Origen y Forma de Pago
+    hoja3 = ventas_export_cols[["Propietario","Nombre","Contacto","Origen","Forma de Pago"]].copy()
+    hoja3 = hoja3[(hoja3["Origen"] == "(En Blanco)") | (hoja3["Forma de Pago"] == "(En Blanco)")]
 
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
@@ -760,7 +772,7 @@ def app():
                                   <h2>📊 Reporte de Leads y Ventas con Datos en Blanco</h2>
 
                                   <div class="note">
-                                    Para una mejor toma de decisión, agradecemos actualizar en <strong>Clientify</strong>
+                                    Para una mejor toma de decisiones, agradecemos actualizar en <strong>Clientify</strong>
                                     los campos que figuran en blanco en el Excel adjunto. Filtren en el Excel por su nombre para identificar los registros que deben modificar.
                                   </div>
 
