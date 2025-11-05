@@ -545,7 +545,7 @@ def app():
     hoja2 = hoja2[hoja2["Origen Lead"] == "(En Blanco)"]
 
     # En ventas mostramos Propietario, Nombre (máster), Contacto (persona) y Origen
-    hoja3 = ventas_export_cols[["Propietario","Nombre","Contacto","Origen"]].copy()
+    hoja3 = ventas_export_cols[["Propietario","Nombre","Contacto","Origen","Forma de pago"]].copy()
     hoja3 = hoja3[hoja3["Origen"] == "(En Blanco)"]
 
     buffer = BytesIO()
