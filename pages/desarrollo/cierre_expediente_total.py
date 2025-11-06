@@ -21,7 +21,8 @@ def _tiles_html_from_series(series: pd.Series) -> str:
     if series is None or series.empty:
         return "<div style='color:#0b2e6b'>Sin áreas</div>"
 
-    orden = ["RRHH", "SAP", "DPO", "EERR", "IA", "PYTHON", "FULL STACK", "BIM", "LOGISTICA"]
+    # ✅ Añadimos MENORES para priorizar su visualización si existe
+    orden = ["RRHH", "SAP", "DPO", "EERR", "IA", "PYTHON", "FULL STACK", "BIM", "LOGISTICA", "MENORES"]
     s = series.copy()
     presentes = [a for a in orden if a in s.index]
     resto = [a for a in s.sort_values(ascending=False).index if a not in presentes]
@@ -198,7 +199,6 @@ def _html_table(df: pd.DataFrame, col_widths: list[str], align_nums: bool = True
     f"<th style='width:{w}; padding:8px 8px; text-align:left; "
     f"white-space:nowrap; overflow:visible; text-overflow:clip;'>{html.escape(str(c))}</th>"
 )
-
 
     rows_html = []
     for _, row in df.iterrows():
@@ -784,9 +784,10 @@ def render(df: pd.DataFrame):
             ["Provincia","CONSECUCIÓN","INAPLICACIÓN","DEVOLUCIÓN","Total"]
         ]
 
+        # ✅ Corrige el ancho: "20" -> "20%"
         tabla_html = _html_table_cols_color(
             tabla,
-            col_widths=["20%","20","20%","20%","20%"],  # Provincia + 3 estados + Total
+            col_widths=["20%","20%","20%","20%","20%"],  # Provincia + 3 estados + Total
             col_bg=PROV_COLORS,
             align_nums=True, small=True
         ) if not tabla.empty else "<div style='color:#5f6368'>Sin provincias</div>"

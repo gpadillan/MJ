@@ -62,7 +62,8 @@ AREA_COLORS = {
     "FULLSTACK": "#bcbd22",
     "Logística": "#009e42",
     "BIM": "#ff7f0e",
-    "TOTAL": "#b3b3b3",  # color base para la fila TOTAL
+    "MENORES": "#4b0082",   # ✅ NUEVO
+    "TOTAL": "#b3b3b3",     # color base para la fila TOTAL
 }
 
 def _hex_to_rgb(h: str) -> tuple[int, int, int]:
@@ -584,26 +585,51 @@ def render(df: pd.DataFrame | None = None):
             lambda x: _norm_spaces(x) if pd.notna(x) else x
         ).str.upper()
 
-    # Base: activos con área válida
-    df_base = df[df["ES_ACTIVO"]].copy()
+    # Toggle para mostrar solo activos (por defecto True)
+    solo_activos = st.toggle(
+        "Mostrar solo activos (sin CONSECUCIÓN/INAPLICACIÓN/DEVOLUCIÓN)",
+        value=True
+    )
+
+    df_base = df.copy()
+    if solo_activos:
+        df_base = df[df["ES_ACTIVO"]].copy()
+
+    # Filtra áreas válidas
     df_base = df_base[
         df_base["AREA"].notna() &
         (~df_base["AREA"].isin(["", "NO ENCONTRADO", "NAN", "<NA>"]))
     ]
 
-    # Filtros
-    opciones_practicas = sorted(df_base["PRÁCTICAS/GE"].dropna().unique().tolist())
-    opciones_consultores = sorted(df_base["CONSULTOR EIP"].dropna().unique().tolist())
+    # Filtros que incluyen blancos por defecto
+    opciones_practicas = sorted(
+        df_base["PRÁCTICAS/GE"].fillna("(EN BLANCO)").unique().tolist()
+    )
+    opciones_consultores = sorted(
+        df_base["CONSULTOR EIP"].fillna("(EN BLANCO)").unique().tolist()
+    )
 
     c1, c2 = st.columns(2)
     with c1:
-        seleccion_practicas = st.multiselect("Selecciona PRÁCTICAS/GE:", opciones_practicas, default=opciones_practicas)
+        seleccion_practicas = st.multiselect(
+            "Selecciona PRÁCTICAS/GE:",
+            opciones_practicas,
+            default=opciones_practicas
+        )
     with c2:
-        seleccion_consultores = st.multiselect("Selecciona CONSULTOR EIP:", opciones_consultores, default=opciones_consultores)
+        seleccion_consultores = st.multiselect(
+            "Selecciona CONSULTOR EIP:",
+            opciones_consultores,
+            default=opciones_consultores
+        )
 
-    df_filtrado = df_base[
-        df_base["PRÁCTICAS/GE"].isin(seleccion_practicas) &
-        df_base["CONSULTOR EIP"].isin(seleccion_consultores)
+    df_filtrado = df_base.copy()
+    df_filtrado["PRÁCTICAS/GE"] = df_filtrado["PRÁCTICAS/GE"].fillna("(EN BLANCO)")
+    df_filtrado["CONSULTOR EIP"] = df_filtrado["CONSULTOR EIP"].fillna("(EN BLANCO)")
+
+    df_filtrado = df_filtrado[
+        df_filtrado["PRÁCTICAS/GE"].isin(seleccion_practicas) &
+        df_filtrado["CONSULTOR EIP"].isin(seleccion_consultores)
     ].copy()
 
     if df_filtrado.empty:
@@ -636,7 +662,10 @@ def render(df: pd.DataFrame | None = None):
     hoy = pd.to_datetime("today").normalize()
 
     df_ge_activos = df_filtrado[df_filtrado["PRÁCTICAS/GE"] == "GE"].copy()
-    df_ge_activos["FIN CONV"] = pd.to_datetime(df_ge_activos["FIN CONV"], errors="coerce")
+    # ✅ Fechas europeas (dd/mm/yyyy)
+    df_ge_activos["FIN CONV"] = pd.to_datetime(
+        df_ge_activos["FIN CONV"], errors="coerce", dayfirst=True
+    )
     df_ge_activos["FECHA_RIESGO"] = df_ge_activos["FIN CONV"] + pd.DateOffset(months=3)
 
     mask_riesgo = (df_ge_activos["FECHA_RIESGO"].notna() & (df_ge_activos["FECHA_RIESGO"] <= hoy))
@@ -653,7 +682,7 @@ def render(df: pd.DataFrame | None = None):
     with k2:
         st.metric("📌 ALUMNO RIESGO TRIM", total_ge_indicador)
     with k3:
-        st.metric("💰 RIESGO ECONOMICO", suma_riesgo_fmt)
+        st.metric("💰 RIESGO ECONÓMICO", suma_riesgo_fmt)
 
     # =================== Distribución ===================
     st.markdown("---")
@@ -722,6 +751,7 @@ def render(df: pd.DataFrame | None = None):
         "Logística": "Logística",
         "RRHH": "RRHH",
         "SAP": "SAP",
+        "MENORES": "MENORES",   # ✅ NUEVO
     }
 
     # Resumen por año + fila TOTAL
