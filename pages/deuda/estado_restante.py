@@ -75,6 +75,27 @@ def _bar_chart(resumen_df, title):
     fig.update_layout(margin=dict(l=20, r=20, t=40, b=50), annotations=annotations)
     return fig
 
+def _card(title, amount, ncli, variant="blue"):
+    """
+    variant: "blue" (por defecto) | "red" (para '{LABEL} {MesActual}')
+    """
+    if variant == "red":
+        bg = "#fff1f1"; border = "#ffc9c9"; title_color = "#7a1f1f"; amount_color = "#a32020"; people_color = "#7a1f1f"
+    else:
+        bg = "#f1f9ff"; border = "#dbe9ff"; title_color = "#0b5394"; amount_color = "#00335c"; people_color = "#2a6aa5"
+
+    return f"""
+    <div style="background:{bg};border:1px solid {border};border-radius:12px;
+                padding:14px 16px;box-shadow:0 2px 6px rgba(0,0,0,0.06);
+                display:flex;flex-direction:column;gap:6px;min-height:92px">
+      <div style="font-weight:700;color:{title_color}">{title}</div>
+      <div style="display:flex;gap:12px;align-items:baseline;">
+        <div style="font-size:26px;font-weight:800;color:{amount_color}">€ {_eu(amount)}</div>
+        <div style="font-size:14px;color:{people_color}">👥 {int(ncli)}</div>
+      </div>
+    </div>
+    """
+
 resultado_exportacion = {}
 _FIG_18_21 = None
 _FIG_22_25_RESTO = None
@@ -91,7 +112,7 @@ def vista_estado_unico():
     </style>
     """, unsafe_allow_html=True)
 
-    st.header("📄 Estado (vista individual)")
+    st.header("📄 Estados")
 
     if "excel_data" not in st.session_state or st.session_state["excel_data"] is None:
         st.warning("⚠️ No hay archivo cargado. Ve a la sección Gestión de Datos.")
@@ -145,6 +166,12 @@ def vista_estado_unico():
     global _FIG_18_21
     _FIG_18_21 = None
 
+    # Guardaremos estos DF para el cómputo de la suma del bloque
+    df1 = pd.DataFrame()
+    resumen_18_21 = pd.DataFrame()
+    total_18_21 = 0.0
+    n_cli_18_21 = 0
+
     if cols_18_21:
         df1 = df_target[["Cliente"] + cols_18_21].copy()
         df1[cols_18_21] = df1[cols_18_21].apply(pd.to_numeric, errors="coerce").fillna(0)
@@ -156,9 +183,9 @@ def vista_estado_unico():
         st.dataframe(df1, use_container_width=True)
 
         total_18_21 = float(df1[cols_18_21].sum().sum())
+        n_cli_18_21 = int(df1["Cliente"].nunique())
         st.markdown(
-            f"**👥 Clientes (2018–2021):** "
-            f"{df1['Cliente'].nunique()} – 🏅 Total: € {_eu(total_18_21)}"
+            f"**👥 Clientes (2018–2021): {n_cli_18_21} – 🏅 Total: € {_eu(total_18_21)}**"
         )
         resultado_exportacion["2018_2021"] = df1
 
@@ -192,6 +219,11 @@ def vista_estado_unico():
 
     global _FIG_22_25_RESTO
     _FIG_22_25_RESTO = None
+    df2 = pd.DataFrame()
+    resumen2 = pd.DataFrame()
+    total_22_25 = 0.0
+    n_cli_22_25 = 0
+
     if cols_22_25:
         df2 = df_target[["Cliente"] + cols_22_25].copy()
         df2[cols_22_25] = df2[cols_22_25].apply(pd.to_numeric, errors="coerce").fillna(0)
@@ -202,9 +234,9 @@ def vista_estado_unico():
         st.dataframe(df2, use_container_width=True)
 
         total_22_25 = float(df2[cols_22_25].sum().sum())
+        n_cli_22_25 = int(df2["Cliente"].nunique())
         st.markdown(
-            f"**👥 Clientes (2022–2025):** "
-            f"{df2['Cliente'].nunique()} – 🏅 Total: € {_eu(total_22_25)}"
+            f"**👥 Clientes (2022–{año_actual}): {n_cli_22_25} – 🏅 Total: € {_eu(total_22_25)}**"
         )
 
         resultado_exportacion["2022_2025"] = df2
@@ -219,6 +251,33 @@ def vista_estado_unico():
         if not resumen2.empty:
             _FIG_22_25_RESTO = _bar_chart(resumen2, f"Totales 2022–{año_actual}")
             st.plotly_chart(_FIG_22_25_RESTO, use_container_width=True)
+
+    # ========= BLOQUE RESUMEN ÚNICO (SUMA DE AMBOS PERIODOS) =========
+    # Se muestra justo ANTES de “🧮 Totales (por año)”
+    st.markdown("## 📊 Suma de periodos con gráfico")
+
+    hay_18_21 = not resumen_18_21.empty
+    hay_22_25 = not resumen2.empty
+
+    if hay_18_21 or hay_22_25:
+        # Suma directa de ambos bloques (tal y como pides)
+        n_cli_comb = (n_cli_18_21 if hay_18_21 else 0) + (n_cli_22_25 if hay_22_25 else 0)
+        total_comb = (total_18_21 if hay_18_21 else 0.0) + (total_22_25 if hay_22_25 else 0.0)
+
+        # Etiqueta compacta de rango total
+        etiqueta = f"2018–{año_actual}"
+
+        # Línea única en el formato exacto que usas
+        st.markdown(f"**👥 Clientes ({etiqueta}): {n_cli_comb} – 🏅 Total: € {_eu(total_comb)}**")
+
+        # Guardar en exportación como fila única
+        resultado_exportacion["Totales_Graficos"] = pd.DataFrame([{
+            "Periodo": etiqueta,
+            "Clientes (suma de ambos bloques)": n_cli_comb,
+            "Total (€) (suma de ambos bloques)": total_comb
+        }])
+    else:
+        st.info("No hay datos con los que generar gráficos en los periodos definidos.")
 
     # ---------------- Tarjetas (con mes actual en rojo claro) ----------------
     def _year_from_total(col):
@@ -372,7 +431,7 @@ def vista_estado_unico():
     # Columnas numéricas candidatas (igual que arriba)
     columnas_sumatorias = []
     columnas_sumatorias += [f"Total {a}" for a in range(2018, 2022) if f"Total {a}" in df_target.columns]
-    columnas_sumatorias += cols_22_25 if cols_22_25 else []
+    columnas_sumatorias += list(resumen2["Periodo"]) if not resumen2.empty else []
     columnas_sumatorias = [c for c in columnas_sumatorias if c in df_target.columns]
 
     if columnas_sumatorias:
@@ -443,28 +502,6 @@ def vista_estado_unico():
     st.markdown("---")
 
 
-def _card(title, amount, ncli, variant="blue"):
-    """
-    variant: "blue" (por defecto) | "red" (para '{LABEL} {MesActual}')
-    """
-    if variant == "red":
-        bg = "#fff1f1"; border = "#ffc9c9"; title_color = "#7a1f1f"; amount_color = "#a32020"; people_color = "#7a1f1f"
-    else:
-        bg = "#f1f9ff"; border = "#dbe9ff"; title_color = "#0b5394"; amount_color = "#00335c"; people_color = "#2a6aa5"
-
-    return f"""
-    <div style="background:{bg};border:1px solid {border};border-radius:12px;
-                padding:14px 16px;box-shadow:0 2px 6px rgba(0,0,0,0.06);
-                display:flex;flex-direction:column;gap:6px;min-height:92px">
-      <div style="font-weight:700;color:{title_color}">{title}</div>
-      <div style="display:flex;gap:12px;align-items:baseline;">
-        <div style="font-size:26px;font-weight:800;color:{amount_color}">€ {_eu(amount)}</div>
-        <div style="font-size:14px;color:{people_color}">👥 {int(ncli)}</div>
-      </div>
-    </div>
-    """
-
-
 def vista_export_resumen():
     """Solo prepara datos para exportación (sin gráfico)."""
     if "excel_data" not in st.session_state or st.session_state["excel_data"] is None:
@@ -519,16 +556,19 @@ def render():
         # HTML
         html_buffer = io.StringIO()
         html_buffer.write("<html><head><meta charset='utf-8'><title>Exportación — Estado seleccionado</title></head><body>")
+        if "Totales_Graficos" in resultado_exportacion:
+            html_buffer.write("<h1>Suma de periodos con gráfico</h1>")
+            html_buffer.write(resultado_exportacion["Totales_Graficos"].to_html(index=False))
+            if _FIG_18_21 is not None:
+                html_buffer.write(to_html(_FIG_18_21, include_plotlyjs='cdn', full_html=False))
+            if _FIG_22_25_RESTO is not None:
+                html_buffer.write(to_html(_FIG_22_25_RESTO, include_plotlyjs='cdn', full_html=False))
         if "2018_2021" in resultado_exportacion:
             html_buffer.write("<h1>Resumen 2018–2021</h1>")
             html_buffer.write(resultado_exportacion["2018_2021"].to_html(index=False))
-            if _FIG_18_21 is not None:
-                html_buffer.write(to_html(_FIG_18_21, include_plotlyjs='cdn', full_html=False))
         if "2022_2025" in resultado_exportacion:
             html_buffer.write("<h1>Resumen 2022–2025</h1>")
             html_buffer.write(resultado_exportacion["2022_2025"].to_html(index=False))
-            if _FIG_22_25_RESTO is not None:
-                html_buffer.write(to_html(_FIG_22_25_RESTO, include_plotlyjs='cdn', full_html=False))
         if "Totales_Años_Meses" in resultado_exportacion:
             html_buffer.write("<h2>Totales por año</h2>")
             html_buffer.write(resultado_exportacion["Totales_Años_Meses"].to_html(index=False))
