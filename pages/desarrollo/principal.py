@@ -8,8 +8,6 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-
-# --- SharePoint (Microsoft Graph) ---
 import requests
 from urllib.parse import quote, unquote
 
@@ -62,8 +60,8 @@ AREA_COLORS = {
     "FULLSTACK": "#bcbd22",
     "Logística": "#009e42",
     "BIM": "#ff7f0e",
-    "MENORES": "#4b0082",   # ✅ NUEVO
-    "TOTAL": "#b3b3b3",     # color base para la fila TOTAL
+    "MENORES": "#FFE600",
+    "TOTAL": "#b3b3b3",
 }
 
 def _hex_to_rgb(h: str) -> tuple[int, int, int]:
@@ -74,10 +72,6 @@ def _rgb_to_hex(r: int, g: int, b: int) -> str:
     return "#{:02x}{:02x}{:02x}".format(max(0,min(255,r)), max(0,min(255,g)), max(0,min(255,b)))
 
 def _mix_with_white(hex_color: str, t: float) -> str:
-    """
-    Mezcla el color base con blanco.
-    t=0 -> blanco, t=1 -> color base.
-    """
     r, g, b = _hex_to_rgb(hex_color)
     r = int(255*(1-t) + r*t)
     g = int(255*(1-t) + g*t)
@@ -85,11 +79,6 @@ def _mix_with_white(hex_color: str, t: float) -> str:
     return _rgb_to_hex(r, g, b)
 
 def _area_gradient_table(df_pivot: pd.DataFrame) -> go.Figure:
-    """
-    Crea una tabla Plotly donde cada FILA (Área) usa su propio color base
-    y cada AÑO se pinta en degradado (más oscuro = mayor valor dentro de esa fila).
-    Incluye la fila TOTAL si viene en df_pivot.
-    """
     if df_pivot is None or df_pivot.empty:
         return go.Figure()
 
@@ -97,16 +86,13 @@ def _area_gradient_table(df_pivot: pd.DataFrame) -> go.Figure:
     if "Área" not in df.columns:
         raise ValueError("La tabla pivote debe tener columna 'Área'.")
 
-    # Columnas de año + Total si existe
     year_cols = [c for c in df.columns if isinstance(c, int)]
     cols = ["Área"] + year_cols + (["Total"] if "Total" in df.columns else [])
     df = df[cols].reset_index(drop=True)
-
-    # --- Colores por celda (lista por columna como espera Plotly) ---
     n_rows = df.shape[0]
     cell_colors_by_col: list[list[str]] = []
 
-    # Columna Área: tono base suavizado
+    # Columna Área
     col_area_colors = []
     for i in range(n_rows):
         area = df.at[i, "Área"]
@@ -114,7 +100,7 @@ def _area_gradient_table(df_pivot: pd.DataFrame) -> go.Figure:
         col_area_colors.append(_mix_with_white(base, 0.2))
     cell_colors_by_col.append(col_area_colors)
 
-    # Columnas de AÑO: degradado por fila (normaliza dentro de la fila)
+    # Columnas de año (degradado por fila)
     for y in year_cols:
         col_colors = []
         for i in range(n_rows):
@@ -134,7 +120,7 @@ def _area_gradient_table(df_pivot: pd.DataFrame) -> go.Figure:
             col_colors.append(_mix_with_white(base, t))
         cell_colors_by_col.append(col_colors)
 
-    # Columna Total: tono intermedio
+    # Columna Total
     if "Total" in df.columns:
         col_total_colors = []
         for i in range(n_rows):
@@ -143,10 +129,9 @@ def _area_gradient_table(df_pivot: pd.DataFrame) -> go.Figure:
             col_total_colors.append(_mix_with_white(base, 0.75))
         cell_colors_by_col.append(col_total_colors)
 
-    # Valores por columna
+    # Valores
     cell_values = [df[c].tolist() for c in df.columns]
 
-    # Formateo de números con separador de miles europeo
     def _fmt_col(col_vals):
         out = []
         for v in col_vals:
@@ -164,17 +149,14 @@ def _area_gradient_table(df_pivot: pd.DataFrame) -> go.Figure:
         else:
             formatted_values.append(_fmt_col(vals))
 
-    header_colors = "#e9ecef"
-    header_font_color = "#111"
-
     fig = go.Figure(
         data=[
             go.Table(
                 header=dict(
                     values=[f"<b>{c}</b>" for c in df.columns],
-                    fill_color=header_colors,
+                    fill_color="#e9ecef",
                     align="center",
-                    font=dict(color=header_font_color, size=13),
+                    font=dict(color="#111", size=13),
                     height=34,
                 ),
                 cells=dict(
@@ -197,7 +179,6 @@ def _secrets_ok(sec: dict) -> bool:
     return all(k in sec and str(sec[k]).strip() for k in req)
 
 def _http_get_with_retry(url: str, headers: dict, timeout: int = 30, retries: int = 3) -> requests.Response:
-    """Backoff simple para 429/5xx."""
     for i in range(retries):
         r = requests.get(url, headers=headers, timeout=timeout)
         if r.status_code in (429, 500, 502, 503, 504):
@@ -239,11 +220,9 @@ def _get_drive_id(site_id: str, token: str) -> str:
 
 @st.cache_data(ttl=300)
 def _list_folder_children(drive_id: str, folder_path: str, token: str) -> list[dict]:
-    """Lista archivos y carpetas dentro de una ruta (raíz = Documentos compartidos)."""
     encoded_path = quote(folder_path.strip("/"), safe="/")
     base = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/root:/{encoded_path}"
-    _ = _graph_get(base, token)  # valida que existe
-
+    _ = _graph_get(base, token)
     url = base + ":/children?$top=200&$select=name,webUrl,lastModifiedDateTime,folder,file,size"
     items = []
     while url:
@@ -262,6 +241,7 @@ def _list_folder_children(drive_id: str, folder_path: str, token: str) -> list[d
     items.sort(key=lambda x: (not x["isFolder"], x["name"].lower()))
     return items
 
+# ---------- Búsqueda y extracción convenios ----------
 @st.cache_data(ttl=900)
 def _get_item_id_by_path(drive_id: str, folder_path: str, token: str) -> str:
     encoded_path = quote(folder_path.strip("/"), safe="/")
@@ -271,10 +251,7 @@ def _get_item_id_by_path(drive_id: str, folder_path: str, token: str) -> str:
 
 @st.cache_data(ttl=300)
 def _search_in_folder(drive_id: str, item_id: str, token: str, query: str) -> list[dict]:
-    """
-    Busca 'query' dentro de la jerarquía de una carpeta (si el tenant lo permite).
-    Devuelve items con lastModifiedDateTime para poder extraer el año.
-    """
+    """Busca `query` dentro de una carpeta por su item_id (si el tenant lo permite)."""
     url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{item_id}/search(q='{quote(query)}')"
     results = []
     while url:
@@ -292,8 +269,8 @@ def _search_in_folder(drive_id: str, item_id: str, token: str, query: str) -> li
 
 def _extract_company_from_weburl(web_url: str, area_folder: str) -> str:
     """
-    Intenta extraer la subcarpeta (empresa) a partir del webUrl.
-    Busca el tramo: /Documentos compartidos/EMPLEO/_PRÁCTICAS/Convenios firmados/{area}/<AQUI>
+    Extrae la subcarpeta (empresa) inmediatamente bajo el área a partir del webUrl.
+    Busca: /Documentos compartidos/EMPLEO/_PRÁCTICAS/Convenios firmados/{area}/<AQUI>
     """
     if not web_url:
         return ""
@@ -321,8 +298,8 @@ def _extract_company_from_weburl(web_url: str, area_folder: str) -> str:
 
 def _walk_and_collect_convenios(drive_id: str, area_path: str, token: str, kw="CONVENI") -> list[dict]:
     """
-    Recorre recursivamente y devuelve lista de archivos de convenio con su lastModified
-    y la carpeta (empresa) inmediata bajo el área.
+    Recorre recursivamente la carpeta `area_path` y devuelve archivos con `kw`
+    incluyendo lastModified y la carpeta (empresa) bajo el área.
     """
     from collections import deque
     q = deque([area_path])
@@ -335,7 +312,7 @@ def _walk_and_collect_convenios(drive_id: str, area_path: str, token: str, kw="C
             children = _list_folder_children(drive_id, current, token)
         except Exception:
             continue
-        # carpeta (empresa) = primer segmento tras el área dentro de 'current'
+        # empresa = primer segmento tras el área dentro de 'current'
         rel = current.strip("/")[len(area_path_norm):].lstrip("/")
         empresa = rel.split("/")[0] if rel else "(raíz)"
         for it in children:
@@ -356,15 +333,16 @@ def _walk_and_collect_convenios(drive_id: str, area_path: str, token: str, kw="C
 def _convenios_por_area_y_ano(drive_id: str, base_path: str, areas_map: dict[str, str],
                               token: str) -> pd.DataFrame:
     """
-    Devuelve un DataFrame pivote: filas = Área, columnas = Años, valores = nº de convenios.
-    Usa búsqueda (rápida) y, si no hay permisos/resultados, hace recorrido recursivo (fallback).
+    Devuelve un pivote: filas = Área, columnas = Años, valores = nº de convenios.
+    Usa búsqueda (rápida) y si falla permisos/resultados, recorre recursivamente.
     """
     rows = []
     all_years = set()
     for area_label, area_folder in areas_map.items():
         area_path = f"{base_path}/{area_folder}"
         year_counts = {}
-        # 1) search rápido
+
+        # 1) Intento rápido con SEARCH
         try:
             area_id = _get_item_id_by_path(drive_id, area_path, token)
             found = _search_in_folder(drive_id, area_id, token, "conveni")
@@ -381,7 +359,10 @@ def _convenios_por_area_y_ano(drive_id: str, base_path: str, areas_map: dict[str
                     y = int(y)
                     year_counts[y] = year_counts.get(y, 0) + int(c)
         except Exception:
-            # 2) fallback recursivo
+            pass
+
+        # 2) Fallback si no hubo resultados o permisos
+        if not year_counts:
             convs = _walk_and_collect_convenios(drive_id, area_path, token, kw="CONVENI")
             if convs:
                 years = pd.to_datetime(
@@ -434,7 +415,6 @@ def _detalle_por_area_y_ano(drive_id: str, base_path: str, areas_map: dict[str, 
     for area_label, area_folder in areas_map.items():
         area_path = f"{base_path}/{area_folder}"
         try:
-            # Primero intentamos con SEARCH
             area_id = _get_item_id_by_path(drive_id, area_path, token)
             found = _search_in_folder(drive_id, area_id, token, "conveni")
             for it in found:
@@ -455,7 +435,6 @@ def _detalle_por_area_y_ano(drive_id: str, base_path: str, areas_map: dict[str, 
                     "Link": it.get("webUrl", "")
                 })
         except Exception:
-            # Fallback: recorrido recursivo (ya nos da la empresa)
             convs = _walk_and_collect_convenios(drive_id, area_path, token, kw="CONVENI")
             for c in convs:
                 lm = pd.to_datetime(c.get("lastModified"), errors="coerce", utc=True)
@@ -488,7 +467,6 @@ def _detalle_area_all_years(drive_id: str, base_path: str, areas_map: dict[str, 
 
     rows = []
     try:
-        # Intento rápido con SEARCH
         area_id = _get_item_id_by_path(drive_id, area_path, token)
         found = _search_in_folder(drive_id, area_id, token, "conveni")
         for it in found:
@@ -510,7 +488,6 @@ def _detalle_area_all_years(drive_id: str, base_path: str, areas_map: dict[str, 
                 "Link": it.get("webUrl", "")
             })
     except Exception:
-        # Fallback: recorrido recursivo
         convs = _walk_and_collect_convenios(drive_id, area_path, token, kw="CONVENI")
         for c in convs:
             lm = pd.to_datetime(c.get("lastModified"), errors="coerce", utc=True)
@@ -535,7 +512,6 @@ def _detalle_area_all_years(drive_id: str, base_path: str, areas_map: dict[str, 
 def render(df: pd.DataFrame | None = None):
     st.title("📊 Principal - Área de Empleo")
 
-    # Botón recargar caché
     if st.button("🔄 Recargar / limpiar caché"):
         st.cache_data.clear()
         st.cache_resource.clear()
@@ -585,15 +561,8 @@ def render(df: pd.DataFrame | None = None):
             lambda x: _norm_spaces(x) if pd.notna(x) else x
         ).str.upper()
 
-    # Toggle para mostrar solo activos (por defecto True)
-    solo_activos = st.toggle(
-        "Mostrar solo activos (sin CONSECUCIÓN/INAPLICACIÓN/DEVOLUCIÓN)",
-        value=True
-    )
-
-    df_base = df.copy()
-    if solo_activos:
-        df_base = df[df["ES_ACTIVO"]].copy()
+    # ✅ Solo activos (sin toggle)
+    df_base = df[df["ES_ACTIVO"]].copy()
 
     # Filtra áreas válidas
     df_base = df_base[
@@ -662,7 +631,7 @@ def render(df: pd.DataFrame | None = None):
     hoy = pd.to_datetime("today").normalize()
 
     df_ge_activos = df_filtrado[df_filtrado["PRÁCTICAS/GE"] == "GE"].copy()
-    # ✅ Fechas europeas (dd/mm/yyyy)
+    # Fechas europeas (dd/mm/yyyy)
     df_ge_activos["FIN CONV"] = pd.to_datetime(
         df_ge_activos["FIN CONV"], errors="coerce", dayfirst=True
     )
@@ -751,7 +720,7 @@ def render(df: pd.DataFrame | None = None):
         "Logística": "Logística",
         "RRHH": "RRHH",
         "SAP": "SAP",
-        "MENORES": "MENORES",   # ✅ NUEVO
+        "MENORES": "MENORES",
     }
 
     # Resumen por año + fila TOTAL
@@ -759,11 +728,11 @@ def render(df: pd.DataFrame | None = None):
         df_pivot = _convenios_por_area_y_ano(drive_id, BASE, AREAS_PATHS, token)
         df_pivot_total = _append_total_global_row(df_pivot)
 
-        # ✅ Tabla con degradado por área (incluye fila TOTAL)
+        # Tabla con degradado por área (incluye fila TOTAL)
         fig_grad = _area_gradient_table(df_pivot_total)
         st.plotly_chart(fig_grad, use_container_width=True)
 
-        # KPI total global (de la fila TOTAL)
+        # KPI total global
         if "Total" in df_pivot_total.columns and "Área" in df_pivot_total.columns:
             try:
                 total_global = int(df_pivot_total.loc[df_pivot_total["Área"] == "TOTAL", "Total"].iloc[0])
@@ -775,7 +744,6 @@ def render(df: pd.DataFrame | None = None):
             total_global = int(df_pivot[year_cols].sum(axis=1).sum())
 
         st.metric(" Total convenios ", f"{total_global:,}".replace(",", "."))
-
     except Exception as e:
         st.error(f"No fue posible construir el resumen de convenios por año: {e}")
         return
