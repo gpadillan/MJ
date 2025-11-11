@@ -48,6 +48,13 @@ def limpiar_riesgo(valor) -> float:
     except Exception:
         return 0.0
 
+def _booly(v) -> bool:
+    """Normaliza valores booleanos escritos como Sí/No/True/False/1/0, etc."""
+    if pd.isna(v):
+        return False
+    s = str(v).strip().lower()
+    return s in {"true","1","1.0","sí","si","verdadero","x","✓","check","ok","s"}
+
 # ======== Helpers de color y tabla con degradado por área ========
 AREA_COLORS = {
     "SAP": "#1f77b4",
@@ -508,6 +515,31 @@ def _detalle_area_all_years(drive_id: str, base_path: str, areas_map: dict[str, 
     df["Fecha"] = pd.to_datetime(df["Fecha"], errors="coerce").dt.date
     return df.sort_values(["Año", "Fecha"], ascending=[False, False]).reset_index(drop=True)
 
+# ======= Tarjetas KPI (cuadradas) =======
+def _kpi_card(title: str, main: str, sub: str | None = None, tone: str = "blue") -> str:
+    """Card visual con tonos personalizados"""
+    if tone == "green":  # Consecución
+        bg = "#f0fdf4"; border = "#bbf7d0"; title_color = "#166534"; main_color = "#065f46"; sub_color = "#166534"
+    elif tone == "grey":  # Inaplicación
+        bg = "#f5f5f5"; border = "#e5e7eb"; title_color = "#374151"; main_color = "#111827"; sub_color = "#4b5563"
+    elif tone == "pink":  # Prácticas totales
+        bg = "#fdf2f8"; border = "#fbcfe8"; title_color = "#9d174d"; main_color = "#9d174d"; sub_color = "#9d174d"
+    elif tone == "blue":  # Total alumnos y Cierre expediente
+        bg = "#f1f6ff"; border = "#d6e4ff"; title_color = "#0b3a7a"; main_color = "#00335c"; sub_color = "#335b92"
+    else:
+        bg = "#ffffff"; border = "#cccccc"; title_color = "#333"; main_color = "#111"; sub_color = "#333"
+
+    sub_html = f"<div style='font-size:12px;color:{sub_color};opacity:.9'>{sub}</div>" if sub else ""
+    return f"""
+    <div style="background:{bg};border:1px solid {border};border-radius:14px;
+                padding:14px 16px;box-shadow:0 2px 6px rgba(0,0,0,0.06);
+                display:flex;flex-direction:column;gap:6px;min-height:96px">
+      <div style="font-weight:700;color:{title_color};font-size:13px">{title}</div>
+      <div style="font-size:28px;font-weight:800;color:{main_color}">{main}</div>
+      {sub_html}
+    </div>
+    """
+
 # =============== App principal ===============
 def render(df: pd.DataFrame | None = None):
     st.title("📊 Principal - Área de Empleo")
@@ -605,7 +637,7 @@ def render(df: pd.DataFrame | None = None):
         st.info("No hay datos disponibles para la selección realizada.")
         return
 
-    # Barras por área
+    # =================== Barras por área ===================
     conteo_area = df_filtrado["AREA"].value_counts().reset_index()
     conteo_area.columns = ["Área", "Cantidad"]
 
@@ -626,8 +658,8 @@ def render(df: pd.DataFrame | None = None):
                           plot_bgcolor="white")
     st.plotly_chart(fig_bar, use_container_width=True)
 
-    # KPIs
-    total_alumnos = len(df_filtrado)
+    # =================== KPIs (arriba) ===================
+    total_alumnos_pend = len(df_filtrado)
     hoy = pd.to_datetime("today").normalize()
 
     df_ge_activos = df_filtrado[df_filtrado["PRÁCTICAS/GE"] == "GE"].copy()
@@ -647,11 +679,53 @@ def render(df: pd.DataFrame | None = None):
 
     k1, k2, k3 = st.columns(3)
     with k1:
-        st.metric("🎯 Total Alumnos", total_alumnos)
+        st.metric("👥 Alumnos pendiente", total_alumnos_pend)  # renombrado
     with k2:
         st.metric("📌 ALUMNO RIESGO TRIM", total_ge_indicador)
     with k3:
         st.metric("💰 RIESGO ECONÓMICO", suma_riesgo_fmt)
+
+    # ======= TARJETAS EN UNA FILA (Total + % Consec + % Inapl + % Cierre + % Prácticas) =======
+    st.markdown(" ")
+
+    # Base global sin filtrar: NOMBRE y APELLIDOS no vacíos
+    df_total = df.copy()
+    df_total = df_total[~df_total["NOMBRE"].map(es_vacio) & ~df_total["APELLIDOS"].map(es_vacio)].copy()
+    total_alumnos_global = len(df_total)
+
+    pct_consec = 0.0
+    pct_inap  = 0.0
+    pct_cierre = 0.0
+    pct_practicas_tot = 0.0
+
+    if total_alumnos_global > 0:
+        consec_true = df_total["CONSECUCIÓN GE"].map(_booly).sum()
+        inap_true   = df_total["INAPLICACIÓN GE"].map(_booly).sum()
+        devol_true  = df_total["DEVOLUCIÓN GE"].map(_booly).sum()
+
+        pct_consec = round(100.0 * consec_true / total_alumnos_global, 2)
+        pct_inap   = round(100.0 * inap_true / total_alumnos_global, 2)
+
+        cierre_exp_n = int(((df_total["CONSECUCIÓN GE"].map(_booly)) |
+                            (df_total["INAPLICACIÓN GE"].map(_booly)) |
+                            (df_total["DEVOLUCIÓN GE"].map(_booly))).sum())
+        pct_cierre = round(100.0 * cierre_exp_n / total_alumnos_global, 2)
+
+        if "EMPRESA GE" in df_total.columns:
+            emp_ge_no_vacio = (~df_total["EMPRESA GE"].map(es_vacio)).sum()
+            pct_practicas_tot = round(100.0 * emp_ge_no_vacio / total_alumnos_global, 2)
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1:
+        c1.markdown(_kpi_card("✅ % Consecución GE", f"{pct_consec} %", "Sobre total alumnos", tone="green"), unsafe_allow_html=True)
+    with c2:
+        c2.markdown(_kpi_card("⚙️ % Inaplicación GE", f"{pct_inap} %", "Sobre total alumnos", tone="grey"), unsafe_allow_html=True)
+    with c3:
+        c3.markdown(_kpi_card("👥 Total de alumnos", f"{total_alumnos_global:,}".replace(",", "."), "Con nombre y apellidos", tone="blue"), unsafe_allow_html=True)
+    with c4:
+        c4.markdown(_kpi_card("📁 % Cierre de expediente", f"{pct_cierre} %", "Consec./Inaplic./Devol.", tone="blue"), unsafe_allow_html=True)
+    with c5:
+        c5.markdown(_kpi_card("🧪 % Prácticas totales", f"{pct_practicas_tot} %", "EMPRESA GE no vacío", tone="pink"), unsafe_allow_html=True)
 
     # =================== Distribución ===================
     st.markdown("---")
