@@ -254,7 +254,7 @@ def vista_estado_unico():
 
     # ========= BLOQUE RESUMEN ÚNICO (SUMA DE AMBOS PERIODOS) =========
     # Se muestra justo ANTES de “🧮 Totales (por año)”
-    st.markdown("## 📊 Suma de periodos con gráfico")
+    st.markdown("## 📊 Suma de periodos")
 
     hay_18_21 = not resumen_18_21.empty
     hay_22_25 = not resumen2.empty
@@ -557,7 +557,7 @@ def render():
         html_buffer = io.StringIO()
         html_buffer.write("<html><head><meta charset='utf-8'><title>Exportación — Estado seleccionado</title></head><body>")
         if "Totales_Graficos" in resultado_exportacion:
-            html_buffer.write("<h1>Suma de periodos con gráfico</h1>")
+            html_buffer.write("<h1>Suma de periodos</h1>")
             html_buffer.write(resultado_exportacion["Totales_Graficos"].to_html(index=False))
             if _FIG_18_21 is not None:
                 html_buffer.write(to_html(_FIG_18_21, include_plotlyjs='cdn', full_html=False))

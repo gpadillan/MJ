@@ -20,7 +20,52 @@ def _eu(n):
     s = f"{f:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     return s
 
+def _bar_chart(resumen_df, title):
+    """
+    Dibuja un bar chart que soporta positivos/negativos y muestra anotaciones arriba/abajo.
+    resumen_df: columnas -> Periodo, Total_Deuda, Num_Clientes
+    """
+    if resumen_df.empty:
+        return None
+
+    fig = px.bar(
+        resumen_df, x="Periodo", y="Total_Deuda",
+        color="Total_Deuda", color_continuous_scale=["#f5eaea", "#0b375b"],
+        template="plotly_white", height=560, title=title
+    )
+    fig.update_traces(marker_line_color="black", marker_line_width=0.6, hovertemplate=None, hoverinfo="skip")
+
+    # Rango Y para incluir negativos/positivos con padding
+    min_y = float(resumen_df["Total_Deuda"].min())
+    max_y = float(resumen_df["Total_Deuda"].max())
+    pad_pos = max_y * 0.22 if max_y > 0 else 0
+    pad_neg = abs(min_y) * 0.22 if min_y < 0 else 0
+    y_min = min(0.0, min_y - pad_neg)
+    y_max = max(0.0, max_y + pad_pos)
+    if y_min == y_max:  # todos 0
+        y_min, y_max = -1, 1
+    fig.update_yaxes(range=[y_min, y_max], title="Total")
+    fig.update_xaxes(title="Periodo")
+
+    # Anotaciones
+    annotations = []
+    for _, r in resumen_df.iterrows():
+        val = float(r["Total_Deuda"])
+        y_anno = val * (1.045 if val >= 0 else 0.955)
+        annotations.append(dict(
+            x=r["Periodo"], y=y_anno,
+            yanchor="bottom" if val >= 0 else "top",
+            xanchor="center",
+            text=f"€ {_eu(val)}<br>👥 {int(r['Num_Clientes'])}",
+            showarrow=False, font=dict(color="white", size=16),
+            align="center", bgcolor="rgba(0,0,0,0.95)", bordercolor="black", borderwidth=1.2, opacity=1
+        ))
+    fig.update_layout(margin=dict(l=20, r=20, t=40, b=50), annotations=annotations)
+    return fig
+
 resultado_exportacion = {}
+_FIG_18_21 = None
+_FIG_22_25 = None
 
 # ======================================================
 # Vista principal
@@ -62,28 +107,46 @@ def vista_clientes_pendientes():
 
     total_clientes_unicos = set()
 
-    # ---------------- 2018–2021 (solo tabla) ----------------
+    # ---------------- 2018–2021 (tabla + gráfico si hay dato) ----------------
     st.markdown("## 🕰️ Periodo 2018–2021")
     cols_18_21 = [f"Total {a}" for a in range(2018, 2022) if f"Total {a}" in df_pendiente.columns]
+
+    global _FIG_18_21
+    _FIG_18_21 = None
+
+    df1 = pd.DataFrame()
+    resumen_18_21 = pd.DataFrame()
+    total_deuda_18_21 = 0.0
+    n_cli_18_21 = 0
 
     if cols_18_21:
         df1 = df_pendiente[["Cliente"] + cols_18_21].copy()
         df1[cols_18_21] = df1[cols_18_21].apply(pd.to_numeric, errors="coerce").fillna(0)
         df1 = df1.groupby("Cliente", as_index=False)[cols_18_21].sum()
-        df1 = df1[df1[cols_18_21].sum(axis=1) > 0]
+        # permitir positivos/negativos distintos de 0
+        df1 = df1[df1[cols_18_21].sum(axis=1) != 0]
         total_clientes_unicos.update(df1["Cliente"].unique())
 
         st.dataframe(df1, use_container_width=True)
         total_deuda_18_21 = float(df1[cols_18_21].sum().sum())
+        n_cli_18_21 = int(df1["Cliente"].nunique())
 
         st.markdown(
             f"**👥 Total clientes con deuda en 2018–2021:** "
-            f"{df1['Cliente'].nunique()} – 🏅 Total deuda: {_eu(total_deuda_18_21)} €"
+            f"{n_cli_18_21} – 🏅 Total deuda: {_eu(total_deuda_18_21)} €"
         )
-
         resultado_exportacion["2018_2021"] = df1
-    else:
-        total_deuda_18_21 = 0.0
+
+        # Gráfico 2018–2021 (si hay columnas con suma != 0)
+        resumen_18_21 = pd.DataFrame({
+            "Periodo": cols_18_21,
+            "Total_Deuda": [df1[c].sum() for c in cols_18_21],
+            "Num_Clientes": [(df1.groupby("Cliente")[c].sum() != 0).sum() for c in cols_18_21],
+        })
+        resumen_18_21 = resumen_18_21[~((resumen_18_21["Total_Deuda"] == 0) & (resumen_18_21["Num_Clientes"] == 0))].reset_index(drop=True)
+        if not resumen_18_21.empty:
+            _FIG_18_21 = _bar_chart(resumen_18_21, "Totales 2018–2021")
+            st.plotly_chart(_FIG_18_21, use_container_width=True)
 
     # ---------------- 2022–2025 ----------------
     st.markdown("## 📅 Periodo 2022–2025")
@@ -101,20 +164,28 @@ def vista_clientes_pendientes():
         key=key_meses_actual
     )
 
+    global _FIG_22_25
+    _FIG_22_25 = None
+
+    df2 = pd.DataFrame()
+    resumen2 = pd.DataFrame()
     total_deuda_22_25 = 0.0
+    n_cli_22_25 = 0
+
     if cols_22_25:
         df2 = df_pendiente[["Cliente"] + cols_22_25].copy()
         df2[cols_22_25] = df2[cols_22_25].apply(pd.to_numeric, errors="coerce").fillna(0)
         df2 = df2.groupby("Cliente", as_index=False)[cols_22_25].sum()
-        df2 = df2[df2[cols_22_25].sum(axis=1) > 0]
+        df2 = df2[df2[cols_22_25].sum(axis=1) != 0]
         total_clientes_unicos.update(df2["Cliente"].unique())
 
         st.dataframe(df2, use_container_width=True)
 
         total_deuda_22_25 = float(df2[cols_22_25].sum().sum())
+        n_cli_22_25 = int(df2["Cliente"].nunique())
         st.markdown(
-            f"**👥 Total clientes con deuda en 2022–2025:** "
-            f"{df2['Cliente'].nunique()} – 🏅 Total deuda: {_eu(total_deuda_22_25)} €"
+            f"**👥 Total clientes con deuda en 2022–{año_actual}:** "
+            f"{n_cli_22_25} – 🏅 Total deuda: {_eu(total_deuda_22_25)} €"
         )
 
         resultado_exportacion["2022_2025"] = df2
@@ -122,37 +193,36 @@ def vista_clientes_pendientes():
         resumen2 = pd.DataFrame({
             "Periodo": cols_22_25,
             "Total_Deuda": [df2[c].sum() for c in cols_22_25],
-            "Num_Clientes": [(df2.groupby("Cliente")[c].sum() > 0).sum() for c in cols_22_25],
+            "Num_Clientes": [(df2.groupby("Cliente")[c].sum() != 0).sum() for c in cols_22_25],
         })
+        resumen2 = resumen2[~((resumen2["Total_Deuda"] == 0) & (resumen2["Num_Clientes"] == 0))].reset_index(drop=True)
 
-        fig2 = px.bar(
-            resumen2, x="Periodo", y="Total_Deuda",
-            color="Total_Deuda", color_continuous_scale=["#eaf5ea", "#0b375b"],
-            template="plotly_white", height=560
-        )
-        fig2.update_traces(marker_line_color="black", marker_line_width=0.6, hovertemplate=None, hoverinfo="skip")
-        max_y = float(resumen2["Total_Deuda"].max()) if len(resumen2) else 0.0
-        fig2.update_yaxes(range=[0, max_y * 1.22])
-        fig2.update_layout(margin=dict(l=20, r=20, t=20, b=50), xaxis_title="Periodo", yaxis_title="Total")
+        if not resumen2.empty:
+            _FIG_22_25 = _bar_chart(resumen2, f"Totales 2022–{año_actual}")
+            st.plotly_chart(_FIG_22_25, use_container_width=True)
 
-        annotations = []
-        for _, r in resumen2.iterrows():
-            annotations.append(dict(
-                x=r["Periodo"], y=float(r["Total_Deuda"]) * 1.045,
-                yanchor="bottom", xanchor="center",
-                text=f"€ {_eu(r['Total_Deuda'])}<br>👥 {int(r['Num_Clientes'])}",
-                showarrow=False, font=dict(color="white", size=16),
-                align="center", bgcolor="rgba(0,0,0,0.95)", bordercolor="black", borderwidth=1.2, opacity=1
-            ))
-        fig2.update_layout(annotations=annotations)
+    # ========= BLOQUE RESUMEN ÚNICO (SUMA DE AMBOS PERIODOS) =========
+    # Se muestra justo ANTES de “🧮 Pendiente TOTAL (por año)”
+    st.markdown("## 📊 Suma de periodos")
 
-        st.markdown("### ")
-        st.plotly_chart(fig2, use_container_width=True)
+    hay_18_21 = not resumen_18_21.empty
+    hay_22_25 = not resumen2.empty
 
-        global _FIG_22_25
-        _FIG_22_25 = fig2
+    if hay_18_21 or hay_22_25:
+        n_cli_comb = (n_cli_18_21 if hay_18_21 else 0) + (n_cli_22_25 if hay_22_25 else 0)
+        total_comb = (total_deuda_18_21 if hay_18_21 else 0.0) + (total_deuda_22_25 if hay_22_25 else 0.0)
+
+        etiqueta = f"2018–{año_actual}"
+        st.markdown(f"**👥 Clientes ({etiqueta}): {n_cli_comb} – 🏅 Total: € {_eu(total_comb)}**")
+
+        # Guardar en exportación como fila única
+        resultado_exportacion["Totales_Graficos"] = pd.DataFrame([{
+            "Periodo": etiqueta,
+            "Clientes (suma de ambos bloques)": n_cli_comb,
+            "Total (€) (suma de ambos bloques)": total_comb
+        }])
     else:
-        _FIG_22_25 = None
+        st.info("No hay datos con los que generar gráficos en los periodos definidos.")
 
     # ---------------- Cards por año (con triple lógica para el año actual) ----------------
     def _year_from_total(col):
@@ -481,14 +551,19 @@ def render():
         # HTML
         html_buffer = io.StringIO()
         html_buffer.write("<html><head><meta charset='utf-8'><title>Exportación</title></head><body>")
+        if "Totales_Graficos" in resultado_exportacion:
+            html_buffer.write("<h1>Suma de periodos</h1>")
+            html_buffer.write(resultado_exportacion["Totales_Graficos"].to_html(index=False))
+            if _FIG_18_21 is not None:
+                html_buffer.write(to_html(_FIG_18_21, include_plotlyjs='cdn', full_html=False))
+            if _FIG_22_25 is not None:
+                html_buffer.write(to_html(_FIG_22_25, include_plotlyjs='cdn', full_html=False))
         if "2018_2021" in resultado_exportacion:
             html_buffer.write("<h1>Resumen 2018–2021</h1>")
             html_buffer.write(resultado_exportacion["2018_2021"].to_html(index=False))
         if "2022_2025" in resultado_exportacion:
             html_buffer.write("<h1>Resumen 2022–2025</h1>")
             html_buffer.write(resultado_exportacion["2022_2025"].to_html(index=False))
-            if '_FIG_22_25' in globals() and _FIG_22_25 is not None:
-                html_buffer.write(to_html(_FIG_22_25, include_plotlyjs='cdn', full_html=False))
         if "Totales_Años_Meses" in resultado_exportacion:
             html_buffer.write("<h2>Totales por año (deuda anual)</h2>")
             html_buffer.write(resultado_exportacion["Totales_Años_Meses"].to_html(index=False))
