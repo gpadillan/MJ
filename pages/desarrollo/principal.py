@@ -679,7 +679,7 @@ def render(df: pd.DataFrame | None = None):
 
     k1, k2, k3 = st.columns(3)
     with k1:
-        st.metric("👥 Alumnos pendiente", total_alumnos_pend)  # renombrado
+        st.metric("👥 ALUMNOS PENDIENTES", total_alumnos_pend)  # renombrado
     with k2:
         st.metric("📌 ALUMNO RIESGO TRIM", total_ge_indicador)
     with k3:
