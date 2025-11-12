@@ -19,7 +19,7 @@ def format_euro(value: float) -> str:
 
 def render_bar_card(title: str, value, color="#E3F2FD", icon: str = ""):
     if isinstance(value, (int, float)):
-        val_txt = f"€ {format_euro(value)}"
+        val_txt = f"{format_euro(value)} €"
     else:
         val_txt = str(value)
     return f"""
@@ -101,16 +101,9 @@ def _sum_by_state_aliases(df: pd.DataFrame, anio_actual: int, aliases: list[str]
         return 0.0
     return float(tmp.loc[mask, cols].sum().sum())
 
-# --------- PENDIENTE: misma lógica que en las páginas de Pendiente ---------
+# --------- PENDIENTE ---------
 
 def _split_pending_like_pages(df: pd.DataFrame, anio_actual: int, aliases: list[str]) -> tuple[float, float, float]:
-    """
-    Igual que en pages/deuda/pendiente.py y pagesEIM/deuda/pendiente_eim.py:
-      - Pasados (< año actual): 'Total YYYY' si existe; si no, meses de ese año.
-      - Año actual: meses hasta hoy -> con_deuda; meses posteriores -> futuro.
-        Si no hay meses pero existe 'Total {año_actual}', se usa entero como con_deuda.
-      - Futuros (> año actual): meses + (si existe) también 'Total YYYY'.
-    """
     if df is None or df.empty or ("Estado" not in df.columns):
         return 0.0, 0.0, 0.0
 
@@ -191,6 +184,130 @@ def _split_pending_like_pages(df: pd.DataFrame, anio_actual: int, aliases: list[
     total = con_deuda + futuro
     return con_deuda, futuro, total
 
+# ===================== PV-FE (detector y totales) =====================
+
+def _norm_filename(s: str) -> str:
+    return _strip_accents(str(s)).lower().replace(" ", "")
+
+def _find_pvfe_file(candidates: list[str], folders_for_pattern: list[str]) -> str | None:
+    for p in candidates:
+        if p and os.path.exists(p):
+            return p
+    for folder in folders_for_pattern:
+        if os.path.isdir(folder):
+            for fn in os.listdir(folder):
+                n = _norm_filename(fn)
+                if n.startswith("listadofacturacionficticia"):
+                    return os.path.join(folder, fn)
+    return None
+
+def _to_number_es(x) -> float:
+    if isinstance(x, (int, float)):
+        return float(x)
+    s = str(x).strip()
+    if not s or s.lower() in {"nan", "none"}:
+        return 0.0
+    neg = False
+    if s.startswith("(") and s.endswith(")"):
+        neg = True
+        s = s[1:-1]
+    s = s.replace("\u00A0", " ")
+    s = re.sub(r"[^0-9,\.\-\s]", "", s).replace(" ", "")
+    if s.count(",") == 1 and s.rfind(",") > s.rfind("."):
+        s = s.replace(".", "").replace(",", ".")
+    else:
+        s = s.replace(",", "")
+    try:
+        v = float(s)
+    except Exception:
+        v = 0.0
+    return -abs(v) if neg else v
+
+def _resolve_pvfe_columns(cols) -> dict:
+    norm_map = { _norm_key(c): c for c in cols }
+    keys = list(norm_map.keys())
+    def find_any(patterns):
+        for p in patterns:
+            if p in norm_map: return norm_map[p]
+        for p in patterns:
+            for k in keys:
+                if p in k: return norm_map[k]
+        return None
+    razon  = find_any(["RAZON SOCIAL","RAZON_SOCIAL","CLIENTE","ACCOUNT NAME","NOMBRE CLIENTE","RAZON"])
+    pend   = find_any(["PENDIENTE","IMPORTE PENDIENTE","PEND","SALDO PENDIENTE","DEUDA"])
+    total  = find_any(["TOTAL","IMPORTE TOTAL","SUMA TOTAL"])
+    estado = find_any(["ESTADO","FASE","ETAPA"])
+    comer  = find_any(["COMERCIAL","PROPIETARIO","ASESOR","AGENTE","OWNER","VENDEDOR","RESPONSABLE"])
+    fecha  = find_any(["FECHA FACTURA","FECHA_FACTURA","FECHA DE FACTURA","EMISION","FECHA EMISION","FECHA"])
+    return {"razon":razon,"pend":pend,"total":total,"estado":estado,"comer":comer,"fecha":fecha}
+
+def _pvfe_totals(path: str) -> tuple[float, float]:
+    if not path or not os.path.exists(path):
+        return 0.0, 0.0
+    try:
+        df = pd.read_excel(path)
+    except Exception:
+        return 0.0, 0.0
+    cols = _resolve_pvfe_columns(df.columns)
+    if not cols["total"]:
+        return 0.0, 0.0
+    ser = df[cols["total"]].apply(_to_number_es)
+    importe_total = float(ser.sum())
+    cifra_negocio = float(ser[ser > 0].sum())
+    return importe_total, cifra_negocio
+
+def _pvfe_month_options_and_sums(path: str):
+    opciones = ["Todos"]
+    sums_by_key = {"Todos": (0.0, 0.0)}
+    if not path or not os.path.exists(path):
+        return opciones, sums_by_key
+
+    try:
+        df = pd.read_excel(path)
+    except Exception:
+        return opciones, sums_by_key
+
+    cols = _resolve_pvfe_columns(df.columns)
+    if not cols["total"]:
+        return opciones, sums_by_key
+
+    ser_total = df[cols["total"]].apply(_to_number_es)
+    sums_by_key["Todos"] = (float(ser_total.sum()), float(ser_total[ser_total > 0].sum()))
+
+    if not cols["fecha"]:
+        return opciones, sums_by_key
+
+    g = df.copy()
+    g["_fecha"] = pd.to_datetime(g[cols["fecha"]], errors="coerce", dayfirst=True)
+    g = g.dropna(subset=["_fecha"])
+    if g.empty:
+        return opciones, sums_by_key
+
+    g["_key_mes"] = g["_fecha"].dt.month.map(MESES_NOMBRE) + " " + g["_fecha"].dt.year.astype(int).astype(str)
+    g["_total_num"] = g[cols["total"]].apply(_to_number_es)
+
+    sums = (
+        g.groupby("_key_mes")["_total_num"]
+         .agg(importe_total="sum", cifra_negocio=lambda s: s[s > 0].sum())
+         .reset_index()
+    )
+
+    def _mm(key):
+        try:
+            mes, anio = key.split()
+            return int(anio), MONTH_NAME_TO_NUM.get(mes, 0)
+        except Exception:
+            return (0, 0)
+    sums["_sort"] = sums["_key_mes"].apply(_mm)
+    sums = sums.sort_values(by="_sort", ascending=False).drop(columns="_sort")
+
+    for _, r in sums.iterrows():
+        k = r["_key_mes"]
+        opciones.append(k)
+        sums_by_key[k] = (float(r["importe_total"]), float(r["cifra_negocio"]))
+
+    return opciones, sums_by_key
+
 # ===================== PÁGINA =====================
 
 def principal_page():
@@ -212,22 +329,21 @@ def principal_page():
         "DUDOSO": "#FFEBEE",
         "INCOBRABLE": "#FCE4EC",
         "NOCOBRADO": "#ECEFF1",
+        "PVFE_TOTAL": "#E8EAF6",
+        "PVFE_CIFRA": "#E0F2F1",
     }
 
     anio_actual = datetime.now().year
 
-    # Rutas
     EIP_FALLBACKS = [os.path.join("uploaded", "archivo_cargado.xlsx")]
     EIM_FALLBACKS = [
         os.path.join("uploaded_eim", "archivo_cargado.xlsx"),
         os.path.join("uploaded", "archivo_cargado_eim.xlsx"),
     ]
 
-    # Cargar DF
     df_eip = _load_any_from_session_or_files("excel_data", EIP_FALLBACKS)
     df_eim = _load_any_from_session_or_files("excel_data_eim", EIM_FALLBACKS)
 
-    # Aliases por estado
     STATE_ALIASES = {
         "COBRADO": ["COBRADO", "COBRADO TRANSFERENCIA", "COBRADO TARJETA", "COBRO RECIBIDO"],
         "DOMICILIACION CONFIRMADA": ["DOMICILIACION CONFIRMADA", "CONFIRMADA"],
@@ -242,7 +358,6 @@ def principal_page():
         aliases = STATE_ALIASES.get(estado_key, [estado_key])
         return _sum_by_state_aliases(df, anio_actual, aliases)
 
-    # Totales EIP (no pendiente)
     cob_eip   = total_estado_b2x(df_eip, "COBRADO")
     conf_eip  = total_estado_b2x(df_eip, "DOMICILIACION CONFIRMADA")
     emit_eip  = total_estado_b2x(df_eip, "DOMICILIACION EMITIDA")
@@ -250,7 +365,6 @@ def principal_page():
     inco_eip  = total_estado_b2x(df_eip, "INCOBRABLE")
     noco_eip  = total_estado_b2x(df_eip, "NO COBRADO")
 
-    # Totales EIM (no pendiente)
     cob_eim   = total_estado_b2x(df_eim, "COBRADO")
     conf_eim  = total_estado_b2x(df_eim, "DOMICILIACION CONFIRMADA")
     emit_eim  = total_estado_b2x(df_eim, "DOMICILIACION EMITIDA")
@@ -258,11 +372,9 @@ def principal_page():
     inco_eim  = total_estado_b2x(df_eim, "INCOBRABLE")
     noco_eim  = total_estado_b2x(df_eim, "NO COBRADO")
 
-    # ===== Pendiente (idéntico a las páginas) =====
     p_con_eip, p_fut_eip, p_tot_eip = _split_pending_like_pages(df_eip, anio_actual, STATE_ALIASES["PENDIENTE"])
     p_con_eim, p_fut_eim, p_tot_eim = _split_pending_like_pages(df_eim, anio_actual, STATE_ALIASES["PENDIENTE"])
 
-    # SUMA B2C
     cob_sum   = (cob_eip or 0.0)  + (cob_eim or 0.0)
     conf_sum  = (conf_eip or 0.0) + (conf_eim or 0.0)
     emit_sum  = (emit_eip or 0.0) + (emit_eim or 0.0)
@@ -278,29 +390,25 @@ def principal_page():
     total_gen_eip = cob_eip + conf_eip + emit_eip
     total_gen_eim = cob_eim + conf_eim + emit_eim
 
-    # ============== TOP: SUMA EIP + EIM (8 tarjetas) ==============
     st.markdown("### 💼 Gestión de Cobro — **Suma EIP + EIM**")
     c1, c2, c3, c4 = st.columns(4)
-    c1.markdown(render_bar_card("Cobrado", cob_sum, COLORS["COBRADO"], "💵​"), unsafe_allow_html=True)
-    c2.markdown(render_bar_card("Domiciliación Confirmada", conf_sum, COLORS["CONFIRMADA"], "💷​"), unsafe_allow_html=True)
+    c1.markdown(render_bar_card("Cobrado", cob_sum, COLORS["COBRADO"], "💵"), unsafe_allow_html=True)
+    c2.markdown(render_bar_card("Domiciliación Confirmada", conf_sum, COLORS["CONFIRMADA"], "💷"), unsafe_allow_html=True)
     c3.markdown(render_bar_card("Domiciliación Emitida", emit_sum, COLORS["EMITIDA"], "📤"), unsafe_allow_html=True)
     c4.markdown(render_bar_card("Total Generado", total_gen_sum, COLORS["TOTAL"], "💰"), unsafe_allow_html=True)
 
     b1, b2, b3, b4 = st.columns(4)
-    # 👇 AHORA MOSTRAMOS *PENDIENTE CON DEUDA* EN LA TARJETA PRINCIPAL
     b1.markdown(render_bar_card("Pendiente", pendiente_con_deuda, COLORS["PENDIENTE"], "⏳"), unsafe_allow_html=True)
-    b2.markdown(render_bar_card("Dudoso Cobro",     dudo_sum, COLORS["DUDOSO"],    "❗"), unsafe_allow_html=True)
-    b3.markdown(render_bar_card("Incobrable",       inco_sum, COLORS["INCOBRABLE"],"⛔"), unsafe_allow_html=True)
-    b4.markdown(render_bar_card("No Cobrado",       noco_sum, COLORS["NOCOBRADO"], "🧾"), unsafe_allow_html=True)
+    b2.markdown(render_bar_card("Dudoso Cobro", dudo_sum, COLORS["DUDOSO"], "❗"), unsafe_allow_html=True)
+    b3.markdown(render_bar_card("Incobrable",   inco_sum, COLORS["INCOBRABLE"], "⛔"), unsafe_allow_html=True)
+    b4.markdown(render_bar_card("No Cobrado",   noco_sum, COLORS["NOCOBRADO"], "🧾"), unsafe_allow_html=True)
 
-    # Línea del split pendiente combinado (informativa)
     st.markdown(
         f"**📌 Pendiente con deuda:** {format_euro(pendiente_con_deuda)} €&nbsp;&nbsp;|&nbsp;&nbsp;"
         f"**🔮 Pendiente futuro:** {format_euro(pendiente_futuro)} €&nbsp;&nbsp;|&nbsp;&nbsp;"
         f"**🧮 TOTAL pendiente:** {format_euro(pend_sum)} €"
     )
 
-    # ===== Helper para bloques por ámbito =====
     def render_scope_grid(scope_label: str,
                           cob, conf, emit, total_gen,
                           pend_con_deuda, dudo, inco, noco,
@@ -312,7 +420,6 @@ def principal_page():
         c4.markdown(render_bar_card(f"Total Generado ({scope_label})", total_gen, COLORS["TOTAL"]), unsafe_allow_html=True)
 
         d1, d2, d3, d4 = st.columns(4)
-        # 👇 EN DETALLE TAMBIÉN MOSTRAMOS *CON DEUDA* EN LA TARJETA “Pendiente (…)”
         d1.markdown(render_bar_card(f"Pendiente ({scope_label})",  pend_con_deuda, COLORS["PENDIENTE"]), unsafe_allow_html=True)
         d2.markdown(render_bar_card(f"Dudoso ({scope_label})",     dudo,       COLORS["DUDOSO"]),    unsafe_allow_html=True)
         d3.markdown(render_bar_card(f"Incobrable ({scope_label})", inco,       COLORS["INCOBRABLE"]),unsafe_allow_html=True)
@@ -324,12 +431,11 @@ def principal_page():
             f"**🧮 TOTAL pendiente ({scope_label}):** {format_euro(p_tot)} €"
         )
 
-    # ===================== DETALLE POR ÁMBITO =====================
     with st.expander("📊 Ver detalle EIP", expanded=False):
         render_scope_grid(
             "EIP",
             cob_eip, conf_eip, emit_eip, total_gen_eip,
-            p_con_eip, dudo_eip, inco_eip, noco_eip,   # <- tarjeta “Pendiente (EIP)” muestra con deuda
+            p_con_eip, dudo_eip, inco_eip, noco_eip,
             p_con_eip, p_fut_eip, p_tot_eip
         )
 
@@ -337,6 +443,61 @@ def principal_page():
         render_scope_grid(
             "EIM",
             cob_eim, conf_eim, emit_eim, total_gen_eim,
-            p_con_eim, dudo_eim, inco_eim, noco_eim,   # <- tarjeta “Pendiente (EIM)” muestra con deuda
+            p_con_eim, dudo_eim, inco_eim, noco_eim,
             p_con_eim, p_fut_eim, p_tot_eim
         )
+
+    # ============= PV-FE CON DESPLEGABLE POR MESES (debajo de EIM) =============
+    eip_pvfe_candidates = [
+        os.path.join("uploaded_admisiones", "pv_fe.xlsx"),
+        os.path.join("uploaded", "pv_fe.xlsx"),
+    ]
+    eim_pvfe_candidates = [
+        os.path.join("uploaded_eim", "pv_fe_eim.xlsx"),
+        os.path.join("uploaded_eim", "pv_fe.xlsx"),
+    ]
+    eip_pvfe = _find_pvfe_file(eip_pvfe_candidates, folders_for_pattern=["uploaded_admisiones","uploaded"])
+    eim_pvfe = _find_pvfe_file(eim_pvfe_candidates, folders_for_pattern=["uploaded_eim"])
+
+    eip_opts, eip_sums = _pvfe_month_options_and_sums(eip_pvfe)
+    eim_opts, eim_sums = _pvfe_month_options_and_sums(eim_pvfe)
+
+    meses_all = set(eip_opts + eim_opts)
+    meses_all.discard("Todos")
+    def _sort_key_month(mk: str):
+        try:
+            mes, anio = mk.split()
+            return (int(anio), MONTH_NAME_TO_NUM.get(mes, 0))
+        except Exception:
+            return (0, 0)
+    opciones_combinadas = ["Todos"] + sorted(meses_all, key=_sort_key_month, reverse=True)
+
+    st.markdown("### 📄 Facturación Ficticia (PV-FE) — **EIP + EIM**")
+    st.caption("Filtra por mes (detectado por la fecha de factura). Si el archivo no tiene fecha, solo aparece ‘Todos’.")
+    sel_mes = st.selectbox("Selecciona mes PV-FE:", opciones_combinadas, index=0)
+
+    eip_imp, eip_cifra = eip_sums.get(sel_mes, eip_sums.get("Todos", (0.0, 0.0)))
+    eim_imp, eim_cifra = eim_sums.get(sel_mes, eim_sums.get("Todos", (0.0, 0.0)))
+
+    pvfe_importe_total_sum = (eip_imp or 0.0) + (eim_imp or 0.0)
+    pvfe_cifra_sum         = (eip_cifra or 0.0) + (eim_cifra or 0.0)
+
+    k1, k2 = st.columns(2)
+    k1.markdown(
+        render_bar_card(f"Cifra de Negocio (EIP+EIM) — {sel_mes}", pvfe_importe_total_sum, COLORS["PVFE_TOTAL"], "🧾"),
+        unsafe_allow_html=True
+    )
+    k2.markdown(
+        render_bar_card(f"Importe Total FE (EIP+EIM) — {sel_mes}", pvfe_cifra_sum, COLORS["PVFE_CIFRA"], "🏷️"),
+        unsafe_allow_html=True
+    )
+
+    # ---- Desglose: MISMO ORDEN EN AMBOS LADOS (Importe total FE -> Cifra de negocio)
+    with st.expander("Ver desglose por ámbito (PV-FE)", expanded=False):
+        c1, c2 = st.columns(2)
+        # EIP
+        c1.markdown(render_bar_card(f"EIP · Cifra de negocio — {sel_mes}", eip_imp, "#F3DAF7"), unsafe_allow_html=True)
+        c1.markdown(render_bar_card(f"EIP · Importe total FE — {sel_mes}", eip_cifra, "#DBFFFD"), unsafe_allow_html=True)
+        # EIM
+        c2.markdown(render_bar_card(f"EIM · Cifra de negocio  — {sel_mes}", eim_imp, "#F3DAF7"), unsafe_allow_html=True)
+        c2.markdown(render_bar_card(f"EIM · Importe total FE — {sel_mes}", eim_cifra, "#DBFFFD"), unsafe_allow_html=True)

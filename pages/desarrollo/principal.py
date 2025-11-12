@@ -55,6 +55,12 @@ def _booly(v) -> bool:
     s = str(v).strip().lower()
     return s in {"true","1","1.0","sí","si","verdadero","x","✓","check","ok","s"}
 
+def _fmt_int(n: int) -> str:
+    try:
+        return f"{int(n):,}".replace(",", ".")
+    except Exception:
+        return "0"
+
 # ======== Helpers de color y tabla con degradado por área ========
 AREA_COLORS = {
     "SAP": "#1f77b4",
@@ -679,7 +685,7 @@ def render(df: pd.DataFrame | None = None):
 
     k1, k2, k3 = st.columns(3)
     with k1:
-        st.metric("👥 ALUMNOS PENDIENTES", total_alumnos_pend)  # renombrado
+        st.metric("👥 ALUMNOS PENDIENTES", total_alumnos_pend)
     with k2:
         st.metric("📌 ALUMNO RIESGO TRIM", total_ge_indicador)
     with k3:
@@ -693,18 +699,16 @@ def render(df: pd.DataFrame | None = None):
     df_total = df_total[~df_total["NOMBRE"].map(es_vacio) & ~df_total["APELLIDOS"].map(es_vacio)].copy()
     total_alumnos_global = len(df_total)
 
-    pct_consec = 0.0
-    pct_inap  = 0.0
-    pct_cierre = 0.0
-    pct_practicas_tot = 0.0
+    pct_consec = pct_inap = pct_cierre = pct_practicas_tot = 0.0
+    consec_true = inap_true = devol_true = cierre_exp_n = emp_ge_no_vacio = 0
 
     if total_alumnos_global > 0:
-        consec_true = df_total["CONSECUCIÓN GE"].map(_booly).sum()
-        inap_true   = df_total["INAPLICACIÓN GE"].map(_booly).sum()
-        devol_true  = df_total["DEVOLUCIÓN GE"].map(_booly).sum()
+        consec_true = int(df_total["CONSECUCIÓN GE"].map(_booly).sum())
+        inap_true   = int(df_total["INAPLICACIÓN GE"].map(_booly).sum())
+        devol_true  = int(df_total["DEVOLUCIÓN GE"].map(_booly).sum())
 
         pct_consec = round(100.0 * consec_true / total_alumnos_global, 2)
-        pct_inap   = round(100.0 * inap_true / total_alumnos_global, 2)
+        pct_inap   = round(100.0 * inap_true   / total_alumnos_global, 2)
 
         cierre_exp_n = int(((df_total["CONSECUCIÓN GE"].map(_booly)) |
                             (df_total["INAPLICACIÓN GE"].map(_booly)) |
@@ -712,20 +716,50 @@ def render(df: pd.DataFrame | None = None):
         pct_cierre = round(100.0 * cierre_exp_n / total_alumnos_global, 2)
 
         if "EMPRESA GE" in df_total.columns:
-            emp_ge_no_vacio = (~df_total["EMPRESA GE"].map(es_vacio)).sum()
+            emp_ge_no_vacio = int((~df_total["EMPRESA GE"].map(es_vacio)).sum())
             pct_practicas_tot = round(100.0 * emp_ge_no_vacio / total_alumnos_global, 2)
 
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
-        c1.markdown(_kpi_card("✅ % Consecución GE", f"{pct_consec} %", "Sobre total alumnos", tone="green"), unsafe_allow_html=True)
+        c1.markdown(
+            _kpi_card("✅ % Consecución GE",
+                      f"{pct_consec} %  ({_fmt_int(consec_true)})",
+                      "Sobre total alumnos",
+                      tone="green"),
+            unsafe_allow_html=True
+        )
     with c2:
-        c2.markdown(_kpi_card("⚙️ % Inaplicación GE", f"{pct_inap} %", "Sobre total alumnos", tone="grey"), unsafe_allow_html=True)
+        c2.markdown(
+            _kpi_card("⚙️ % Inaplicación GE",
+                      f"{pct_inap} %  ({_fmt_int(inap_true)})",
+                      "Sobre total alumnos",
+                      tone="grey"),
+            unsafe_allow_html=True
+        )
     with c3:
-        c3.markdown(_kpi_card("👥 Total de alumnos", f"{total_alumnos_global:,}".replace(",", "."), "Con nombre y apellidos", tone="blue"), unsafe_allow_html=True)
+        c3.markdown(
+            _kpi_card("👥 Total de alumnos",
+                      _fmt_int(total_alumnos_global),
+                      "Con nombre y apellidos",
+                      tone="blue"),
+            unsafe_allow_html=True
+        )
     with c4:
-        c4.markdown(_kpi_card("📁 % Cierre de expediente", f"{pct_cierre} %", "Consec./Inaplic./Devol.", tone="blue"), unsafe_allow_html=True)
+        c4.markdown(
+            _kpi_card("📁 % Cierre de expediente",
+                      f"{pct_cierre} %  ({_fmt_int(cierre_exp_n)})",
+                      "Consec./Inaplic./Devol.",
+                      tone="blue"),
+            unsafe_allow_html=True
+        )
     with c5:
-        c5.markdown(_kpi_card("🧪 % Prácticas totales", f"{pct_practicas_tot} %", "EMPRESA GE no vacío", tone="pink"), unsafe_allow_html=True)
+        c5.markdown(
+            _kpi_card("🧪 % Prácticas totales",
+                      f"{pct_practicas_tot} %  ({_fmt_int(emp_ge_no_vacio)})",
+                      "EMPRESA GE no vacío",
+                      tone="pink"),
+            unsafe_allow_html=True
+        )
 
     # =================== Distribución ===================
     st.markdown("---")
