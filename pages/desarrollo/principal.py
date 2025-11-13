@@ -722,42 +722,52 @@ def render(df: pd.DataFrame | None = None):
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
         c1.markdown(
-            _kpi_card("✅ % Consecución GE",
-                      f"{pct_consec} %  ({_fmt_int(consec_true)})",
-                      "Sobre total alumnos",
-                      tone="green"),
+            _kpi_card(
+                "✅ % Consecución GE",
+                f"{pct_consec} %",
+                "Sobre total alumnos",
+                tone="green"
+            ),
             unsafe_allow_html=True
         )
     with c2:
         c2.markdown(
-            _kpi_card("⚙️ % Inaplicación GE",
-                      f"{pct_inap} %  ({_fmt_int(inap_true)})",
-                      "Sobre total alumnos",
-                      tone="grey"),
+            _kpi_card(
+                "⚙️ % Inaplicación GE",
+                f"{pct_inap} %",
+                "Sobre total alumnos",
+                tone="grey"
+            ),
             unsafe_allow_html=True
         )
     with c3:
         c3.markdown(
-            _kpi_card("👥 Total de alumnos",
-                      _fmt_int(total_alumnos_global),
-                      "Con nombre y apellidos",
-                      tone="blue"),
+            _kpi_card(
+                "👥 Total de alumnos",
+                _fmt_int(total_alumnos_global),
+                "Con nombre y apellidos",
+                tone="blue"
+            ),
             unsafe_allow_html=True
         )
     with c4:
         c4.markdown(
-            _kpi_card("📁 % Cierre de expediente",
-                      f"{pct_cierre} %  ({_fmt_int(cierre_exp_n)})",
-                      "Consec./Inaplic./Devol.",
-                      tone="blue"),
+            _kpi_card(
+                "📁 % Cierre de expediente",
+                f"{pct_cierre} %",
+                "Consec./Inaplic./Devol.",
+                tone="blue"
+            ),
             unsafe_allow_html=True
         )
     with c5:
         c5.markdown(
-            _kpi_card("🧪 % Prácticas totales",
-                      f"{pct_practicas_tot} %  ({_fmt_int(emp_ge_no_vacio)})",
-                      "EMPRESA GE no vacío",
-                      tone="pink"),
+            _kpi_card(
+                "🧪 % Prácticas totales",
+                f"{pct_practicas_tot} %",
+                "EMPRESA GE no vacío",
+                tone="pink"
+            ),
             unsafe_allow_html=True
         )
 
@@ -897,7 +907,7 @@ def render(df: pd.DataFrame | None = None):
             if df_area.empty:
                 st.info(f"No se han encontrado convenios en el área {area_sel}.")
             else:
-                st.dataframe(df_area[["Área", "Año", "Carpeta", "Archivo", "Fecha", "Link"]],
+                st.dataframe(df_area[["Área", "Año", "Carpeta", "Archivo", "Fecha", "Link"]], 
                              use_container_width=True, hide_index=True)
         except Exception as e:
             st.error(f"No fue posible obtener el detalle del área {area_sel}: {e}")
