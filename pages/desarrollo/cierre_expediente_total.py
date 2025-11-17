@@ -274,7 +274,7 @@ def _html_table_grad(df: pd.DataFrame, col_widths: list[str], grad_cols: dict) -
         tds = []
         for c, w in zip(cols, widths):
             val = row[c]
-            # Texto
+            # Texto a mostrar
             if isinstance(val, (int,)):
                 txt = f"{val:,}".replace(",", ".")
             elif isinstance(val, float):
@@ -283,17 +283,20 @@ def _html_table_grad(df: pd.DataFrame, col_widths: list[str], grad_cols: dict) -
                 txt = str(val)
             txt = html.escape(txt)
 
-            # Estilo
+            # Estilo + color de fondo
             base_style = f"width:{w}; padding:6px 8px; white-space:normal; overflow-wrap:break-word;"
             align = "text-align:center;" if (c != cols[0]) else "text-align:left;"
             bg_style = ""
             if c in grad_cols:
                 color, strength = grad_cols[c]
+                # 🔢 Intentamos extraer un número para el gradiente (soporta "147 (36,8%)")
+                raw = str(val)
+                mnum = re.search(r"[-+]?\d+(\.\d+)?", raw.replace(",", "."))
                 try:
-                    num = float(val)
+                    num = float(mnum.group()) if mnum else 0.0
                 except:
                     num = 0.0
-                mix = _mix_color(white, color, (num / vmax[c]) * strength)
+                mix = _mix_color(white, color, (num / vmax.get(c, 1.0)) * strength)
                 bg_style = f"background:{mix};"
             tds.append(f"<td style='{base_style} {align} {bg_style}'>{txt}</td>")
         rows_html.append("<tr>" + "".join(tds) + "</tr>")
@@ -369,7 +372,6 @@ def _html_table_cols_color(df: pd.DataFrame, col_widths: list[str], col_bg: dict
 
 # ========== Mapeo España (comunidades y provincias) ==========
 
-# Display “bonito” de comunidades cuando aparezcan como texto
 COMM_KEYS = {
     "ANDALUCIA":"Andalucía", "ARAGON":"Aragón", "ASTURIAS":"Asturias",
     "ISLAS BALEARES":"Illes Balears","ILLES BALEARS":"Illes Balears","BALEARES":"Illes Balears",
@@ -383,7 +385,6 @@ COMM_KEYS = {
     "NAVARRA":"Comunidad Foral de Navarra","COMUNIDAD FORAL DE NAVARRA":"Comunidad Foral de Navarra",
     "PAIS VASCO":"País Vasco","EUSKADI":"País Vasco",
     "LA RIOJA":"La Rioja","CEUTA":"Ceuta","MELILLA":"Melilla",
-    # Tarjetas especiales
     "ESPAÑA":"España","ESPANA":"España","ESPAÑA (INDEF.)":"España","ESPANA (INDEF.)":"España",
     "FUERA DE ESPAÑA":"Fuera de España"
 }
@@ -391,24 +392,13 @@ COMM_KEYS = {
 def _n(s): return _norm_text_cell(s, upper=True, deaccent=True)
 
 def _map_prov_to_comm(raw_name: str) -> tuple[str, str, str, str]:
-    """
-    Devuelve (COMM_KEY, COMM_LABEL, PROV_KEY, PROV_LABEL).
-    - Si raw_name es una CCAA conocida → se usa como comunidad y 'provincia' consigo misma.
-    - España → tarjeta 'España' unificada.
-    - Países → 'Fuera de España'.
-    - 'Remoto' → 'Sin comunidad'.
-    - Provincias/ciudades → mapeos por patrón.
-    - Si no se reconoce, se ignora ese valor.
-    """
     if pd.isna(raw_name): 
         return ("","","","")
     x = _n(raw_name)
 
-    # Remoto -> Sin comunidad
     if re.match(r"^REMOTO", x):
         return ("SIN COMUNIDAD", "Sin comunidad", "REMOTO", "Remoto")
 
-    # Si ya es comunidad conocida
     if x in COMM_KEYS:
         lbl = COMM_KEYS[x]
         if x.startswith("ESPA"):
@@ -417,61 +407,38 @@ def _map_prov_to_comm(raw_name: str) -> tuple[str, str, str, str]:
             return ("FUERA DE ESPAÑA", "Fuera de España", "FUERA DE ESPAÑA", "Fuera de España")
         return (x, lbl, x, lbl)
 
-    # Variantes de España
     if re.search(r"\bESPANA\b|\bESPAÑA\b|\bPROVINCIAS ESPAÑA\b|\bESPAÑA \(INDEF\.\)", x):
         return ("ESPAÑA", "España", "ESPAÑA", "España")
 
-    # Países → fuera de España
     if re.search(r"\b(PERU|HOLANDA|PORTUGAL|FRANCIA|ALEMANIA)\b", x):
         return ("FUERA DE ESPAÑA", "Fuera de España", x, raw_name.strip())
 
-    # Provincias/ciudades -> comunidad (patrones amplios)
     patterns = [
-        # ANDALUCÍA
         (r"\b(ALMERIA|C[ÁA]DIZ|CORDOBA|GRANADA|HUELVA|JA[ÉE]N|M[ÁA]LAGA|SEVILLA)\b", "ANDALUCIA", "Andalucía"),
-        # ARAGÓN
         (r"\b(HUESCA|TERUEL|ZARAGOZA)\b", "ARAGON", "Aragón"),
-        # ASTURIAS
         (r"\b(ASTURIAS|OVIEDO|GIJ[ÓO]N)\b", "ASTURIAS", "Asturias"),
-        # BALEARES
         (r"\b(ILLES BALEARS|BALEARS|BALEARES|MALLORCA|PALMA|IBIZA)\b", "ISLAS BALEARES", "Illes Balears"),
-        # CANARIAS
         (r"\b(LAS PALMAS|PALMAS, LAS|GRAN CANARIA|SANTA CRUZ DE TENERIFE|STA\.? CRUZ DE TENERIFE|TENERIFE|TELDE|ARRECIFE)\b", "CANARIAS", "Canarias"),
-        # CANTABRIA
         (r"\b(CANTABRIA|SANTANDER)\b", "CANTABRIA", "Cantabria"),
-        # CASTILLA Y LEÓN
         (r"\b(ÁVILA|AVILA|BURGOS|LE[ÓO]N|PALENCIA|SALAMANCA|SEGOVIA|SORIA|VALLADOLID|ZAMORA)\b", "CASTILLA Y LEON", "Castilla y León"),
-        # CASTILLA-LA MANCHA
         (r"\b(ALBACETE|CIUDAD REAL|CUENCA|GUADALAJARA|TOLEDO|TALAVERA DE LA REINA)\b", "CASTILLA LA MANCHA", "Castilla-La Mancha"),
-        # CATALUÑA (incluye municipios grandes)
         (r"\b(BARCELONA|GIRONA|GERONA|LLEIDA|L[ÉE]RIDA|TARRAGONA|HOSPITALET|L'HOSPITALET|CORNELL[ÀA]|BADALONA|SABADELL|TERRASSA|MATAR[ÓO]|RUB[ÍI]|REUS)\b",
          "CATALUNA", "Cataluña"),
-        # C. VALENCIANA
         (r"\b(ALICANTE|ALACANT|CASTELL[ÓO]N|CASTELL[OÓ]|VALENCIA|VAL[ÈE]NCIA|TORREVIEJA|ORIHUELA|ELDA|BENIDORM)\b",
          "COMUNIDAD VALENCIANA", "Comunidad Valenciana"),
-        # EXTREMADURA
         (r"\b(BADAJOZ|C[ÁA]CERES)\b", "EXTREMADURA", "Extremadura"),
-        # GALICIA (incluye “Coruña, A” y variantes)
         (r"\b(A CORU[NÑ]A|LA CORU[NÑ]A|CORU[NÑ]A, A|CORUNA, A|LUGO|OURENSE|ORENSE|PONTEVEDRA|VIGO|SANTIAGO DE COMPOSTELA|FERROL)\b",
          "GALICIA", "Galicia"),
-        # MADRID (+ municipios)
         (r"\b(MADRID|ALCAL[ÁA] DE HENARES|FUENLABRADA|GETAFE|ALCORC[ÓO]N|M[ÓO]STOLES|PARLA|LEGAN[ÉE]S)\b", "MADRID", "Comunidad de Madrid"),
-        # MURCIA
         (r"\b(MURCIA|CARTAGENA)\b", "MURCIA", "Región de Murcia"),
-        # NAVARRA
         (r"\b(NAVARRA|PAMPLONA)\b", "NAVARRA", "Comunidad Foral de Navarra"),
-        # PAÍS VASCO
         (r"\b(VIZCAYA|BIZKAIA|GIPUZKOA|GUIPUZCOA|[ÁA]LAVA|ARABA|BILBAO|VITORIA|DONOSTIA|SAN SEBASTI[ÁA]N|BARAKALDO)\b",
          "PAIS VASCO", "País Vasco"),
-        # LA RIOJA
         (r"\b(RIOJA, LA|LA RIOJA|RIOJA|LOGRO[NÑ]O)\b", "LA RIOJA", "La Rioja"),
-        # CEUTA / MELILLA
         (r"\b(CEUTA)\b", "CEUTA", "Ceuta"),
         (r"\b(MELILLA)\b", "MELILLA", "Melilla"),
-        # ANDALUCÍA (otras ciudades)
         (r"\b(M[ÁA]LAGA|M[ÁA]RBELLA|ALMER[ÍI]A|HUELVA|C[ÓO]RDOBA|C[ÁA]DIZ|J[ÉE]REZ|JA[ÉE]N|SAN FERNANDO|ALGECIRAS|ROQUETAS DE MAR)\b",
          "ANDALUCIA", "Andalucía"),
-        # CASTILLA Y LEÓN (otras)
         (r"\b(ZAMORA|LE[ÓO]N|BURGOS|PALENCIA|SALAMANCA|SEGOVIA|SORIA|VALLADOLID|PONFERRADA)\b",
          "CASTILLA Y LEON", "Castilla y León"),
     ]
@@ -481,7 +448,6 @@ def _map_prov_to_comm(raw_name: str) -> tuple[str, str, str, str]:
             prov_key   = _n(prov_label)
             return (comm_k, comm_lbl, prov_key, prov_label)
 
-    # No reconocido
     return ("","","","")
 
 # ========== APP ==========
@@ -572,14 +538,14 @@ def render(df: pd.DataFrame):
         if "Total" in opcion:
             c1, c2, c3 = st.columns(3)
             c1.markdown(render_card("CONSECUCIÓN", tot_con, "#e3f2fd"), unsafe_allow_html=True)
-            c2.markdown(render_card("INAPLICACIÓN", tot_inap, "#eeeeee"), unsafe_allow_html=True)  # gris
+            c2.markdown(render_card("INAPLICACIÓN", tot_inap, "#eeeeee"), unsafe_allow_html=True)
             c3.markdown(render_card("TOTAL PRÁCTICAS", tot_emp_ge, "#ede7f6"), unsafe_allow_html=True)
         else:
             anio_txt = opcion.split()[-1]
             if anio_txt == "2025":
                 c1, c2, c3, c4 = st.columns(4)
                 c1.markdown(render_card("CONSECUCIÓN 2025", tot_con, "#e3f2fd"), unsafe_allow_html=True)
-                c2.markdown(render_card("INAPLICACIÓN 2025", tot_inap, "#eeeeee"), unsafe_allow_html=True)  # gris
+                c2.markdown(render_card("INAPLICACIÓN 2025", tot_inap, "#eeeeee"), unsafe_allow_html=True)
                 c3.markdown(render_card("Prácticas 2025", tot_emp_pr, "#f3e5f5"), unsafe_allow_html=True)
 
                 df_cons = df[df["CONSULTOR EIP"].isin(sel)].copy()
@@ -595,7 +561,7 @@ def render(df: pd.DataFrame):
             else:
                 c1, c2, c3 = st.columns(3)
                 c1.markdown(render_card(f"CONSECUCIÓN {anio_txt}", tot_con, "#e3f2fd"), unsafe_allow_html=True)
-                c2.markdown(render_card(f"INAPLICACIÓN {anio_txt}", tot_inap, "#eeeeee"), unsafe_allow_html=True)  # gris
+                c2.markdown(render_card(f"INAPLICACIÓN {anio_txt}", tot_inap, "#eeeeee"), unsafe_allow_html=True)
                 c3.markdown(render_card(f"Prácticas {anio_txt}", tot_emp_pr, "#f3e5f5"), unsafe_allow_html=True)
 
     # Pie: cierres por consultor
@@ -612,12 +578,20 @@ def render(df: pd.DataFrame):
     else:
         st.info("No hay cierres para los filtros seleccionados.")
 
-    # Resumen por área + listados
+    # ========== Resumen por área + listados (con % integrado) ==========
+
     st.markdown("")
     df_tmp = df_scope.copy()
     if "AREA_N" not in df_tmp:
         df_tmp["AREA_N"] = df_tmp["AREA"].apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True))
         df_tmp.loc[df_tmp["AREA_N"] == "", "AREA_N"] = "SIN ÁREA"
+
+    # Clave alumno
+    df_tmp["ALUMNO_KEY"] = (
+        df_tmp["NOMBRE"].astype(str).str.upper().str.strip()
+        + "|"
+        + df_tmp["APELLIDOS"].astype(str).str.upper().str.strip()
+    )
 
     areas_idx = sorted(df_tmp["AREA_N"].unique())
 
@@ -626,27 +600,53 @@ def render(df: pd.DataFrame):
     emp_pr_norm = df_tmp["EMPRESA PRACT"].apply(lambda v: _norm_text_cell(v, upper=True, deaccent=True))
     mask_pract  = ~emp_pr_norm.isin(INVALID_TXT)
     prac_area   = df_tmp[mask_pract].groupby("AREA_N").size()
+    alumnos_area = df_tmp.groupby("AREA_N")["ALUMNO_KEY"].nunique()
 
     resumen_area = pd.DataFrame(index=areas_idx)
+    resumen_area["TOTAL ALUMNOS"]      = alumnos_area.reindex(areas_idx, fill_value=0)
     resumen_area["TOTAL CONSECUCIÓN"]  = con_area.reindex(areas_idx, fill_value=0)
     resumen_area["TOTAL INAPLICACIÓN"] = inap_area.reindex(areas_idx, fill_value=0)
     resumen_area["TOTAL PRÁCTICAS"]    = prac_area.reindex(areas_idx, fill_value=0)
+
     resumen_area.index.name = "AREA"
     resumen_area = (
         resumen_area.reset_index()
-                    .astype({"TOTAL CONSECUCIÓN": int,
-                             "TOTAL INAPLICACIÓN": int,
-                             "TOTAL PRÁCTICAS": int})
+                    .astype({
+                        "TOTAL ALUMNOS": int,
+                        "TOTAL CONSECUCIÓN": int,
+                        "TOTAL INAPLICACIÓN": int,
+                        "TOTAL PRÁCTICAS": int,
+                    })
                     .sort_values(by="TOTAL CONSECUCIÓN", ascending=False)
     )
 
     total_row = {
         "AREA": "Total",
+        "TOTAL ALUMNOS":      int(resumen_area["TOTAL ALUMNOS"].sum()),
         "TOTAL CONSECUCIÓN":  int(resumen_area["TOTAL CONSECUCIÓN"].sum()),
         "TOTAL INAPLICACIÓN": int(resumen_area["TOTAL INAPLICACIÓN"].sum()),
         "TOTAL PRÁCTICAS":    int(resumen_area["TOTAL PRÁCTICAS"].sum()),
     }
     resumen_area = pd.concat([resumen_area, pd.DataFrame([total_row])], ignore_index=True)
+
+    # Construimos versión display con porcentajes dentro de las celdas
+    def _fmt_count_pct(row, col):
+        total_alum = row["TOTAL ALUMNOS"]
+        count = int(row[col])
+        if total_alum <= 0:
+            return str(count)
+        pct = (count / total_alum) * 100
+        pct_str = f"{pct:.1f}".replace(".", ",")
+        return f"{count} ({pct_str}%)"
+
+    resumen_disp = resumen_area.copy()
+    resumen_disp["AREA"] = resumen_disp.apply(
+        lambda r: f"{r['AREA']} ({r['TOTAL ALUMNOS']})", axis=1
+    )
+    resumen_disp["TOTAL CONSECUCIÓN"]  = resumen_disp.apply(lambda r: _fmt_count_pct(r, "TOTAL CONSECUCIÓN"), axis=1)
+    resumen_disp["TOTAL INAPLICACIÓN"] = resumen_disp.apply(lambda r: _fmt_count_pct(r, "TOTAL INAPLICACIÓN"), axis=1)
+    # TOTAL PRÁCTICAS solo número
+    resumen_disp["TOTAL PRÁCTICAS"]    = resumen_disp["TOTAL PRÁCTICAS"].astype(int).astype(str)
 
     s_ge = _clean_series(df_scope["EMPRESA GE"])
     emp_ge = s_ge.value_counts().reset_index()
@@ -659,14 +659,17 @@ def render(df: pd.DataFrame):
     col_res, col_ge, col_pr = st.columns([1.6, 1, 1])
     with col_res:
         st.markdown("#### Empresas por área")
-        # INAPLICACIÓN en gris:
-        GREEN = (76, 175, 80)     # Consecu.
-        GRAY  = (189, 189, 189)   # Inaplicación
-        BLUE  = (66, 165, 245)    # Prácticas
+
+        GREEN = (76, 175, 80)
+        GRAY  = (189, 189, 189)
+        BLUE  = (66, 165, 245)
+
+        resumen_counts_disp = resumen_disp[["AREA", "TOTAL CONSECUCIÓN", "TOTAL INAPLICACIÓN", "TOTAL PRÁCTICAS"]]
+
         st.markdown(
             _html_table_grad(
-                resumen_area,
-                col_widths=["36%", "21%", "21%", "22%"],  # AREA + 3 totales
+                resumen_counts_disp,
+                col_widths=["36%", "21%", "21%", "22%"],
                 grad_cols={
                     "TOTAL CONSECUCIÓN":  (GREEN, 0.75),
                     "TOTAL INAPLICACIÓN": (GRAY,  0.75),
@@ -675,6 +678,7 @@ def render(df: pd.DataFrame):
             ),
             unsafe_allow_html=True
         )
+
     with col_ge:
         st.markdown("#### EMPRESAS GE")
         st.dataframe(
@@ -689,6 +693,7 @@ def render(df: pd.DataFrame):
         )
 
     # ========== Comunidades Autónomas – resumen y detalle ==========
+
     st.markdown("---")
     st.markdown("### 🗺️ Comunidades Autónomas – resumen y detalle (con provincias)")
 
@@ -698,7 +703,6 @@ def render(df: pd.DataFrame):
         st.info("No se encontraron columnas **PROVINCIA 1** / **PROVINCIA 2**.")
         return
 
-    # Estado por alumno
     def _estado_row(r):
         if bool(r.get("CONSECUCION_BOOL", False)):  return "CONSECUCIÓN"
         if bool(r.get("INAPLICACION_BOOL", False)): return "INAPLICACIÓN"
@@ -710,7 +714,6 @@ def render(df: pd.DataFrame):
     dfp["ALUMNO_KEY"] = (dfp["NOMBRE"].str.upper().str.strip() + "|" +
                          dfp["APELLIDOS"].str.upper().str.strip())
 
-    # Expandimos a (comunidad, provincia, alumno, estado)
     rows = []
     for _, r in dfp.iterrows():
         if r["ALUMNO_KEY"] == "|":
@@ -730,7 +733,6 @@ def render(df: pd.DataFrame):
         st.info("No hay datos geográficos mapeables.")
         return
 
-    # Totales por provincia (alumnado único) + desglose por estado
     base_prov_unique = long_df.drop_duplicates(["PROV_K","ALUMNO_KEY"])
     prov_total = (base_prov_unique.groupby(["COMM_K","PROV_K","PROV_LABEL"])["ALUMNO_KEY"]
                   .nunique().rename("Total").reset_index())
@@ -748,7 +750,6 @@ def render(df: pd.DataFrame):
         if c not in prov_full.columns: prov_full[c] = 0
     prov_full = prov_full[["COMM_K","PROV_K","PROV_LABEL","CONSECUCIÓN","INAPLICACIÓN","DEVOLUCIÓN","SIN ESTADO","Total"]]
 
-    # Totales por comunidad = suma de sus provincias
     comm_sum = (prov_full.groupby(["COMM_K"])
                 [["CONSECUCIÓN","INAPLICACIÓN","DEVOLUCIÓN","SIN ESTADO","Total"]]
                 .sum().reset_index())
@@ -756,12 +757,10 @@ def render(df: pd.DataFrame):
     comm_sum = comm_sum.merge(labels, on="COMM_K", how="left").rename(columns={"COMM_LABEL":"COMM_NAME"})
     comm_sum = comm_sum.sort_values("Total", ascending=False)
 
-    # Colores fijos para columnas dentro de cada provincia (puedes cambiarlos aquí)
     PROV_COLORS = {
-        "CONSECUCIÓN":  "#e3f2fd",  # azul claro
-        "INAPLICACIÓN": "#eeeeee",  # gris
-        "DEVOLUCIÓN":   "#ffe0e0",  # naranja muy claro
-        # "SIN ESTADO": "#f5f5f5",
+        "CONSECUCIÓN":  "#e3f2fd",
+        "INAPLICACIÓN": "#eeeeee",
+        "DEVOLUCIÓN":   "#ffe0e0",
     }
 
     chip_css = "display:flex; flex-wrap:wrap; gap:8px; margin:8px 0 10px;"
@@ -784,10 +783,9 @@ def render(df: pd.DataFrame):
             ["Provincia","CONSECUCIÓN","INAPLICACIÓN","DEVOLUCIÓN","Total"]
         ]
 
-        # ✅ Corrige el ancho: "20" -> "20%"
         tabla_html = _html_table_cols_color(
             tabla,
-            col_widths=["20%","20%","20%","20%","20%"],  # Provincia + 3 estados + Total
+            col_widths=["20%","20%","20%","20%","20%"],
             col_bg=PROV_COLORS,
             align_nums=True, small=True
         ) if not tabla.empty else "<div style='color:#5f6368'>Sin provincias</div>"
