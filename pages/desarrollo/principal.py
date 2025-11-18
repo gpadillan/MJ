@@ -61,6 +61,19 @@ def _fmt_int(n: int) -> str:
     except Exception:
         return "0"
 
+def _norm_practicas(v):
+    """
+    Normaliza PRÁCTICAS/GE:
+    - GE, FINANCIACIÓN, RESKILLING, etc. se normalizan a mayúsculas.
+    - Valores raros como '3', '0', vacío o NaN se tratan como (EN BLANCO).
+    """
+    if pd.isna(v):
+        return "(EN BLANCO)"
+    s = _norm_spaces(str(v)).upper()
+    if s in {"", "3", "0", "NAN"}:
+        return "(EN BLANCO)"
+    return s
+
 # ======== Helpers de color y tabla con degradado por área ========
 AREA_COLORS = {
     "SAP": "#1f77b4",
@@ -594,10 +607,14 @@ def render(df: pd.DataFrame | None = None):
     )
 
     # Normalizaciones
-    for col in ["PRÁCTICAS/GE", "CONSULTOR EIP", "AREA"]:
+    # AREA y CONSULTOR EIP
+    for col in ["CONSULTOR EIP", "AREA"]:
         df[col] = df[col].where(df[col].notna(), pd.NA).map(
             lambda x: _norm_spaces(x) if pd.notna(x) else x
         ).str.upper()
+
+    # PRÁCTICAS/GE con limpieza especial (convierte '3' y vacíos en (EN BLANCO))
+    df["PRÁCTICAS/GE"] = df["PRÁCTICAS/GE"].apply(_norm_practicas)
 
     # ✅ Solo activos (sin toggle)
     df_base = df[df["ES_ACTIVO"]].copy()
@@ -610,7 +627,7 @@ def render(df: pd.DataFrame | None = None):
 
     # Filtros que incluyen blancos por defecto
     opciones_practicas = sorted(
-        df_base["PRÁCTICAS/GE"].fillna("(EN BLANCO)").unique().tolist()
+        df_base["PRÁCTICAS/GE"].unique().tolist()
     )
     opciones_consultores = sorted(
         df_base["CONSULTOR EIP"].fillna("(EN BLANCO)").unique().tolist()
@@ -631,7 +648,6 @@ def render(df: pd.DataFrame | None = None):
         )
 
     df_filtrado = df_base.copy()
-    df_filtrado["PRÁCTICAS/GE"] = df_filtrado["PRÁCTICAS/GE"].fillna("(EN BLANCO)")
     df_filtrado["CONSULTOR EIP"] = df_filtrado["CONSULTOR EIP"].fillna("(EN BLANCO)")
 
     df_filtrado = df_filtrado[
