@@ -655,8 +655,8 @@ def render(df: pd.DataFrame | None = None):
                     colorscale=[[0, "#6B6A6A"], [1, "#003cff"]],
                     line=dict(color="black", width=1.5)),
     ))
-    for x, y in zip(conteo_area["Área"], conteo_area["Cantidad"]):
-        fig_bar.add_annotation(x=x, y=y, text=f"<b>{y}</b>", showarrow=False, yshift=5,
+    for x_, y_ in zip(conteo_area["Área"], conteo_area["Cantidad"]):
+        fig_bar.add_annotation(x=x_, y=y_, text=f"<b>{y_}</b>", showarrow=False, yshift=5,
                                font=dict(color="white", size=13), align="center",
                                bgcolor="black", borderpad=4)
     fig_bar.update_layout(height=500, xaxis_title="Área", yaxis_title="Número de Alumnos",
@@ -719,9 +719,9 @@ def render(df: pd.DataFrame | None = None):
             emp_ge_no_vacio = int((~df_total["EMPRESA GE"].map(es_vacio)).sum())
             pct_practicas_tot = round(100.0 * emp_ge_no_vacio / total_alumnos_global, 2)
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    with c1:
-        c1.markdown(
+    c1b, c2b, c3b, c4b, c5b = st.columns(5)
+    with c1b:
+        c1b.markdown(
             _kpi_card(
                 "✅ % Consecución GE",
                 f"{pct_consec} %",
@@ -730,8 +730,8 @@ def render(df: pd.DataFrame | None = None):
             ),
             unsafe_allow_html=True
         )
-    with c2:
-        c2.markdown(
+    with c2b:
+        c2b.markdown(
             _kpi_card(
                 "⚙️ % Inaplicación GE",
                 f"{pct_inap} %",
@@ -740,8 +740,8 @@ def render(df: pd.DataFrame | None = None):
             ),
             unsafe_allow_html=True
         )
-    with c3:
-        c3.markdown(
+    with c3b:
+        c3b.markdown(
             _kpi_card(
                 "👥 Total de alumnos",
                 _fmt_int(total_alumnos_global),
@@ -750,8 +750,8 @@ def render(df: pd.DataFrame | None = None):
             ),
             unsafe_allow_html=True
         )
-    with c4:
-        c4.markdown(
+    with c4b:
+        c4b.markdown(
             _kpi_card(
                 "📁 % Cierre de expediente",
                 f"{pct_cierre} %",
@@ -760,8 +760,8 @@ def render(df: pd.DataFrame | None = None):
             ),
             unsafe_allow_html=True
         )
-    with c5:
-        c5.markdown(
+    with c5b:
+        c5b.markdown(
             _kpi_card(
                 "🧪 % Prácticas totales",
                 f"{pct_practicas_tot} %",
@@ -807,6 +807,13 @@ def render(df: pd.DataFrame | None = None):
     df_tabla = df_filtrado[df_filtrado["CONSULTOR EIP"].isin(sel_detalle)][
         ["CONSULTOR EIP", "NOMBRE", "APELLIDOS", "AREA", "FIN CONV"]
     ].drop_duplicates().sort_values(["CONSULTOR EIP", "APELLIDOS", "NOMBRE"]).reset_index(drop=True)
+
+    # 🔴 FORMATEAR FIN CONV SIN HORA (dd/mm/aaaa)
+    df_tabla["FIN CONV"] = pd.to_datetime(
+        df_tabla["FIN CONV"], errors="coerce", dayfirst=True
+    ).dt.strftime("%d/%m/%Y")
+    df_tabla["FIN CONV"] = df_tabla["FIN CONV"].fillna("")
+
     st.dataframe(df_tabla, use_container_width=True)
 
     # =================== Convenios por Área y Año (SharePoint) ===================
@@ -907,7 +914,7 @@ def render(df: pd.DataFrame | None = None):
             if df_area.empty:
                 st.info(f"No se han encontrado convenios en el área {area_sel}.")
             else:
-                st.dataframe(df_area[["Área", "Año", "Carpeta", "Archivo", "Fecha", "Link"]], 
+                st.dataframe(df_area[["Área", "Año", "Carpeta", "Archivo", "Fecha", "Link"]],
                              use_container_width=True, hide_index=True)
         except Exception as e:
             st.error(f"No fue posible obtener el detalle del área {area_sel}: {e}")
