@@ -5,6 +5,7 @@ from datetime import datetime
 import pandas as pd
 import plotly.express as px
 import plotly.io as pio
+import plotly.graph_objects as go
 import streamlit as st
 
 from responsive import get_screen_size
@@ -110,6 +111,7 @@ def render():
     width, height = get_screen_size()
     df_grouped["Total acumulado"] = df_grouped[columnas_existentes].sum(axis=1)
 
+    # --- NOTA: no se modifica este gráfico según tu petición ---
     fig_total = px.bar(
         df_grouped.sort_values("Total acumulado", ascending=True),
         x="Total acumulado", y="Estado",
@@ -121,6 +123,8 @@ def render():
             lambda v: f"€ {num_es_sin_dec(v)}"
         )
     )
+    # NO añadimos la media aquí (fig_total) — lo dejamos exactamente como antes.
+
     fig_total.update_traces(textposition="outside", textfont=dict(size=12), cliponaxis=False)
     fig_total.update_layout(
         title="Total acumulado por Estado",
@@ -158,6 +162,27 @@ def render():
                 template="plotly_white",
                 text=df_hist["Total"].apply(lambda v: f"€ {num_es_sin_dec(v)}")
             )
+
+            # --> línea de la media (sin etiqueta integrada) y cajita negra con texto blanco
+            mean_hist = float(df_hist["Total"].mean() if not df_hist.empty else 0)
+            fig_hist.add_hline(
+                y=mean_hist,
+                line_dash="dash",
+                line_color=color_estado,
+                opacity=0.9
+            )
+            # annotation colocada en la parte derecha, anclada al valor de la media (y)
+            fig_hist.add_annotation(
+                xref="paper", x=0.98, xanchor="left",
+                yref="y", y=mean_hist,
+                text=f"Media<br>€ {num_es_sin_dec(mean_hist)}",
+                showarrow=False,
+                align="center",
+                font=dict(color="#ffffff", size=12),
+                bgcolor="#000000",
+                borderpad=6
+            )
+
             fig_hist.update_traces(marker=dict(opacity=0.45, line=dict(color=color_estado, width=1.2)))
             fig_hist.update_yaxes(range=y_range_con_padding(df_hist["Total"]))
             fig_hist.update_layout(
@@ -183,6 +208,26 @@ def render():
                 template="plotly_white",
                 text=df_mes["Total"].apply(lambda v: f"€ {num_es_sin_dec(v)}")
             )
+
+            # --> línea de la media (sin etiqueta integrada) y cajita negra con texto blanco
+            mean_mes = float(df_mes["Total"].mean() if not df_mes.empty else 0)
+            fig_mes.add_hline(
+                y=mean_mes,
+                line_dash="dash",
+                line_color=color_estado,
+                opacity=0.9
+            )
+            fig_mes.add_annotation(
+                xref="paper", x=0.98, xanchor="left",
+                yref="y", y=mean_mes,
+                text=f"Media<br>€ {num_es_sin_dec(mean_mes)}",
+                showarrow=False,
+                align="center",
+                font=dict(color="#ffffff", size=12),
+                bgcolor="#000000",
+                borderpad=6
+            )
+
             fig_mes.update_yaxes(range=y_range_con_padding(df_mes["Total"]))
             fig_mes.update_layout(
                 title=f"{estado} — {anio_actual} por meses (Total: € {num_es(total_mes)})",
@@ -234,7 +279,7 @@ def render():
     df_final["Total fila"] = df_final[columnas_existentes].sum(axis=1)
 
     # >>>>>>>>>> CLAVE PARA EL TICK VERDE EN "Hojas disponibles"
-    st.session_state["descarga_global"] = df_final  # <<<<<<<< AQUÍ ESTABA EL FALTANTE
+    st.session_state["descarga_global"] = df_final
     # >>>>>>>>>>
 
     st.markdown("---")
@@ -277,6 +322,18 @@ def render():
                 template="plotly_white",
                 text=df_hist["Total"].apply(lambda v: f"€ {num_es_sin_dec(v)}")
             )
+            mean_hist = float(df_hist["Total"].mean() if not df_hist.empty else 0)
+            fig_hist.add_hline(y=mean_hist, line_dash="dash", line_color=color_estado, opacity=0.9)
+            fig_hist.add_annotation(
+                xref="paper", x=0.98, xanchor="left",
+                yref="y", y=mean_hist,
+                text=f"Media<br>€ {num_es_sin_dec(mean_hist)}",
+                showarrow=False,
+                align="center",
+                font=dict(color="#ffffff", size=12),
+                bgcolor="#000000",
+                borderpad=6
+            )
             fig_hist.update_traces(marker=dict(opacity=0.45, line=dict(color=color_estado, width=1.2)))
             fig_hist.update_yaxes(range=y_range_con_padding(df_hist["Total"]))
             fig_hist.update_traces(textposition="outside", textfont=dict(size=14), cliponaxis=False)
@@ -298,6 +355,18 @@ def render():
                 color_discrete_sequence=[color_estado],
                 template="plotly_white",
                 text=df_mes["Total"].apply(lambda v: f"€ {num_es_sin_dec(v)}")
+            )
+            mean_mes = float(df_mes["Total"].mean() if not df_mes.empty else 0)
+            fig_mes.add_hline(y=mean_mes, line_dash="dash", line_color=color_estado, opacity=0.9)
+            fig_mes.add_annotation(
+                xref="paper", x=0.98, xanchor="left",
+                yref="y", y=mean_mes,
+                text=f"Media<br>€ {num_es_sin_dec(mean_mes)}",
+                showarrow=False,
+                align="center",
+                font=dict(color="#ffffff", size=12),
+                bgcolor="#000000",
+                borderpad=6
             )
             fig_mes.update_yaxes(range=y_range_con_padding(df_mes["Total"]))
             fig_mes.update_traces(textposition="outside", textfont=dict(size=14), cliponaxis=False)
@@ -343,5 +412,11 @@ def render():
     with open("uploaded/reporte_estado.html", "w", encoding="utf-8") as f:
         f.write(html_buffer.getvalue())
 
-    # Ya lo guardabas, lo dejo aquí igualmente:
     st.session_state["html_global"] = html_buffer.getvalue()
+
+
+# Si quieres ejecutar render() al importar este módulo con streamlit run,
+# descomenta la línea siguiente y asegúrate de que `st.session_state['excel_data']`
+# y otros valores necesarios estén inicializados antes de invocar render().
+# if __name__ == "__main__":
+#     render()
