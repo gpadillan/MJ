@@ -6,6 +6,7 @@ from datetime import datetime
 import pandas as pd
 import plotly.express as px
 import plotly.io as pio
+import plotly.graph_objects as go
 import streamlit as st
 
 from responsive import get_screen_size
@@ -29,6 +30,37 @@ COLORES_FIJOS = {
     "TOTAL GENERAL": "#7f7f7f"
 }
 
+
+def hex_to_rgb(hex_color: str):
+    hex_color = str(hex_color).lstrip('#')
+    if len(hex_color) == 3:
+        hex_color = ''.join([c*2 for c in hex_color])
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+    return r, g, b
+
+
+def rgb_to_hex(rgb_tuple):
+    return '#{:02x}{:02x}{:02x}'.format(
+        max(0, min(255, int(rgb_tuple[0]))),
+        max(0, min(255, int(rgb_tuple[1]))),
+        max(0, min(255, int(rgb_tuple[2])))
+    )
+
+
+def lighten_color(hex_color: str, factor: float = 0.6):
+    """
+    Devuelve una versión más clara del color mezclando con blanco.
+    factor: 0 -> color original, 1 -> blanco. Valores típicos 0.35-0.75.
+    """
+    r, g, b = hex_to_rgb(hex_color)
+    r_new = r + (255 - r) * factor
+    g_new = g + (255 - g) * factor
+    b_new = b + (255 - b) * factor
+    return rgb_to_hex((r_new, g_new, b_new))
+
+
 def num_es(v: float, dec: int = 2) -> str:
     try:
         f = float(v)
@@ -37,6 +69,7 @@ def num_es(v: float, dec: int = 2) -> str:
     s = f"{f:,.{dec}f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
+
 def num_es_sin_dec(v: float) -> str:
     try:
         f = float(v)
@@ -44,6 +77,7 @@ def num_es_sin_dec(v: float) -> str:
         f = 0.0
     s = f"{f:,.0f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
+
 
 def y_range_con_padding(series):
     vals = pd.to_numeric(series, errors="coerce").fillna(0)
@@ -61,9 +95,9 @@ def y_range_con_padding(series):
 # ===================== PÁGINA =====================
 
 def render():
-    st.subheader("Estado")
+    st.subheader("Estado (EIM)")
 
-    # ⚠️ EVITAR "or" entre DataFrames → comprobación explícita
+    # cargamos df específico EIM o fallback genérico
     df = st.session_state.get("excel_data_eim", None)
     if df is None:
         df = st.session_state.get("excel_data", None)
@@ -83,7 +117,8 @@ def render():
     estados_unicos = sorted(df['Estado'].dropna().unique())
     columnas_totales = [f'Total {a}' for a in range(2018, anio_actual)]
     meses_actuales = [f'{m} {anio_actual}' for m in MESES_ES]
-    columnas_disponibles = [c for c in columnas_totales + meses_actuales if c in df.columns]
+    # Solo mostrar columnas disponibles
+    columnas_disponibles = [c for c in (columnas_totales + meses_actuales) if c in df.columns]
 
     estados_seleccionados = st.multiselect(
         "Filtrar por Estado",
@@ -107,9 +142,20 @@ def render():
         st.info("Selecciona al menos una columna válida.")
         return
 
+    # aseguramos numéricos en las columnas seleccionadas
     df[columnas_existentes] = df[columnas_existentes].apply(pd.to_numeric, errors='coerce').fillna(0)
     df_filtrado = df[df['Estado'].isin(estados_seleccionados)].copy()
     df_grouped = df_filtrado.groupby("Estado")[columnas_existentes].sum().reset_index()
+
+    # columnas mes año anterior disponibles (para comparar)
+    prev_year = anio_actual - 1
+    prev_months_all = [f"{m} {prev_year}" for m in MESES_ES]
+    prev_months_existing = [c for c in prev_months_all if c in df.columns]
+
+    df_prev_grouped = None
+    if prev_months_existing:
+        df[prev_months_existing] = df[prev_months_existing].apply(pd.to_numeric, errors='coerce').fillna(0)
+        df_prev_grouped = df[df['Estado'].isin(estados_seleccionados)].groupby('Estado')[prev_months_existing].sum().reset_index()
 
     # ===== 1) Total acumulado por Estado =====
     width, height = get_screen_size()
@@ -129,7 +175,7 @@ def render():
     fig_total.update_traces(textposition="outside", textfont=dict(size=12), cliponaxis=False)
     fig_total.update_layout(
         title="Total acumulado por Estado",
-        height=max(360, 48*len(df_grouped)+140),
+        height=max(360, 48 * len(df_grouped) + 140),
         showlegend=False,
         margin=dict(t=60, b=40, l=70, r=30)
     )
@@ -140,9 +186,13 @@ def render():
 
     cols_hist_sorted = sorted(
         [c for c in columnas_existentes if c.startswith("Total ")],
-        key=lambda c: int(c.split()[1])
+        key=lambda c: int(c.split()[1]) if len(c.split()) > 1 and c.split()[1].isdigit() else 0
     )
     mes_order = [f"{m} {anio_actual}" for m in MESES_ES if f"{m} {anio_actual}" in columnas_existentes]
+
+    # posiciones relativas para anotaciones (yref='paper') - ajustables
+    Y_POS_PREV = 0.92
+    Y_POS_CURR = 0.97
 
     for estado in estados_seleccionados:
         row = df_grouped[df_grouped["Estado"] == estado]
@@ -150,9 +200,11 @@ def render():
             continue
 
         color_estado = COLORES_FIJOS.get(str(estado).strip().upper(), "#3b82f6")
+        color_prev_light = lighten_color(color_estado, factor=0.65)
+
         c1, c2 = st.columns(2)
 
-        # --- Históricos
+        # --- Históricos (línea + cajita negra con media)
         if cols_hist_sorted:
             serie_hist = row[cols_hist_sorted].iloc[0]
             df_hist = pd.DataFrame({"Periodo": cols_hist_sorted, "Total": serie_hist.values})
@@ -164,7 +216,20 @@ def render():
                 template="plotly_white",
                 text=df_hist["Total"].apply(lambda v: f"€ {num_es_sin_dec(v)}")
             )
-            # Más claro (opacity) y margen alto para que no se corten las etiquetas
+
+            mean_hist = float(df_hist["Total"].mean() if not df_hist.empty else 0.0)
+            fig_hist.add_hline(y=mean_hist, line_dash="dash", line_color=color_estado, opacity=0.9)
+            fig_hist.add_annotation(
+                xref="paper", x=0.98, xanchor="left",
+                yref="y", y=mean_hist,
+                text=f"Media<br>€ {num_es_sin_dec(mean_hist)}",
+                showarrow=False,
+                align="center",
+                font=dict(color="#ffffff", size=12),
+                bgcolor="#000000",
+                borderpad=6
+            )
+
             fig_hist.update_traces(marker=dict(opacity=0.45, line=dict(color=color_estado, width=1.2)))
             fig_hist.update_yaxes(range=y_range_con_padding(df_hist["Total"]))
             fig_hist.update_layout(
@@ -179,27 +244,133 @@ def render():
         else:
             c1.info("Sin columnas históricas seleccionadas.")
 
-        # --- Año actual por meses
+        # --- Meses: año actual vs año anterior (barras overlay + dos cajitas en top relativo) ---
         if mes_order:
             serie_mes = row[mes_order].iloc[0]
             df_mes = pd.DataFrame({"Periodo": mes_order, "Total": serie_mes.values})
             total_mes = float(df_mes["Total"].sum())
 
-            fig_mes = px.bar(
-                df_mes, x="Periodo", y="Total",
-                color_discrete_sequence=[color_estado],
-                template="plotly_white",
-                text=df_mes["Total"].apply(lambda v: f"€ {num_es_sin_dec(v)}")
+            # valores previos si existen
+            prev_values = None
+            if df_prev_grouped is not None and not df_prev_grouped.empty:
+                prev_row = df_prev_grouped[df_prev_grouped['Estado'] == estado]
+                if not prev_row.empty:
+                    prev_values = []
+                    for col in mes_order:
+                        mes_name = col.split()[0]
+                        prev_col = f"{mes_name} {prev_year}"
+                        if prev_col in df_prev_grouped.columns:
+                            prev_values.append(float(prev_row[prev_col].iloc[0]))
+                        else:
+                            prev_values.append(0.0)
+                    if all(v == 0 for v in prev_values):
+                        prev_values = None
+
+            # medias para leyenda
+            mean_curr = float(df_mes["Total"].mean() if not df_mes.empty else 0.0)
+            prev_mean = float(pd.Series(prev_values).mean()) if (prev_values is not None) else None
+
+            name_curr = f"{anio_actual} - Media: € {num_es_sin_dec(mean_curr)}"
+            name_prev = f"{prev_year} - Media: € {num_es_sin_dec(prev_mean) if prev_mean is not None else '0'}"
+
+            trace_curr = go.Bar(
+                x=df_mes["Periodo"],
+                y=df_mes["Total"],
+                name=name_curr,
+                marker=dict(color=color_estado, line=dict(color=color_estado, width=0.5)),
+                opacity=0.98,
+                text=None,
+                hovertemplate="%{fullData.name}<br>%{x}<br>€ %{y:,.0f}<extra></extra>"
             )
-            fig_mes.update_yaxes(range=y_range_con_padding(df_mes["Total"]))
+
+            if prev_values is not None:
+                trace_prev = go.Bar(
+                    x=df_mes["Periodo"],
+                    y=prev_values,
+                    name=name_prev,
+                    marker=dict(color=color_prev_light, line=dict(color=color_prev_light, width=0.5)),
+                    opacity=0.6,
+                    text=None,
+                    hovertemplate="%{fullData.name}<br>%{x}<br>€ %{y:,.0f}<extra></extra>"
+                )
+                fig_mes = go.Figure(data=[trace_curr, trace_prev])
+                fig_mes.update_layout(barmode='overlay', template="plotly_white")
+                combined = pd.Series(list(prev_values) + df_mes["Total"].tolist())
+                y_min, y_max = 0.0, float(combined.max() if not combined.empty else 0.0)
+            else:
+                fig_mes = go.Figure(data=[trace_curr])
+                fig_mes.update_layout(barmode='overlay', template="plotly_white")
+                y_min, y_max = 0.0, float(df_mes["Total"].max() if not df_mes.empty else 0.0)
+
+            # margen mayor para que haya sitio en top relativo
+            layout_margin_top = 140
             fig_mes.update_layout(
                 title=f"{estado} — {anio_actual} por meses (Total: € {num_es(total_mes)})",
-                height=520,
-                margin=dict(t=90, b=90, l=70, r=40),
+                height=560,
+                margin=dict(t=layout_margin_top, b=90, l=70, r=40),
                 yaxis_zeroline=True, yaxis_zerolinewidth=2, yaxis_zerolinecolor="#888",
-                showlegend=False
+                showlegend=True
             )
-            fig_mes.update_traces(textposition="outside", textfont=dict(size=14), cliponaxis=False)
+
+            # Añadimos anotaciones en coordenadas relativas (yref='paper'):
+            for i, periodo in enumerate(df_mes["Periodo"]):
+                val_curr = float(df_mes["Total"].iloc[i])
+                val_prev = float(prev_values[i]) if (prev_values is not None) else 0.0
+
+                if val_curr == 0 and val_prev == 0:
+                    continue
+
+                # adaptar font según magnitud
+                total_max = max(val_curr, val_prev)
+                font_curr = 11
+                font_prev = 10
+                if total_max > 1_000_000:
+                    font_curr = 10
+                    font_prev = 9
+                if total_max > 10_000_000:
+                    font_curr = 9
+                    font_prev = 8
+
+                # cajita año previo (clara) - texto negro
+                if prev_values is not None:
+                    fig_mes.add_annotation(
+                        x=periodo,
+                        y=Y_POS_PREV,
+                        xref="x",
+                        yref="paper",
+                        text=f"€ {num_es_sin_dec(val_prev)}",
+                        showarrow=False,
+                        xanchor="center",
+                        yanchor="bottom",
+                        font=dict(color="#000000", size=font_prev),
+                        bgcolor=color_prev_light,
+                        bordercolor="#999999",
+                        borderwidth=1,
+                        borderpad=4
+                    )
+
+                # cajita año actual (oscura) - texto blanco (encima)
+                fig_mes.add_annotation(
+                    x=periodo,
+                    y=Y_POS_CURR,
+                    xref="x",
+                    yref="paper",
+                    text=f"€ {num_es_sin_dec(val_curr)}",
+                    showarrow=False,
+                    xanchor="center",
+                    yanchor="bottom",
+                    font=dict(color="#ffffff", size=font_curr),
+                    bgcolor=color_estado,
+                    bordercolor="#333333",
+                    borderwidth=1,
+                    borderpad=4
+                )
+
+            # añadir padding al eje Y para que barras no toquen la parte superior
+            span = max(1.0, y_max - y_min)
+            extra_pad = max(span * 0.12, 1.0)
+            fig_mes.update_yaxes(range=[0, y_max + extra_pad])
+
             c2.plotly_chart(fig_mes, use_container_width=True)
         else:
             c2.info(f"Sin meses de {anio_actual} seleccionados.")
@@ -228,7 +399,7 @@ def render():
             )
             fig_pago.update_traces(textposition="inside", textinfo="label+percent+value")
             fig_pago.update_layout(
-                height=560,  # un poco más alto para que quepan etiquetas grandes
+                height=560,
                 margin=dict(t=60, b=40, l=10, r=10),
                 legend_title_text="Forma de pago",
                 legend=dict(orientation="v")
@@ -241,9 +412,8 @@ def render():
     df_final = df_grouped.copy()
     df_final["Total fila"] = df_final[columnas_existentes].sum(axis=1)
 
-    # Guardar con las claves EIM (para “Gestión de Datos – EIM”)
+    # Guardar con claves EIM y genérica
     st.session_state["descarga_global_eim"] = df_final
-    # (opcional) mantener también la genérica por compatibilidad
     st.session_state["descarga_global"] = df_final
 
     st.markdown("---")
@@ -259,7 +429,7 @@ def render():
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    # Informe HTML
+    # Informe HTML (simplificado; las anotaciones relativas no se renderizan exactamente igual en HTML)
     st.markdown("### 💾 Exportar informe visual")
     html_buffer = io.StringIO()
     html_buffer.write("<html><head><meta charset='utf-8'><title>Informe de Estado</title></head><body>")
@@ -285,6 +455,18 @@ def render():
                 color_discrete_sequence=[color_estado],
                 template="plotly_white",
                 text=df_hist["Total"].apply(lambda v: f"€ {num_es_sin_dec(v)}")
+            )
+            mean_hist = float(df_hist["Total"].mean() if not df_hist.empty else 0.0)
+            fig_hist.add_hline(y=mean_hist, line_dash="dash", line_color=color_estado, opacity=0.9)
+            fig_hist.add_annotation(
+                xref="paper", x=0.98, xanchor="left",
+                yref="y", y=mean_hist,
+                text=f"Media<br>€ {num_es_sin_dec(mean_hist)}",
+                showarrow=False,
+                align="center",
+                font=dict(color="#ffffff", size=12),
+                bgcolor="#000000",
+                borderpad=6
             )
             fig_hist.update_traces(marker=dict(opacity=0.45, line=dict(color=color_estado, width=1.2)))
             fig_hist.update_yaxes(range=y_range_con_padding(df_hist["Total"]))
@@ -342,7 +524,7 @@ def render():
     html_buffer.write("</body></html>")
 
     html_value = html_buffer.getvalue()
-    # Guardar con clave EIM (y genérica por compatibilidad)
+    # Guardar HTML en session_state (EIM y genérico)
     st.session_state["html_global_eim"] = html_value
     st.session_state["html_global"] = html_value
 
