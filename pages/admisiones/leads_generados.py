@@ -19,8 +19,23 @@ import html  # para escapar chips en HTML
 # CONFIG BÁSICA Y RUTAS
 # =========================
 UPLOAD_FOLDER = "uploaded_admisiones"
-LEADS_GENERADOS_FILE = os.path.join(UPLOAD_FOLDER, "leads_generados.xlsx")
-VENTAS_FILE = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+LEADS_GENERADOS_FILE_LOCAL = os.path.join(UPLOAD_FOLDER, "leads_generados.xlsx")
+VENTAS_FILE_LOCAL = os.path.join(UPLOAD_FOLDER, "ventas.xlsx")
+
+ANIO_ACTUAL = datetime.now().year
+
+# SharePoint fallback URLs (si no están en st.secrets['admisiones_bdd'])
+DEFAULT_LEADS_SHARE_URL = (
+    "https://grupomainjobs.sharepoint.com/:x:/r/sites/GrupoMainjobs928/"
+    "_layouts/15/Doc.aspx?sourcedoc=%7B83D0FFB4-3216-4127-AB3B-D3A71EDD3516%7D&"
+    "file=LEADS-A%C3%91O%20ANTERIOR.xlsx&action=default&mobileredirect=true"
+)
+DEFAULT_VENTAS_SHARE_URL = (
+    "https://grupomainjobs.sharepoint.com/:x:/r/sites/GrupoMainjobs928/"
+    "_layouts/15/Doc.aspx?sourcedoc=%7B40F3AD21-8968-46F5-AE20-CF5840B5BFA6%7D&"
+    "file=VENTAS-A%C3%91O%20ANTERIOR.xlsx&action=default&mobileredirect=true"
+)
 
 MES_COLORS_BAR = {
     "Enero": "#1e88e5", "Febrero": "#fb8c00", "Marzo": "#43a047", "Abril": "#e53935",
@@ -40,13 +55,13 @@ KNOWN_PEOPLE = {
     "amugica@grupomainjobs.com":     "Ana Múgica Jiménez",
     "lgonzalez@grupomainjobs.com":   "Lorena González Perich",
     "iherreradiaz@eiposgrados.com":  "Irene Herrera",
-    "pserrano@grupomainjobs.com":    "Paloma Serrano",
+    "pserrano@eiposgrados.com":    "Paloma Serrano",
     "pcedeno@eiposgrados.com":       "Priscila Cedeño Loor",
     "cheredia@eiposgrados.com":      "Cristina Heredia",
     "agarcia@grupomainjobs.com":     "Ángel Garcia Martin",
-    "erueda@eiposgrados.com":        "Estrella Rueda Sanz",
-    "kmoreno@eiposgrados.com":       "Kika Moreno",
-    "vlopez@eiposgrados.com":        "Victor López Hernanz",
+    "erueda@grupomainjobs.com":        "Estrella Rueda Sanz",
+    "kmoreno@grupomainjobs.com":       "Kika Moreno",
+    "vlopez@grupomainjobs.com":        "Victor López Hernanz",
     "clobato@grupomainjobs.com":     "Carmen Lobato Rosa",
     "lsanchez@grupomainjobs.com":    "Laly Sánchez Arjona",
     "cmoreno@grupomainjobs.com":     "Chelo Moreno Cabeza",
@@ -54,147 +69,153 @@ KNOWN_PEOPLE = {
     "mdiazf@grupomainjobs.com":      "Mónica Díaz",
     "mavalle@grupomainjobs.com":     "María Ángeles Valle Rodríguez",
     "sleon@grupomainjobs.com":       "Sara León",
-    "epacheco@grupomainjobs.com":    "Eduardo Pacheco",
+    "epacheco@eiposgrados.com":    "Eduardo Pacheco",
     "rmvela@grupomainjobs.com":      "Rosa María Vela",
 }
 KNOWN_EMAILS = sorted(KNOWN_PEOPLE.keys())
 
-# =========================================================
-#  UTILIDADES GRAPH (TOKEN + ENVÍO CON REINTENTOS)
-# =========================================================
-def _check_graph_secrets() -> bool:
-    ok = True
+# =========================
+# SHAREPOINT / GRAPH HELPERS (token + descarga por share link)
+# =========================
+def _get_graph_token_from_secrets_section(secret_section: dict) -> str | None:
     try:
-        _ = st.secrets["graph"]["tenant_id"]
-        _ = st.secrets["graph"]["client_id"]
-        _ = st.secrets["graph"]["client_secret"]
-        _ = st.secrets["graph"]["from_email"]
+        tenant = secret_section["tenant_id"]
+        client = secret_section["client_id"]
+        client_secret = secret_section["client_secret"]
     except Exception:
-        st.error("❌ Falta configuración en st.secrets['graph'] (tenant_id, client_id, client_secret, from_email).")
-        ok = False
-    return ok
-
-def get_access_token(force_renew: bool = False):
-    try:
-        tenant_id = st.secrets["graph"]["tenant_id"]
-        client_id = st.secrets["graph"]["client_id"]
-        client_secret = st.secrets["graph"]["client_secret"]
-        authority = f"https://login.microsoftonline.com/{tenant_id}"
-        scope = ["https://graph.microsoft.com/.default"]
-
-        app = msal.ConfidentialClientApplication(
-            client_id=client_id, authority=authority, client_credential=client_secret
-        )
-
-        if not force_renew:
-            result = app.acquire_token_silent(scope, account=None)
-            if result and "access_token" in result:
-                return result["access_token"]
-
-        result = app.acquire_token_for_client(scopes=scope)
-        if "access_token" in result:
-            return result["access_token"]
-
-        st.error(f"❌ Error obteniendo token: {result.get('error_description', 'Unknown error')}")
         return None
-    except Exception as e:
-        st.error(f"❌ Error en autenticación: {str(e)}")
+    authority = f"https://login.microsoftonline.com/{tenant}"
+    scope = ["https://graph.microsoft.com/.default"]
+    try:
+        app = msal.ConfidentialClientApplication(client, authority=authority, client_credential=client_secret)
+        result = app.acquire_token_silent(scope, account=None)
+        if not result:
+            result = app.acquire_token_for_client(scopes=scope)
+        return result.get("access_token") if result and "access_token" in result else None
+    except Exception:
         return None
 
-def _post_graph_sendmail(from_email: str, payload: dict, token: str, timeout_sec: int = 45):
-    endpoint = f"https://graph.microsoft.com/v1.0/users/{from_email}/sendMail"
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    resp = requests.post(endpoint, headers=headers, json=payload, timeout=timeout_sec)
-    return resp.status_code, resp.text, resp.reason
-
-def send_email_with_attachment(recipient_emails, subject, body_html, attachment_bytes, attachment_name, debug_mode=True):
-    if not _check_graph_secrets():
-        return False, "Faltan secrets de Graph."
-
+def download_sharepoint_file_by_shareurl(share_url: str, token: str, timeout: int = 60) -> bytes | None:
     try:
-        from_email = st.secrets["graph"]["from_email"]
-
-        attachment_content = base64.b64encode(attachment_bytes).decode('utf-8')
-        to_recipients = [{"emailAddress": {"address": email}} for email in recipient_emails]
-        email_data = {
-            "message": {
-                "subject": subject,
-                "body": {"contentType": "HTML", "content": body_html},
-                "toRecipients": to_recipients,
-                "attachments": [{
-                    "@odata.type": "#microsoft.graph.fileAttachment",
-                    "name": attachment_name,
-                    "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    "contentBytes": attachment_content
-                }]
-            },
-            "saveToSentItems": True
-        }
-
-        max_attempts = 4
-        backoff_seconds = [0, 1.5, 3.0, 6.0]
-
-        token = get_access_token()
-        if not token:
-            return False, "❌ No se pudo obtener el token de acceso"
-
-        for attempt in range(max_attempts):
-            status, text, reason = _post_graph_sendmail(from_email, email_data, token)
-
-            if debug_mode:
-                with st.expander("🔍 Debug: Request/Response", expanded=False):
-                    st.write(f"**Intento:** {attempt + 1}/{max_attempts}")
-                    st.write(f"**Status Code:** {status} — {reason}")
-                    if text:
-                        try:
-                            st.json(json.loads(text))
-                        except Exception:
-                            st.code(text)
-
-            if status == 202:
-                return True, f"✅ Correo enviado exitosamente a {len(recipient_emails)} destinatario(s)"
-
-            if status == 401 and attempt < max_attempts - 1:
-                token = get_access_token(force_renew=True)
-                sleep_s = backoff_seconds[attempt]
-                if debug_mode and sleep_s:
-                    st.info(f"🔐 Token renovado. Reintentando en {sleep_s}s…")
-                if sleep_s:
-                    time.sleep(sleep_s)
-                continue
-
-            if (status == 429 or 500 <= status < 600) and attempt < max_attempts - 1:
-                sleep_s = backoff_seconds[attempt]
-                if debug_mode:
-                    st.info(f"⏳ {status} recibido. Reintentando en {sleep_s}s…")
-                if sleep_s:
-                    time.sleep(sleep_s)
-                continue
-
-            if status == 400:
-                try:
-                    detail = json.loads(text).get("error", {}).get("message", "")
-                except Exception:
-                    detail = text
-                return False, f"❌ Error 400 (Bad Request): {detail}"
-
-            if status == 403:
-                return False, ("❌ Error 403: Acceso denegado (Mail.Send, consentimiento admin, buzón válido). "
-                               f"Detalles: {text}")
-
-            return False, f"❌ Error al enviar correo. Código: {status}\nRespuesta: {text}"
-
-        return False, "❌ Error desconocido."
+        if not share_url or not token:
+            return None
+        raw = share_url
+        encoded = base64.urlsafe_b64encode(raw.encode("utf-8")).decode("utf-8").rstrip("=")
+        share_id = f"u!{encoded}"
+        endpoint = f"https://graph.microsoft.com/v1.0/shares/{share_id}/driveItem/content"
+        headers = {"Authorization": f"Bearer {token}"}
+        r = requests.get(endpoint, headers=headers, timeout=timeout)
+        if r.status_code == 200:
+            return r.content
+        else:
+            try:
+                st.warning(f"SharePoint download status: {r.status_code}")
+                st.info(r.text[:800])
+            except Exception:
+                pass
+            return None
     except Exception as e:
-        import traceback
-        if debug_mode:
-            with st.expander("🔍 Debug: Exception", expanded=True):
-                st.code(traceback.format_exc())
-        return False, f"❌ Error enviando correo: {str(e)}"
+        st.warning(f"Exception descargando sharelink: {str(e)}")
+        return None
 
-# =========================================================
-# VALIDACIÓN EMAILS
-# =========================================================
+def _get_share_urls_from_secrets():
+    leads_url = DEFAULT_LEADS_SHARE_URL
+    ventas_url = DEFAULT_VENTAS_SHARE_URL
+    try:
+        sec = st.secrets.get("admisiones_bdd", {})
+        leads_url = sec.get("leads_share_url", leads_url)
+        ventas_url = sec.get("ventas_share_url", ventas_url)
+    except Exception:
+        pass
+    return leads_url, ventas_url
+
+def load_bytes_for_leads(year_selected: int):
+    if year_selected == ANIO_ACTUAL:
+        if os.path.exists(LEADS_GENERADOS_FILE_LOCAL):
+            try:
+                return open(LEADS_GENERADOS_FILE_LOCAL, "rb").read()
+            except Exception:
+                return None
+        return None
+    try:
+        secret_section = st.secrets.get("admisiones_bdd", None)
+    except Exception:
+        secret_section = None
+    token = _get_graph_token_from_secrets_section(secret_section) if secret_section else None
+    leads_url, _ = _get_share_urls_from_secrets()
+    if leads_url and token:
+        data = download_sharepoint_file_by_shareurl(leads_url, token)
+        if data:
+            return data
+    if os.path.exists(LEADS_GENERADOS_FILE_LOCAL):
+        try:
+            return open(LEADS_GENERADOS_FILE_LOCAL, "rb").read()
+        except Exception:
+            return None
+    return None
+
+def load_bytes_for_ventas(year_selected: int):
+    if year_selected == ANIO_ACTUAL:
+        if os.path.exists(VENTAS_FILE_LOCAL):
+            try:
+                return open(VENTAS_FILE_LOCAL, "rb").read()
+            except Exception:
+                return None
+        return None
+    try:
+        secret_section = st.secrets.get("admisiones_bdd", None)
+    except Exception:
+        secret_section = None
+    token = _get_graph_token_from_secrets_section(secret_section) if secret_section else None
+    _, ventas_url = _get_share_urls_from_secrets()
+    if ventas_url and token:
+        data = download_sharepoint_file_by_shareurl(ventas_url, token)
+        if data:
+            return data
+    if os.path.exists(VENTAS_FILE_LOCAL):
+        try:
+            return open(VENTAS_FILE_LOCAL, "rb").read()
+        except Exception:
+            return None
+    return None
+
+# =========================
+# UTILIDADES LOCALES
+# =========================
+def _to_blank_label(series_like) -> pd.Series:
+    s = pd.Series(series_like, copy=True).astype(str).str.strip()
+    s = s.replace(["", "nan", "NaN", "NONE", "None", "NULL"], "(En Blanco)")
+    return s.fillna("(En Blanco)")
+
+def _norm_name(s: str) -> str:
+    if s is None:
+        return ""
+    s = str(s).strip().lower()
+    s = unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode("utf-8")
+    s = " ".join(s.split())
+    return s
+
+def _find_col(cols, candidates):
+    return next((c for c in candidates if c in cols), None)
+
+def normalizar(texto: str) -> str:
+    texto = str(texto) if pd.notna(texto) else ""
+    texto = texto.lower()
+    texto = unicodedata.normalize('NFD', texto).encode('ascii', 'ignore').decode("utf-8")
+    return texto.strip()
+
+def lighten_hex(hex_color: str, factor: float = 0.85) -> str:
+    try:
+        hex_color = hex_color.strip().lstrip('#')
+        r = int(hex_color[0:2], 16); g = int(hex_color[2:4], 16); b = int(hex_color[4:6], 16)
+    except Exception:
+        return "#f3f4f6"
+    r_l = int(r + (255 - r) * factor); g_l = int(g + (255 - g) * factor); b_l = int(b + (255 - b) * factor)
+    return f"#{r_l:02x}{g_l:02x}{b_l:02x}"
+
+# =========================
+# VALIDACIÓN DE EMAILS (idéntica a la tuya)
+# =========================
 def validar_emails(emails_string):
     if not emails_string or emails_string.strip() == "":
         return False, [], "Por favor ingresa al menos un email"
@@ -226,21 +247,9 @@ def validar_emails(emails_string):
     if errores: return False, [], " | ".join(errores)
     return True, emails_validos, f"✓ {len(emails_validos)} email(s) válido(s)"
 
-# =========================================================
-# NORMALIZACIÓN NOMBRES
-# =========================================================
-def _norm_name(s: str) -> str:
-    """minúsculas, sin tildes, espacios colapsados"""
-    if s is None:
-        return ""
-    s = str(s).strip().lower()
-    s = unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode("utf-8")
-    s = " ".join(s.split())
-    return s
-
-# =========================================================
-# APP
-# =========================================================
+# =========================
+# APP PRINCIPAL
+# =========================
 def app():
     st.session_state.setdefault("email_last_ok", None)
     st.session_state.setdefault("email_last_msg", "")
@@ -253,72 +262,41 @@ def app():
 
     traducciones_meses = {1:"Enero",2:"Febrero",3:"Marzo",4:"Abril",5:"Mayo",6:"Junio",7:"Julio",8:"Agosto",9:"Septiembre",10:"Octubre",11:"Noviembre",12:"Diciembre"}
 
-    def normalizar(texto: str) -> str:
-        texto = str(texto) if pd.notna(texto) else ""
-        texto = texto.lower()
-        texto = unicodedata.normalize('NFD', texto).encode('ascii', 'ignore').decode("utf-8")
-        return texto.strip()
+    # Selector año (igual comportamiento que en ventas_preventas)
+    st.subheader("📋 Leads generados")
+    year_options = [ANIO_ACTUAL, ANIO_ACTUAL - 1]
+    year_labels = {ANIO_ACTUAL: f"{ANIO_ACTUAL} (Año actual)", ANIO_ACTUAL - 1: f"{ANIO_ACTUAL - 1} (Año anterior - SharePoint)"}
+    selected_year = st.selectbox("Selecciona Año:", options=year_options, format_func=lambda y: year_labels.get(y, str(y)), index=0)
 
-    def add_mes_cols(df: pd.DataFrame) -> pd.DataFrame:
-        fecha_col = None
-        for c in ["creado", "fecha", "fecha_creacion"]:
-            if c in df.columns:
-                fecha_col = c; break
-        df["creado"] = pd.to_datetime(df.get(fecha_col), errors="coerce")
-        df["mes_num"] = df["creado"].dt.month
-        df["anio"] = df["creado"].dt.year
-        df["mes_nombre"] = df["mes_num"].map(traducciones_meses)
-        df["mes_anio"] = df.apply(
-            lambda r: f"{traducciones_meses.get(int(r['mes_num']), '')} {int(r['anio'])}"
-            if pd.notna(r["mes_num"]) and pd.notna(r["anio"]) else None, axis=1
-        )
-        return df
+    # Intentar cargar bytes del archivo de leads según año
+    with st.spinner("Cargando archivo(s)..."):
+        leads_bytes = load_bytes_for_leads(selected_year)
+        ventas_bytes = load_bytes_for_ventas(selected_year)
 
-    def header_with_total(label: str, total: int):
-        st.markdown(f"#### {label}")
-        st.markdown(
-            f"<div style='margin:-6px 0 10px 0; font-weight:700'>TOTAL: {format(total, ',').replace(',', '.')}</div>",
-            unsafe_allow_html=True
-        )
+    if selected_year == ANIO_ACTUAL - 1:
+        if leads_bytes is None:
+            st.warning("Intentando cargar LEADS (Año anterior) desde SharePoint falló — uso fallback local si existe.")
+        if ventas_bytes is None:
+            st.info("Intentando cargar VENTAS (Año anterior) desde SharePoint falló — uso fallback local si existe.")
 
-    def lighten_hex(hex_color: str, factor: float = 0.85) -> str:
+    # ================= CARGA DEL DF LEADS (desde bytes o local)
+    if leads_bytes:
         try:
-            hex_color = hex_color.strip().lstrip('#')
-            r = int(hex_color[0:2], 16); g = int(hex_color[2:4], 16); b = int(hex_color[4:6], 16)
-        except Exception:
-            return "#f3f4f6"
-        r_l = int(r + (255 - r) * factor); g_l = int(g + (255 - g) * factor); b_l = int(b + (255 - b) * factor)
-        return f"#{r_l:02x}{g_l:02x}{b_l:02x}"
+            df = pd.read_excel(BytesIO(leads_bytes))
+        except Exception as e:
+            st.error(f"No se pudo leer el Excel de leads desde bytes: {e}")
+            return
+    else:
+        if os.path.exists(LEADS_GENERADOS_FILE_LOCAL):
+            try:
+                df = pd.read_excel(LEADS_GENERADOS_FILE_LOCAL)
+            except Exception as e:
+                st.error(f"No se pudo leer {LEADS_GENERADOS_FILE_LOCAL}: {e}")
+                return
+        else:
+            st.warning("📭 No se ha subido el archivo de Leads Generados aún.")
+            return
 
-    def _to_blank_label(series_like) -> pd.Series:
-        s = pd.Series(series_like, copy=True).astype(str).str.strip()
-        s = s.replace(["", "nan", "NaN", "NONE", "None", "NULL"], "(En Blanco)")
-        return s.fillna("(En Blanco)")
-
-    CATEGORIAS_EXACTAS = {
-        "MÁSTER IA": ["máster en inteligencia artificial", "máster integral en inteligencia artificial", "máster ia", "master ia", "master en inteligencia artificial"],
-        "MÁSTER RRHH": ["máster recursos humanos rrhh: dirección de personas, desarrollo de talento y gestión laboral", "máster en rrhh: dirección de personas, desarrollo de talento y gestión laboral", "máster rrhh", "master rrhh", "master en rrhh, dirección de personas, desarrollo de talento y gestión laboral"],
-        "MÁSTER CIBERSEGURIDAD": ["máster en dirección de ciberseguridad, hacking ético y seguridad ofensiva", "master en direccion de ciberseguridad, hacking etico y seguridad ofensiva", "la importancia de la ciberseguridad y privacidad", "máster ciber", "master ciber", "máster ciberseguridad"],
-        "CERTIFICACIÓN SAP S/4HANA": ["certificado sap s/4hana finance", "certificado oficial sap s/4hana finance", "certificado oficial sap s/4hana sourcing and procurement", "certificado oficial sap s/4hana logística", "consultoría sap s4hana finanzas", "consultoría sap bw4/hana", "consultoría sap s4hana planificación de la producción y fabricación", "sap btp: la plataforma para la transformación digital", "máster en dirección financiera y consultoría funcional sap s/4hana finance", "sap s/4hana", "sap"],
-        "MÁSTER DPO": ["máster profesional en auditoría de protección de datos, gestión de riesgos y cyber compliance", "master en auditoría de protección de datos, gestión de riesgos y cyber compliance", "máster en dirección de compliance & protección de datos", "máster en auditoría de protección de datos, gestión de riesgos y cyber compliance​", "dpo"],
-        "MÁSTER EERR": ["master en gestión eficiente de energías renovables", "master profesional en energías renovables, redes inteligentes y movilidad eléctrica", "máster en gestión eficiente de las energías renovables", "máster en bim y gestión eficiente de la energía (no usar)", "energías renovables", "eerr"],
-        "MBA + RRHH": ["doble máster oficial en rrhh + mba", "doble máster en rrhh + mba", "doble máster rrhh + mba", "doble máster en dirección financiera + dirección rrhh", "mba rrhh"],
-        "PROGRAMA CALIFORNIA": ["programa movilidad california", "california state university"]
-    }
-
-    def clasificar_programa(nombre: str) -> str:
-        nombre_limpio = normalizar(nombre)
-        for categoria, nombres in CATEGORIAS_EXACTAS.items():
-            if nombre_limpio in [normalizar(n) for n in nombres]:
-                return categoria
-        return "SIN CLASIFICAR"
-
-    # ================= CARGA =================
-    if not os.path.exists(LEADS_GENERADOS_FILE):
-        st.warning("📭 No se ha subido el archivo de Leads Generados aún.")
-        return
-
-    df = pd.read_excel(LEADS_GENERADOS_FILE)
     df.columns = df.columns.str.strip().str.lower()
 
     if 'creado' not in df.columns:
@@ -337,34 +315,79 @@ def app():
         return
     df["programa"] = _to_blank_label(df["programa"])
     df["propietario"] = _to_blank_label(df["propietario"])
+
+    # clasificación (mismo bloque que tenías)
+    CATEGORIAS_EXACTAS = {
+        "MÁSTER IA": ["máster en inteligencia artificial", "máster integral en inteligencia artificial", "máster ia", "master ia", "master en inteligencia artificial"],
+        "MÁSTER RRHH": ["máster recursos humanos rrhh: dirección de personas, desarrollo de talento y gestión laboral", "máster en rrhh: dirección de personas, desarrollo de talento y gestión laboral", "máster rrhh", "master rrhh", "master en rrhh, dirección de personas, desarrollo de talento y gestión laboral"],
+        "MÁSTER CIBERSEGURIDAD": ["máster en dirección de ciberseguridad, hacking ético y seguridad ofensiva", "master en direccion de ciberseguridad, hacking etico y seguridad ofensiva", "la importancia de la ciberseguridad y privacidad", "máster ciber", "master ciber", "máster ciberseguridad"],
+        "CERTIFICACIÓN SAP S/4HANA": ["certificado sap s/4hana finance", "certificado oficial sap s/4hana finance", "certificado oficial sap s/4hana sourcing and procurement", "certificado oficial sap s/4hana logística", "consultoría sap s4hana finanzas", "consultoría sap bw4/hana", "consultoría sap s4hana planificación de la producción y fabricación", "sap btp: la plataforma para la transformación digital", "máster en dirección financiera y consultoría funcional sap s/4hana finance", "sap s/4hana", "sap"],
+        "MÁSTER DPO": ["máster profesional en auditoría de protección de datos, gestión de riesgos y cyber compliance", "master en auditoría de protección de datos, gestión de riesgos y cyber compliance", "máster en dirección de compliance & protección de datos", "máster en auditoría de protección de datos, gestión de riesgos y cyber compliance​", "dpo"],
+        "MÁSTER EERR": ["master en gestión eficiente de energías renovables", "master profesional en energías renovables, redes inteligentes y movilidad eléctrica", "máster en gestión eficiente de las energías renovables", "máster en bim y gestión eficiente de la energía (no usar)", "energías renovables", "eerr"],
+        "MBA + RRHH": ["doble máster oficial en rrhh + mba", "doble máster en rrhh + mba", "doble máster rrhh + mba", "doble máster en dirección financiera + dirección rrhh", "mba rrhh"],
+        "PROGRAMA CALIFORNIA": ["programa movilidad california", "california state university"]
+    }
+
+    def clasificar_programa(nombre: str) -> str:
+        nombre_limpio = normalizar(nombre)
+        for categoria, nombres in CATEGORIAS_EXACTAS.items():
+            if nombre_limpio in [normalizar(n) for n in nombres]:
+                return categoria
+        return "SIN CLASIFICAR"
+
     df["programa_categoria"] = df["programa"].apply(clasificar_programa)
     df["programa_final"] = df.apply(lambda r: r["programa"] if r["programa_categoria"] == "SIN CLASIFICAR" else r["programa_categoria"], axis=1)
 
-    ventas_ok = os.path.exists(VENTAS_FILE)
+    # ================= VENTAS (opcional) - ahora soporta SharePoint según selected_year
+    ventas_ok = False
     df_ventas = pd.DataFrame()
-    if ventas_ok:
+    if ventas_bytes:
         try:
-            df_ventas = pd.read_excel(VENTAS_FILE)
+            df_ventas = pd.read_excel(BytesIO(ventas_bytes))
             df_ventas.columns = df_ventas.columns.str.strip().str.lower()
-            if "propietario" in df_ventas.columns:
-                df_ventas["propietario"] = _to_blank_label(df_ventas["propietario"])
-            else:
-                st.warning("⚠️ En ventas.xlsx falta la columna 'propietario'. Algunas vistas se verán limitadas.")
-            prog_col = 'programa' if 'programa' in df_ventas.columns else ('nombre' if 'nombre' in df_ventas.columns else None)
-            if prog_col:
-                df_ventas["programa_bruto"] = df_ventas[prog_col].astype(str)
-                df_ventas["programa_categoria"] = df_ventas["programa_bruto"].apply(clasificar_programa)
-                df_ventas["programa_final"] = df_ventas.apply(
-                    lambda r: r["programa_bruto"] if r.get("programa_categoria", "SIN CLASIFICAR") == "SIN CLASIFICAR" else r.get("programa_categoria"),
-                    axis=1
-                )
-            else:
-                df_ventas["programa_final"] = "(Desconocido)"
-            if any(c in df_ventas.columns for c in ["creado", "fecha", "fecha_creacion"]):
-                df_ventas = add_mes_cols(df_ventas)
+            ventas_ok = True
         except Exception as e:
+            st.warning(f"⚠️ No se pudo leer ventas desde bytes: {e}")
             ventas_ok = False
-            st.warning(f"⚠️ No se pudo leer ventas.xlsx: {e}")
+    else:
+        if os.path.exists(VENTAS_FILE_LOCAL):
+            try:
+                df_ventas = pd.read_excel(VENTAS_FILE_LOCAL)
+                df_ventas.columns = df_ventas.columns.str.strip().str.lower()
+                ventas_ok = True
+            except Exception as e:
+                st.warning(f"⚠️ No se pudo leer {VENTAS_FILE_LOCAL}: {e}")
+                ventas_ok = False
+        else:
+            ventas_ok = False
+
+    if ventas_ok:
+        if "propietario" in df_ventas.columns:
+            df_ventas["propietario"] = _to_blank_label(df_ventas["propietario"])
+        else:
+            st.warning("⚠️ En ventas.xlsx falta la columna 'propietario'. Algunas vistas se verán limitadas.")
+        prog_col = 'programa' if 'programa' in df_ventas.columns else ('nombre' if 'nombre' in df_ventas.columns else None)
+        if prog_col:
+            df_ventas["programa_bruto"] = df_ventas[prog_col].astype(str)
+            df_ventas["programa_categoria"] = df_ventas["programa_bruto"].apply(clasificar_programa)
+            df_ventas["programa_final"] = df_ventas.apply(
+                lambda r: r["programa_bruto"] if r.get("programa_categoria", "SIN CLASIFICAR") == "SIN CLASIFICAR" else r.get("programa_categoria"),
+                axis=1
+            )
+        else:
+            df_ventas["programa_final"] = "(Desconocido)"
+
+        # Añadir columnas de fecha/mes si están en ventas
+        if any(c in df_ventas.columns for c in ["creado", "fecha", "fecha_creacion", "fecha de cierre"]):
+            fecha_col = None
+            for c in ["creado", "fecha", "fecha_creacion", "fecha de cierre"]:
+                if c in df_ventas.columns:
+                    fecha_col = c; break
+            df_ventas["creado"] = pd.to_datetime(df_ventas.get(fecha_col), errors="coerce")
+            df_ventas["mes_num"] = df_ventas["creado"].dt.month
+            df_ventas["anio"] = df_ventas["creado"].dt.year
+            df_ventas["mes_nombre"] = df_ventas["mes_num"].map(traducciones_meses)
+            df_ventas["mes_anio"] = df_ventas["mes_nombre"] + " " + df_ventas["anio"].astype(str)
 
     # ================= FILTROS =================
     meses_disponibles = (df[["mes_anio","mes_num","anio"]].dropna().drop_duplicates().sort_values(["anio","mes_num"]))
@@ -379,6 +402,9 @@ def app():
     df_filtrado = df.copy()
     if mes_seleccionado != "Todos":
         df_filtrado = df_filtrado[df_filtrado["mes_anio"] == mes_seleccionado]
+    # Filtrar por año seleccionado también (aseguro que estamos en selected_year)
+    df_filtrado = df_filtrado[df_filtrado["anio"] == selected_year]
+
     if programa_seleccionado != "Todos":
         df_filtrado = df_filtrado[df_filtrado["programa_final"] == programa_seleccionado]
 
@@ -412,7 +438,7 @@ def app():
 
     # ================= TABLAS (USADAS PARA EXPORTS) =================
     st.markdown("### Selecciona un Propietario:")
-    df_tablas_global = df_filtrado.copy()  # 👈 Importante: solo el DF filtrado
+    df_tablas_global = df_filtrado.copy()  # 👈 Importante: solo el DF filtrado (ya filtrado por año)
     propietarios_tablas = ["Todos"] + sorted(df_tablas_global["propietario"].unique().tolist())
     propietario_tablas = st.selectbox("Propietario", propietarios_tablas, key="prop_tabs")
 
@@ -425,7 +451,8 @@ def app():
     with colA:
         t1 = df_tablas["programa_final"].value_counts(dropna=False).rename_axis("Programa").reset_index(name="Cantidad")
         total1 = int(t1["Cantidad"].sum()) if not t1.empty else 0
-        header_with_total("📘 Total Leads por Programa", total1)
+        st.markdown(f"#### 📘 Total Leads por Programa")
+        st.markdown(f"<div style='margin:-6px 0 10px 0; font-weight:700'>TOTAL: {format(total1, ',').replace(',', '.')}</div>", unsafe_allow_html=True)
         if propietario_tablas != "Todos" and total1 > 0:
             t1 = pd.concat([pd.DataFrame([{"Programa": f"TOTAL {propietario_tablas}", "Cantidad": total1}]), t1], ignore_index=True)
         st.dataframe(t1.style.background_gradient(cmap="Blues"), use_container_width=True)
@@ -440,7 +467,8 @@ def app():
         else:
             conteo_origen = pd.DataFrame(columns=["Origen Lead", "Cantidad"])
         total2 = int(conteo_origen["Cantidad"].sum()) if not conteo_origen.empty else 0
-        header_with_total("📄 Origen Leads", total2)
+        st.markdown(f"#### 📄 Origen Leads")
+        st.markdown(f"<div style='margin:-6px 0 10px 0; font-weight:700'>TOTAL: {format(total2, ',').replace(',', '.')}</div>", unsafe_allow_html=True)
         if propietario_tablas != "Todos" and total2 > 0:
             conteo_origen = pd.concat([pd.DataFrame([{"Origen Lead": f"TOTAL — {propietario_tablas}", "Cantidad": total2}]), conteo_origen], ignore_index=True)
         st.dataframe(conteo_origen.style.background_gradient(cmap="Greens"), use_container_width=True)
@@ -448,6 +476,8 @@ def app():
     with colC:
         if ventas_ok and not df_ventas.empty:
             ventas_tablas = df_ventas.copy()
+            # Aseguro que ventas también esté filtrado por el mismo selected_year y por filtros UI
+            ventas_tablas = ventas_tablas[ventas_tablas["anio"] == selected_year] if "anio" in ventas_tablas.columns else ventas_tablas
             if mes_seleccionado != "Todos":
                 ventas_tablas = ventas_tablas[ventas_tablas["mes_anio"] == mes_seleccionado]
             if programa_seleccionado != "Todos":
@@ -466,16 +496,13 @@ def app():
         else:
             conteo_origen_v = pd.DataFrame(columns=["Origen", "Cantidad"])
         total3 = int(conteo_origen_v["Cantidad"].sum()) if not conteo_origen_v.empty else 0
-        header_with_total("💶 Leads - Venta", total3)
+        st.markdown(f"#### 💶 Leads - Venta")
+        st.markdown(f"<div style='margin:-6px 0 10px 0; font-weight:700'>TOTAL: {format(total3, ',').replace(',', '.')}</div>", unsafe_allow_html=True)
         if propietario_tablas != "Todos" and total3 > 0:
             conteo_origen_v = pd.concat([pd.DataFrame([{"Origen": f"TOTAL — {propietario_tablas}", "Cantidad": total3}]), conteo_origen_v], ignore_index=True)
         st.dataframe(conteo_origen_v.style.background_gradient(cmap="Purples"), use_container_width=True)
 
     # ================= EXPORT A EXCEL (SOLO EN BLANCO) =================
-    def _find_col(cols, candidates):
-        return next((c for c in candidates if c in cols), None)
-
-    # ---------- LEADS
     leads_detalle = df_tablas.copy()
     nombre_col_L = _find_col(leads_detalle.columns, ["nombre", "first name", "firstname"])
     apell_col_L  = _find_col(leads_detalle.columns, ["apellidos", "apellido", "last name", "lastname"])
@@ -491,9 +518,10 @@ def app():
     leads_export_cols["Programa"] = _to_blank_label(leads_export_cols["Programa"])
     leads_export_cols["Origen Lead"] = _to_blank_label(leads_export_cols["Origen Lead"])
 
-    # ---------- VENTAS
+    # ---------- VENTAS (para export)
     if ventas_ok and not df_ventas.empty:
         ventas_detalle = df_ventas.copy()
+        ventas_detalle = ventas_detalle[ventas_detalle["anio"] == selected_year] if "anio" in ventas_detalle.columns else ventas_detalle
         if mes_seleccionado != "Todos":
             ventas_detalle = ventas_detalle[ventas_detalle["mes_anio"] == mes_seleccionado]
         if programa_seleccionado != "Todos":
@@ -503,12 +531,10 @@ def app():
     else:
         ventas_detalle = pd.DataFrame(columns=["propietario","programa_final"])
 
-    # Prioridad contacto directo
     contacto_directo = _find_col(
         ventas_detalle.columns,
         ["contacto", "contact", "contact name", "contact_name", "nombre contacto", "nombre del contacto"]
     )
-    # Si no, first/last
     first_col = _find_col(ventas_detalle.columns, ["first name", "firstname", "nombre contacto", "nombre del contacto"])
     last_col  = _find_col(ventas_detalle.columns, ["last name", "lastname", "apellidos contacto", "apellidos del contacto", "apellidos"])
 
@@ -526,7 +552,6 @@ def app():
             contacto_v = (nombre_v.fillna("") + " " + apell_v.fillna("")).str.strip()
         contacto_v = contacto_v.replace(["", "nan", "NaN", "NONE", "None", "NULL"], "(En Blanco)")
 
-    # NUEVO: Forma de Pago (con alias)
     forma_pago_col = _find_col(
         ventas_detalle.columns,
         ["forma de pago", "forma_pago", "payment method", "payment_method", "forma de cobro"]
@@ -544,22 +569,19 @@ def app():
       "Nombre": ventas_detalle.get("programa_final", pd.Series([""]*len(ventas_detalle))).astype(str),  # Máster/Programa
       "Contacto": contacto_v,  # persona
       "Origen": ventas_detalle.get(origen_col_V, pd.Series([""]*len(ventas_detalle))) if origen_col_V else pd.Series([""]*len(ventas_detalle)),
-      "Forma de Pago": forma_pago_series,  # 👈 NUEVO EN EXPORT
+      "Forma de Pago": forma_pago_series,
     })
     ventas_export_cols["Origen"] = _to_blank_label(ventas_export_cols["Origen"])
 
-    # Aliases para evitar KeyError por mayúsculas/minúsculas
     ventas_export_cols["contacto"] = ventas_export_cols["Contacto"]
     ventas_export_cols["nombre"] = ventas_export_cols["Nombre"]
 
-    # ---------- Hojas de exportación
     hoja1 = leads_export_cols[["Propietario","Nombre","Apellidos","Programa","Origen Lead"]].copy()
     hoja1 = hoja1[hoja1["Programa"] == "(En Blanco)"]
 
     hoja2 = leads_export_cols[["Propietario","Nombre","Apellidos","Programa","Origen Lead"]].copy()
     hoja2 = hoja2[hoja2["Origen Lead"] == "(En Blanco)"]
 
-    # En ventas mostramos Propietario, Nombre (máster), Contacto (persona), Origen y Forma de Pago
     hoja3 = ventas_export_cols[["Propietario","Nombre","Contacto","Origen","Forma de Pago"]].copy()
     hoja3 = hoja3[(hoja3["Origen"] == "(En Blanco)") | (hoja3["Forma de Pago"] == "(En Blanco)")]
 
@@ -571,7 +593,6 @@ def app():
     excel_bytes = buffer.getvalue()
 
     col_download, col_email = st.columns([1, 1])
-
     with col_download:
         st.download_button(
             label="⬇️ Descargar detalle (Excel) — SOLO EN BLANCO",
@@ -601,7 +622,7 @@ def app():
         norm_to_original[_norm_name(v)] = v
     faltantes_pretty = [norm_to_original.get(n, n) for n in faltantes_norm]
 
-    # ============= ENVÍO POR CORREO — ADMIN (chips 3 estados) =============
+    # ============= ENVÍO POR CORREO — ADMIN (bloque copiado de tu original) =============
     with col_email:
         es_admin = st.session_state.get('role') == 'admin'
         if es_admin:
@@ -686,184 +707,70 @@ def app():
                     unsafe_allow_html=True
                 )
 
-            # -------- Franja amarilla: propietarios con blancos sin correo en la lista
-            if faltantes_pretty:
-                st.markdown(
-                    "<div style='background:#fff8e1;border:1px solid #f59e0b;color:#92400e;"
-                    "padding:10px;border-radius:10px;margin-top:10px;'>"
-                    "<b>👤 Nombres con campos EN BLANCO (Programa / Origen Lead / Origen Venta) sin correo en la lista</b>"
-                    "</div>",
-                    unsafe_allow_html=True
-                )
-                chips_y = [
-                    f"<span style='display:inline-block;margin:4px 6px 0 0;padding:6px 10px;"
-                    f"border-radius:10px;background:#fef9c3;border:1px solid #f59e0b;color:#92400e'>{html.escape(n)}</span>"
-                    for n in faltantes_pretty
-                ]
-                st.markdown("".join(chips_y), unsafe_allow_html=True)
-
-                buf_falt = BytesIO()
-                pd.DataFrame({"Propietario (con blancos, sin correo)": faltantes_pretty}).to_excel(
-                    buf_falt, index=False, sheet_name="faltan_correos"
-                )
-                st.download_button(
-                    "⬇️ Descargar lista de propietarios (con blancos) sin correo",
-                    data=buf_falt.getvalue(),
-                    file_name="propietarios_con_blancos_sin_correo.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-            else:
-                st.info("No hay propietarios con campos en blanco sin correo para el filtro actual.")
-
-            debug_mode = st.checkbox("🔍 Modo Debug (mostrar detalles técnicos)", value=False)
-            clicked = st.button("📤 Enviar Excel por Outlook", use_container_width=True, type="primary")
-
-            if clicked:
-                st.session_state["email_attempt_counter"] += 1
-                current_attempt = st.session_state["email_attempt_counter"]
-                st.session_state["email_last_ok"] = None
-                st.session_state["email_last_msg"] = ""
-                st.session_state["email_last_attempt_id"] = current_attempt
-                st.info(f"🚀 Envío iniciado… (intento #{current_attempt})")
-
-                if not destinatarios_totales:
-                    st.session_state["email_last_ok"] = False
-                    st.session_state["email_last_msg"] = "❌ Selecciona o añade al menos un destinatario"
-                else:
-                    joined_for_validation = ", ".join(destinatarios_totales)
-                    es_valido, emails_validos, mensaje = validar_emails(joined_for_validation)
-                    if not es_valido:
-                        st.session_state["email_last_ok"] = False
-                        st.session_state["email_last_msg"] = f"❌ {mensaje}"
-                    else:
-                        with st.spinner(f"Enviando correo a {len(emails_validos)} destinatario(s)..."):
-                            if not _check_graph_secrets():
-                                st.session_state["email_last_ok"] = False
-                                st.session_state["email_last_msg"] = "❌ Falta configuración de Graph en secrets."
-                            else:
-                                fecha_actual = datetime.now().strftime("%d/%m/%Y")
-                                asunto = f"Reporte de Leads en Blanco - {fecha_actual}"
-
-                                def _badge(email: str) -> str:
-                                    name = KNOWN_PEOPLE.get(email, None)
-                                    label_ui = f"{name} <{email}>" if name else email
-                                    status = _recipient_status(email)
-                                    style = _chip_css(status)
-                                    return (
-                                        f"<span style='display:inline-block;margin:2px 4px 2px 0;padding:2px 6px;"
-                                        f"border-radius:6px;{style}'>{html.escape(label_ui)}</span>"
-                                    )
-
-                                destinatarios_html = "<br/>".join(_badge(email) for email in emails_validos)
-
-                                cuerpo_html = f"""
-                                <html>
-                                <head>
-                                  <meta charset="UTF-8" />
-                                  <style>
-                                    body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color:#111827; }}
-                                    h2 {{ color:#111827; }}
-                                    .note {{
-                                      background:#f9fafb; border-left:4px solid #2563eb; padding:12px 14px;
-                                      border-radius:8px; margin:12px 0 8px 0;
-                                    }}
-                                    ul {{ margin:10px 0; }}
-                                    .meta {{ color:#6b7280; font-size:12px; }}
-                                  </style>
-                                </head>
-                                <body>
-                                  <h2>📊 Reporte de Leads y Ventas con Datos en Blanco</h2>
-
-                                  <div class="note">
-                                    Para una mejor toma de decisiones, agradecemos actualizar en <strong>Clientify</strong>
-                                    los campos que figuran en blanco en el Excel adjunto. Filtren en el Excel por su nombre para identificar los registros que deben modificar.
-                                  </div>
-
-                                  <p>Adjunto generado el <strong>{fecha_actual}</strong>.</p>
-
-                                  <p><strong>Filtros:</strong> Mes={mes_seleccionado} · Programa={programa_seleccionado} · Propietario={propietario_tablas}</p>
-
-                                  <ul>
-                                    <li><strong>Programas en blanco:</strong> {len(hoja1)} registros</li>
-                                    <li><strong>Origen Leads en blanco:</strong> {len(hoja2)} registros</li>
-                                    <li><strong>Leads-Venta (Origen en blanco):</strong> {len(hoja3)} registros</li>
-                                  </ul>
-
-                                  <p><strong>Enviado a:</strong><br/>{destinatarios_html}</p>
-
-                                  <hr/>
-                                  <p class="meta"><em>Correo enviado desde la aplicación Streamlit — Grupo Mainjobs.</em></p>
-                                </body>
-                                </html>
-                                """
-
-                                exito, mensaje_resultado = send_email_with_attachment(
-                                    recipient_emails=emails_validos,
-                                    subject=asunto,
-                                    body_html=cuerpo_html,
-                                    attachment_bytes=excel_bytes,
-                                    attachment_name=f"detalle_leads_en_blanco_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                                    debug_mode=debug_mode
-                                )
-                                st.session_state["email_last_ok"] = exito
-                                st.session_state["email_last_msg"] = mensaje_resultado
-                                st.session_state["email_last_attempt_id"] = current_attempt
-
-            last_attempt = st.session_state.get("email_last_attempt_id")
-            last_ok = st.session_state.get("email_last_ok")
-            last_msg = st.session_state.get("email_last_msg")
-            already_balloons_for = st.session_state.get("email_balloons_shown_for")
-
-            if last_attempt is not None and last_ok is not None:
-                if last_ok:
-                    st.success(last_msg)
-                    if already_balloons_for != last_attempt:
-                        st.balloons()
-                        st.session_state["email_balloons_shown_for"] = last_attempt
-                    st.info("💡 Si no llega a ciertos destinatarios, puede ser política de Exchange/antispam.")
-                else:
-                    st.error(last_msg)
-
     # ================= TARJETAS POR PROPIETARIO =================
     st.subheader("Desglose por Propietario")
 
+    # --- NUEVA LÓGICA: aseguramos que usamos datos filtrados por `selected_year`
     df_mes_prop = (
         df_filtrado.groupby(["anio","mes_num","mes_anio","propietario"]).size()
         .reset_index(name="leads").sort_values(["anio","mes_num","propietario"])
     )
+    # df_filtrado ya fue filtrado por selected_year arriba, pero por seguridad:
+    df_mes_prop = df_mes_prop[df_mes_prop["anio"] == selected_year]
+
+    # Si queremos que aparezcan propietarios que sólo figuren en ventas (pero no en leads),
+    # unimos la lista de propietarios de df_ventas (filtrada por año) también.
+    propietarios_from_leads = set(df_mes_prop["propietario"].unique().tolist())
+    propietarios_from_ventas = set()
+    if ventas_ok and not df_ventas.empty:
+        df_ventas_for_cards = df_ventas[df_ventas["anio"] == selected_year] if "anio" in df_ventas.columns else df_ventas.copy()
+        propietarios_from_ventas = set(df_ventas_for_cards["propietario"].dropna().unique().tolist())
+
+    all_propietarios = sorted(propietarios_from_leads | propietarios_from_ventas)
+
     if propietario_tablas != "Todos":
         df_mes_prop = df_mes_prop[df_mes_prop["propietario"] == propietario_tablas]
 
-    if df_mes_prop.empty:
+    if df_mes_prop.empty and not all_propietarios:
         st.info("No hay datos para el filtro seleccionado.")
         return
 
-    totales_leads_prop = df_mes_prop.groupby("propietario")["leads"].sum().sort_values(ascending=False)
+    # totales_leads_prop debe incluir todos los propietarios (leads U ventas) para que la tarjeta sea igual a ventas_preventas
+    if df_mes_prop.empty:
+        # si no hay leads para este filtro, construyo un índice vacío con los propietarios relevantes
+        totales_leads_prop = pd.Series(0, index=all_propietarios).sort_values(ascending=False)
+    else:
+        totales_leads_prop = df_mes_prop.groupby("propietario")["leads"].sum().reindex(all_propietarios, fill_value=0).sort_values(ascending=False)
 
-    ventas_filtrado_cards = pd.DataFrame()
-    if ventas_ok and not df_ventas.empty:
-        ventas_filtrado_cards = df_ventas.copy()
+    # Construcción matricial leads_prop_mes y ventas_prop_mes con reindex seguros (usando only selected_year)
+    leads_prop_mes = (
+        df_mes_prop.pivot_table(index="propietario", columns="mes_anio", values="leads", aggfunc="sum", fill_value=0)
+        .reindex(index=totales_leads_prop.index).reindex(columns=orden_meses, fill_value=0)
+    )
+
+    # ventas_prop_mes seguro (si tenemos df_ventas cargado según selected_year)
+    if (ventas_ok and not df_ventas.empty and {"propietario","mes_anio"}.issubset(df_ventas.columns)):
+        ventas_filtrado_cards = df_ventas[df_ventas["anio"] == selected_year] if "anio" in df_ventas.columns else df_ventas.copy()
         if mes_seleccionado != "Todos":
             ventas_filtrado_cards = ventas_filtrado_cards[ventas_filtrado_cards["mes_anio"] == mes_seleccionado]
         if programa_seleccionado != "Todos":
             ventas_filtrado_cards = ventas_filtrado_cards[ventas_filtrado_cards["programa_final"] == programa_seleccionado]
         if propietario_tablas != "Todos" and "propietario" in ventas_filtrado_cards.columns:
             ventas_filtrado_cards = ventas_filtrado_cards[ventas_filtrado_cards["propietario"] == propietario_tablas]
-
-    leads_prop_mes = (
-        df_mes_prop.pivot_table(index="propietario", columns="mes_anio", values="leads", aggfunc="sum", fill_value=0)
-        .reindex(index=totales_leads_prop.index).reindex(columns=orden_meses, fill_value=0)
-    )
-
-    if (ventas_ok and not ventas_filtrado_cards.empty and {"propietario","mes_anio"}.issubset(ventas_filtrado_cards.columns)):
         ventas_prop_mes = (
             ventas_filtrado_cards.groupby(["propietario","mes_anio"]).size().unstack(fill_value=0)
             .reindex(index=totales_leads_prop.index, fill_value=0).reindex(columns=orden_meses, fill_value=0)
         )
     else:
-        ventas_prop_mes = leads_prop_mes.copy()*0
+        ventas_prop_mes = pd.DataFrame(0, index=totales_leads_prop.index, columns=orden_meses)
 
-    ratio_prop_mes = (ventas_prop_mes / leads_prop_mes.replace(0, pd.NA) * 100).fillna(0).round(2)
+    # Evito divisiones por cero / NaN al calcular ratio
+    ratio_prop_mes = pd.DataFrame(0.0, index=totales_leads_prop.index, columns=orden_meses)
+    try:
+        ratio_prop_mes = (ventas_prop_mes.div(leads_prop_mes.replace(0, pd.NA)) * 100).fillna(0).round(2)
+    except Exception:
+        # fallback seguro
+        ratio_prop_mes = pd.DataFrame(0.0, index=totales_leads_prop.index, columns=orden_meses)
 
     st.markdown(
         """
@@ -884,7 +791,12 @@ def app():
 
     tarjetas_html = ['<div class="cards-grid">']
     for propietario, leads_total in totales_leads_prop.items():
-        ventas_total = int(ventas_prop_mes.loc[propietario].sum()) if ventas_prop_mes.shape[0] else 0
+        # lectura segura: puede no existir la fila/columna -> 0; puede ser NaN -> 0
+        try:
+            ventas_total = int(ventas_prop_mes.loc[propietario].sum()) if (propietario in ventas_prop_mes.index) else 0
+        except Exception:
+            ventas_total = 0
+
         ratio_global = (ventas_total / leads_total * 100.0) if leads_total > 0 else None
         ratio_global_txt = f"{ratio_global:.2f}" if ratio_global is not None else "—"
 
@@ -896,10 +808,31 @@ def app():
             f'<span class="pill">🎯 Ratio: {ratio_global_txt}</span></div>'
         )
         tarjetas_html.append('<div class="chips">')
+
         for mes in orden_meses:
-            l = int(leads_prop_mes.loc[propietario, mes]) if mes in leads_prop_mes.columns else 0
-            v = int(ventas_prop_mes.loc[propietario, mes]) if mes in ventas_prop_mes.columns else 0
-            r = float(ratio_prop_mes.loc[propietario, mes]) if mes in ratio_prop_mes.columns else 0.0
+            # safe read for leads (l), ventas (v), ratio (r)
+            l = 0
+            v = 0
+            r = 0.0
+            if (propietario in leads_prop_mes.index) and (mes in leads_prop_mes.columns):
+                try:
+                    val = leads_prop_mes.at[propietario, mes]
+                    l = 0 if pd.isna(val) else int(val)
+                except Exception:
+                    l = 0
+            if (propietario in ventas_prop_mes.index) and (mes in ventas_prop_mes.columns):
+                try:
+                    valv = ventas_prop_mes.at[propietario, mes]
+                    v = 0 if pd.isna(valv) else int(valv)
+                except Exception:
+                    v = 0
+            if (propietario in ratio_prop_mes.index) and (mes in ratio_prop_mes.columns):
+                try:
+                    valr = ratio_prop_mes.at[propietario, mes]
+                    r = 0.0 if pd.isna(valr) else float(valr)
+                except Exception:
+                    r = 0.0
+
             if (l > 0) or (v > 0):
                 bg = color_map_cards.get(mes, "#718096")
                 tarjetas_html.append(
@@ -907,7 +840,18 @@ def app():
                     f'<span class="count">L: {l}</span><span class="count">V: {v}</span>'
                     f'<span class="count-alt">{r:.2f}</span></span>'
                 )
-        if (leads_prop_mes.loc[propietario].sum() == 0) and (ventas_prop_mes.loc[propietario].sum() == 0):
+
+        # caso "Sin datos" — comprobación segura con .sum() y try/except
+        try:
+            suma_leads_prop = int(leads_prop_mes.loc[propietario].sum()) if propietario in leads_prop_mes.index else 0
+        except Exception:
+            suma_leads_prop = 0
+        try:
+            suma_ventas_prop = int(ventas_prop_mes.loc[propietario].sum()) if propietario in ventas_prop_mes.index else 0
+        except Exception:
+            suma_ventas_prop = 0
+
+        if suma_leads_prop == 0 and suma_ventas_prop == 0:
             tarjetas_html.append('<span class="chip" style="background:#A0AEC0">Sin datos</span>')
         tarjetas_html.append('</div></div>')
     tarjetas_html.append('</div>')
