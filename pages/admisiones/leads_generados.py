@@ -55,13 +55,13 @@ KNOWN_PEOPLE = {
     "amugica@grupomainjobs.com":     "Ana Múgica Jiménez",
     "lgonzalez@grupomainjobs.com":   "Lorena González Perich",
     "iherreradiaz@eiposgrados.com":  "Irene Herrera",
-    "pserrano@eiposgrados.com":    "Paloma Serrano",
-    "pcedeno@eiposgrados.com":       "Priscila Cedeño Loor",
+    "pserrano@grupomainjobs.com":    "Paloma Serrano",
+    "pcedeno@grupomainjobs.com":     "Priscila Cedeño Loor",
     "cheredia@eiposgrados.com":      "Cristina Heredia",
     "agarcia@grupomainjobs.com":     "Ángel Garcia Martin",
-    "erueda@grupomainjobs.com":        "Estrella Rueda Sanz",
-    "kmoreno@grupomainjobs.com":       "Kika Moreno",
-    "vlopez@grupomainjobs.com":        "Victor López Hernanz",
+    "erueda@grupomainjobs.com":      "Estrella Rueda Sanz",
+    "kmoreno@grupomainjobs.com":     "Kika Moreno",
+    "vlopez@grupomainjobs.com":      "Victor López Hernanz",
     "clobato@grupomainjobs.com":     "Carmen Lobato Rosa",
     "lsanchez@grupomainjobs.com":    "Laly Sánchez Arjona",
     "cmoreno@grupomainjobs.com":     "Chelo Moreno Cabeza",
@@ -69,7 +69,7 @@ KNOWN_PEOPLE = {
     "mdiazf@grupomainjobs.com":      "Mónica Díaz",
     "mavalle@grupomainjobs.com":     "María Ángeles Valle Rodríguez",
     "sleon@grupomainjobs.com":       "Sara León",
-    "epacheco@eiposgrados.com":    "Eduardo Pacheco",
+    "epacheco@eiposgrados.com":      "Eduardo Pacheco",
     "rmvela@grupomainjobs.com":      "Rosa María Vela",
 }
 KNOWN_EMAILS = sorted(KNOWN_PEOPLE.keys())
@@ -178,6 +178,139 @@ def load_bytes_for_ventas(year_selected: int):
         except Exception:
             return None
     return None
+
+# ---------------------------
+# Helpers para enviar correo (Graph) — añadido para completar la funcionalidad
+# ---------------------------
+def _check_graph_secrets() -> bool:
+    ok = True
+    try:
+        _ = st.secrets["graph"]["tenant_id"]
+        _ = st.secrets["graph"]["client_id"]
+        _ = st.secrets["graph"]["client_secret"]
+        _ = st.secrets["graph"]["from_email"]
+    except Exception:
+        st.error("❌ Falta configuración en st.secrets['graph'] (tenant_id, client_id, client_secret, from_email).")
+        ok = False
+    return ok
+
+def get_access_token(force_renew: bool = False):
+    try:
+        tenant_id = st.secrets["graph"]["tenant_id"]
+        client_id = st.secrets["graph"]["client_id"]
+        client_secret = st.secrets["graph"]["client_secret"]
+        authority = f"https://login.microsoftonline.com/{tenant_id}"
+        scope = ["https://graph.microsoft.com/.default"]
+
+        app = msal.ConfidentialClientApplication(
+            client_id=client_id, authority=authority, client_credential=client_secret
+        )
+
+        if not force_renew:
+            result = app.acquire_token_silent(scope, account=None)
+            if result and "access_token" in result:
+                return result["access_token"]
+
+        result = app.acquire_token_for_client(scopes=scope)
+        if "access_token" in result:
+            return result["access_token"]
+
+        st.error(f"❌ Error obteniendo token: {result.get('error_description', 'Unknown error')}")
+        return None
+    except Exception as e:
+        st.error(f"❌ Error en autenticación: {str(e)}")
+        return None
+
+def _post_graph_sendmail(from_email: str, payload: dict, token: str, timeout_sec: int = 45):
+    endpoint = f"https://graph.microsoft.com/v1.0/users/{from_email}/sendMail"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    resp = requests.post(endpoint, headers=headers, json=payload, timeout=timeout_sec)
+    return resp.status_code, resp.text, resp.reason
+
+def send_email_with_attachment(recipient_emails, subject, body_html, attachment_bytes, attachment_name, debug_mode=True):
+    if not _check_graph_secrets():
+        return False, "Faltan secrets de Graph."
+
+    try:
+        from_email = st.secrets["graph"]["from_email"]
+
+        attachment_content = base64.b64encode(attachment_bytes).decode('utf-8')
+        to_recipients = [{"emailAddress": {"address": email}} for email in recipient_emails]
+        email_data = {
+            "message": {
+                "subject": subject,
+                "body": {"contentType": "HTML", "content": body_html},
+                "toRecipients": to_recipients,
+                "attachments": [{
+                    "@odata.type": "#microsoft.graph.fileAttachment",
+                    "name": attachment_name,
+                    "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "contentBytes": attachment_content
+                }]
+            },
+            "saveToSentItems": True
+        }
+
+        max_attempts = 4
+        backoff_seconds = [0, 1.5, 3.0, 6.0]
+
+        token = get_access_token()
+        if not token:
+            return False, "❌ No se pudo obtener el token de acceso"
+
+        for attempt in range(max_attempts):
+            status, text, reason = _post_graph_sendmail(from_email, email_data, token)
+
+            if debug_mode:
+                with st.expander("🔍 Debug: Request/Response", expanded=False):
+                    st.write(f"**Intento:** {attempt + 1}/{max_attempts}")
+                    st.write(f"**Status Code:** {status} — {reason}")
+                    if text:
+                        try:
+                            st.json(json.loads(text))
+                        except Exception:
+                            st.code(text)
+
+            if status == 202:
+                return True, f"✅ Correo enviado exitosamente a {len(recipient_emails)} destinatario(s)"
+
+            if status == 401 and attempt < max_attempts - 1:
+                token = get_access_token(force_renew=True)
+                sleep_s = backoff_seconds[attempt]
+                if debug_mode and sleep_s:
+                    st.info(f"🔐 Token renovado. Reintentando en {sleep_s}s…")
+                if sleep_s:
+                    time.sleep(sleep_s)
+                continue
+
+            if (status == 429 or 500 <= status < 600) and attempt < max_attempts - 1:
+                sleep_s = backoff_seconds[attempt]
+                if debug_mode:
+                    st.info(f"⏳ {status} recibido. Reintentando en {sleep_s}s…")
+                if sleep_s:
+                    time.sleep(sleep_s)
+                continue
+
+            if status == 400:
+                try:
+                    detail = json.loads(text).get("error", {}).get("message", "")
+                except Exception:
+                    detail = text
+                return False, f"❌ Error 400 (Bad Request): {detail}"
+
+            if status == 403:
+                return False, ("❌ Error 403: Acceso denegado (Mail.Send, consentimiento admin, buzón válido). "
+                               f"Detalles: {text}")
+
+            return False, f"❌ Error al enviar correo. Código: {status}\nRespuesta: {text}"
+
+        return False, "❌ Error desconocido."
+    except Exception as e:
+        import traceback
+        if debug_mode:
+            with st.expander("🔍 Debug: Exception", expanded=True):
+                st.code(traceback.format_exc())
+        return False, f"❌ Error enviando correo: {str(e)}"
 
 # =========================
 # UTILIDADES LOCALES
@@ -706,6 +839,146 @@ def app():
                     "</div>",
                     unsafe_allow_html=True
                 )
+
+            # -------- Franja amarilla: propietarios con blancos sin correo en la lista
+            if faltantes_pretty:
+                st.markdown(
+                    "<div style='background:#fff8e1;border:1px solid #f59e0b;color:#92400e;"
+                    "padding:10px;border-radius:10px;margin-top:10px;'>"
+                    "<b>👤 Nombres con campos EN BLANCO (Programa / Origen Lead / Origen Venta) sin correo en la lista</b>"
+                    "</div>",
+                    unsafe_allow_html=True
+                )
+                chips_y = [
+                    f"<span style='display:inline-block;margin:4px 6px 0 0;padding:6px 10px;"
+                    f"border-radius:10px;background:#fef9c3;border:1px solid #f59e0b;color:#92400e'>{html.escape(n)}</span>"
+                    for n in faltantes_pretty
+                ]
+                st.markdown("".join(chips_y), unsafe_allow_html=True)
+
+                buf_falt = BytesIO()
+                pd.DataFrame({"Propietario (con blancos, sin correo)": faltantes_pretty}).to_excel(
+                    buf_falt, index=False, sheet_name="faltan_correos"
+                )
+                st.download_button(
+                    "⬇️ Descargar lista de propietarios (con blancos) sin correo",
+                    data=buf_falt.getvalue(),
+                    file_name="propietarios_con_blancos_sin_correo.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            else:
+                st.info("No hay propietarios con campos en blanco sin correo para el filtro actual.")
+
+            # ---------- Aquí añadimos Debug + Botón Enviar (lo que pedías)
+            debug_mode = st.checkbox("🔍 Modo Debug (mostrar detalles técnicos)", value=False)
+            clicked = st.button("📤 Enviar Excel por Outlook", use_container_width=True, type="primary")
+
+            if clicked:
+                st.session_state["email_attempt_counter"] += 1
+                current_attempt = st.session_state["email_attempt_counter"]
+                st.session_state["email_last_ok"] = None
+                st.session_state["email_last_msg"] = ""
+                st.session_state["email_last_attempt_id"] = current_attempt
+                st.info(f"🚀 Envío iniciado… (intento #{current_attempt})")
+
+                if not destinatarios_totales:
+                    st.session_state["email_last_ok"] = False
+                    st.session_state["email_last_msg"] = "❌ Selecciona o añade al menos un destinatario"
+                else:
+                    joined_for_validation = ", ".join(destinatarios_totales)
+                    es_valido, emails_validos, mensaje = validar_emails(joined_for_validation)
+                    if not es_valido:
+                        st.session_state["email_last_ok"] = False
+                        st.session_state["email_last_msg"] = f"❌ {mensaje}"
+                    else:
+                        with st.spinner(f"Enviando correo a {len(emails_validos)} destinatario(s)..."):
+                            if not _check_graph_secrets():
+                                st.session_state["email_last_ok"] = False
+                                st.session_state["email_last_msg"] = "❌ Falta configuración de Graph en secrets."
+                            else:
+                                fecha_actual = datetime.now().strftime("%d/%m/%Y")
+                                asunto = f"Reporte de Leads en Blanco - {fecha_actual}"
+
+                                def _badge(email: str) -> str:
+                                    name = KNOWN_PEOPLE.get(email, None)
+                                    label_ui = f"{name} <{email}>" if name else email
+                                    status = _recipient_status(email)
+                                    style = _chip_css(status)
+                                    return (
+                                        f"<span style='display:inline-block;margin:2px 4px 2px 0;padding:2px 6px;"
+                                        f"border-radius:6px;{style}'>{html.escape(label_ui)}</span>"
+                                    )
+
+                                destinatarios_html = "<br/>".join(_badge(email) for email in emails_validos)
+
+                                cuerpo_html = f"""
+                                <html>
+                                <head>
+                                  <meta charset="UTF-8" />
+                                  <style>
+                                    body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color:#111827; }}
+                                    h2 {{ color:#111827; }}
+                                    .note {{
+                                      background:#f9fafb; border-left:4px solid #2563eb; padding:12px 14px;
+                                      border-radius:8px; margin:12px 0 8px 0;
+                                    }}
+                                    ul {{ margin:10px 0; }}
+                                    .meta {{ color:#6b7280; font-size:12px; }}
+                                  </style>
+                                </head>
+                                <body>
+                                  <h2>📊 Reporte de Leads y Ventas con Datos en Blanco</h2>
+
+                                  <div class="note">
+                                    Para una mejor toma de decisiones, agradecemos actualizar en <strong>Clientify</strong>
+                                    los campos que figuran en blanco en el Excel adjunto. Filtren en el Excel por su nombre para identificar los registros que deben modificar.
+                                  </div>
+
+                                  <p>Adjunto generado el <strong>{fecha_actual}</strong>.</p>
+
+                                  <p><strong>Filtros:</strong> Mes={mes_seleccionado} · Programa={programa_seleccionado} · Propietario={propietario_tablas}</p>
+
+                                  <ul>
+                                    <li><strong>Programas en blanco:</strong> {len(hoja1)} registros</li>
+                                    <li><strong>Origen Leads en blanco:</strong> {len(hoja2)} registros</li>
+                                    <li><strong>Leads-Venta (Origen en blanco):</strong> {len(hoja3)} registros</li>
+                                  </ul>
+
+                                  <p><strong>Enviado a:</strong><br/>{destinatarios_html}</p>
+
+                                  <hr/>
+                                  <p class="meta"><em>Correo enviado desde la aplicación Streamlit — Grupo Mainjobs.</em></p>
+                                </body>
+                                </html>
+                                """
+
+                                exito, mensaje_resultado = send_email_with_attachment(
+                                    recipient_emails=emails_validos,
+                                    subject=asunto,
+                                    body_html=cuerpo_html,
+                                    attachment_bytes=excel_bytes,
+                                    attachment_name=f"detalle_leads_en_blanco_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                    debug_mode=debug_mode
+                                )
+                                st.session_state["email_last_ok"] = exito
+                                st.session_state["email_last_msg"] = mensaje_resultado
+                                st.session_state["email_last_attempt_id"] = current_attempt
+
+            # Mostrar resultado del último intento (si existe)
+            last_attempt = st.session_state.get("email_last_attempt_id")
+            last_ok = st.session_state.get("email_last_ok")
+            last_msg = st.session_state.get("email_last_msg")
+            already_balloons_for = st.session_state.get("email_balloons_shown_for")
+
+            if last_attempt is not None and last_ok is not None:
+                if last_ok:
+                    st.success(last_msg)
+                    if already_balloons_for != last_attempt:
+                        st.balloons()
+                        st.session_state["email_balloons_shown_for"] = last_attempt
+                    st.info("💡 Si no llega a ciertos destinatarios, puede ser política de Exchange/antispam.")
+                else:
+                    st.error(last_msg)
 
     # ================= TARJETAS POR PROPIETARIO =================
     st.subheader("Desglose por Propietario")
