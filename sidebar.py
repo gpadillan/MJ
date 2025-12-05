@@ -17,6 +17,7 @@ def _logo_path(unidad: str) -> str:
     path = candidates.get(unidad, fallback)
     return path if os.path.exists(path) else fallback
 
+
 def _nav_button(label: str, page_key: str, primary: bool = False):
     """
     Crea un botón de navegación que cambia st.session_state['current_page'].
@@ -27,8 +28,24 @@ def _nav_button(label: str, page_key: str, primary: bool = False):
         st.session_state["current_page"] = page_key
         st.rerun()
 
+
 def show_sidebar():
     with st.sidebar:
+        # Añadimos un borde derecho fino y semitransparente al sidebar.
+        # Este borde será la referencia visual/DOM que usará la guirnalda
+        # para alinearse exactamente con el final de la zona gris.
+        st.markdown(
+            """
+            <style>
+            /* Borde fino y discreto en el borde derecho del sidebar */
+            [data-testid="stSidebar"] {
+                border-right: 1px solid rgba(0,0,0,0.12) !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
         # Cabecera
         username = st.session_state.get("username", "admin")
         st.markdown(f"### 👋 Bienvenido, {username}")

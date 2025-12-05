@@ -1,22 +1,22 @@
 # principal.py
-
 import os
+import base64
+import re
+import json
+import time
+import unicodedata
+from io import BytesIO
+
 import pandas as pd
+import requests
+import msal
 import streamlit as st
 from datetime import datetime
+
 from pages.academica.sharepoint_utils import get_access_token, get_site_id, download_excel
 from streamlit_folium import folium_static
 import folium
 from utils.geo_utils import normalize_text, PROVINCIAS_COORDS, PAISES_COORDS, geolocalizar_pais
-import unicodedata
-import re
-
-# ====== NUEVO: imports para envío por correo (Graph) ======
-import base64
-import requests
-import msal
-import json
-import time
 
 # ===================== UTILS GENERALES =====================
 
@@ -48,7 +48,6 @@ def render_import_card(title, value, color="#ede7f6"):
         </div>
     """
 
-# Tarjeta compacta tipo "barra" para Gestión de Cobro (EIP)
 def render_bar_card(title: str, value, color="#E3F2FD", icon: str = ""):
     if isinstance(value, (int, float)):
         val_txt = f"€ {format_euro(value)}"
@@ -225,16 +224,71 @@ def load_academica_data():
             st.warning("⚠️ No se pudo cargar datos académicos automáticamente.")
             st.exception(e)
 
-def load_empleo_df_raw():
+# Util: descarga vía share_url (Graph shares/u!...)
+def _download_sharelink_via_graph_shareurl(share_url: str, token: str, timeout: int = 60) -> bytes | None:
     try:
-        config = st.secrets["empleo"]
-        token = get_access_token(config)
-        site_id = get_site_id(config, token)
-        file = download_excel(config, token, site_id)
-        df_empleo = pd.read_excel(file, sheet_name="GENERAL")
-        return df_empleo
+        if not share_url or not token:
+            return None
+        encoded = base64.urlsafe_b64encode(share_url.encode("utf-8")).decode("utf-8").rstrip("=")
+        share_id = f"u!{encoded}"
+        endpoint = f"https://graph.microsoft.com/v1.0/shares/{share_id}/driveItem/content"
+        headers = {"Authorization": f"Bearer {token}"}
+        r = requests.get(endpoint, headers=headers, timeout=timeout)
+        if r.status_code == 200:
+            return r.content
+        else:
+            try:
+                st.info(f"SharePoint download status: {r.status_code}")
+                st.info(r.text[:800])
+            except Exception:
+                pass
+            return None
     except Exception as e:
-        st.error("❌ No pude cargar Empleo desde SharePoint. Revisa st.secrets['empleo'].")
+        st.warning(f"Exception descargando sharelink: {e}")
+        return None
+
+def load_empleo_df_raw():
+    """
+    Versión robusta: primero intenta descargar usando 'share_url' de secrets,
+    luego cae al método clásico (site_id + download_excel) si hace falta.
+    Devuelve DataFrame (o DataFrame vacío en error).
+    """
+    try:
+        config = st.secrets.get("empleo", {})
+        token = None
+        try:
+            token = get_access_token(config)
+        except Exception:
+            token = None
+
+        # 1) Intento con share_url (si existe)
+        share_url = config.get("share_url")
+        if share_url and token:
+            bytes_data = _download_sharelink_via_graph_shareurl(share_url, token)
+            if bytes_data:
+                try:
+                    df_empleo = pd.read_excel(BytesIO(bytes_data), sheet_name="GENERAL")
+                    return df_empleo
+                except Exception as e:
+                    st.warning(f"Se descargó por share_url pero pd.read_excel falló: {e}")
+
+        # 2) Intento clásico con download_excel (usando site_id / file_path)
+        try:
+            token2 = token or get_access_token(config)
+            site_id = get_site_id(config, token2)
+            file_obj = download_excel(config, token2, site_id)
+            if file_obj is None:
+                raise ValueError("download_excel devolvió None")
+            if isinstance(file_obj, (bytes, bytearray)):
+                return pd.read_excel(BytesIO(file_obj), sheet_name="GENERAL")
+            return pd.read_excel(file_obj, sheet_name="GENERAL")
+        except Exception as e2:
+            st.error("❌ No pude cargar Empleo desde SharePoint. Revisa st.secrets['empleo'].")
+            st.exception(e2)
+            return pd.DataFrame()
+
+    except Exception as e:
+        st.error("❌ No pude cargar Empleo desde SharePoint (error general).")
         st.exception(e)
         return pd.DataFrame()
 
@@ -246,9 +300,6 @@ MESES_NOMBRE = {
 }
 
 def _split_pending_like_deuda(df_gestion: pd.DataFrame, anio_actual: int) -> tuple[float,float,float]:
-    """Devuelve (pendiente_con_deuda, pendiente_futuro, total_pendiente)
-    replicando la lógica de pages/deuda/pendiente.py para EIP.
-    """
     if df_gestion is None or df_gestion.empty or ("Estado" not in df_gestion.columns):
         return 0.0, 0.0, 0.0
 
@@ -259,10 +310,8 @@ def _split_pending_like_deuda(df_gestion: pd.DataFrame, anio_actual: int) -> tup
     if df_p.empty:
         return 0.0, 0.0, 0.0
 
-    # detectar columnas
     all_cols = list(df_p.columns)
     cols_totales = [c for c in all_cols if c.startswith("Total ") and c.split()[-1].isdigit()]
-    # meses por año
     meses_por_anio = {}
     for c in all_cols:
         for m in MESES_NOMBRE.values():
@@ -273,7 +322,6 @@ def _split_pending_like_deuda(df_gestion: pd.DataFrame, anio_actual: int) -> tup
                     continue
                 meses_por_anio.setdefault(y, []).append(c)
 
-    # a números
     num_cols = cols_totales[:]
     for lst in meses_por_anio.values():
         num_cols += lst
@@ -286,19 +334,16 @@ def _split_pending_like_deuda(df_gestion: pd.DataFrame, anio_actual: int) -> tup
             return 0.0
         return float(df_p[cols].sum().sum())
 
-    # Pendiente con deuda (pasados + meses del año actual hasta mes; si solo hay 'Total año actual', va aquí)
     mes_actual = datetime.now().month
     con_deuda = 0.0
     futuro = 0.0
 
-    # pasados
     for y in range(2018, anio_actual):
         if f"Total {y}" in df_p.columns:
             con_deuda += _sum_cols([f"Total {y}"])
         elif y in meses_por_anio:
             con_deuda += _sum_cols(meses_por_anio[y])
 
-    # año actual
     meses_aa = meses_por_anio.get(anio_actual, [])
     if meses_aa:
         cols_act = [f"{MESES_NOMBRE[m]} {anio_actual}" for m in range(1, mes_actual+1) if f"{MESES_NOMBRE[m]} {anio_actual}" in df_p.columns]
@@ -306,11 +351,9 @@ def _split_pending_like_deuda(df_gestion: pd.DataFrame, anio_actual: int) -> tup
         con_deuda += _sum_cols(cols_act)
         futuro    += _sum_cols(cols_fut)
     elif f"Total {anio_actual}" in df_p.columns:
-        # sin meses, sólo total -> lo consideramos "actual" (con deuda)
         con_deuda += _sum_cols([f"Total {anio_actual}"])
 
-    # años futuros
-    for y in range(anio_actual+1, anio_actual+10):  # margen
+    for y in range(anio_actual+1, anio_actual+10):
         cols = []
         if y in meses_por_anio:
             cols += meses_por_anio[y]
@@ -364,10 +407,8 @@ def _post_graph_sendmail(from_email: str, payload: dict, token: str, timeout_sec
 def send_email_with_attachment(recipient_emails, subject, body_html, attachment_bytes, attachment_name, debug_mode=True):
     if not _check_graph_secrets():
         return False, "Faltan secrets de Graph."
-
     try:
         from_email = st.secrets["graph"]["from_email"]
-
         attachment_content = base64.b64encode(attachment_bytes).decode('utf-8')
         to_recipients = [{"emailAddress": {"address": email}} for email in recipient_emails]
         email_data = {
@@ -384,18 +425,14 @@ def send_email_with_attachment(recipient_emails, subject, body_html, attachment_
             },
             "saveToSentItems": True
         }
-
         max_attempts = 4
         backoff_seconds = [0, 1.5, 3.0, 6.0]
-
         token = get_graph_access_token()
         if not token:
             return False, "❌ No se pudo obtener el token de acceso"
-
         for attempt in range(max_attempts):
             try:
                 status, text, reason = _post_graph_sendmail(from_email, email_data, token)
-
                 if debug_mode:
                     with st.expander("🔍 Debug envío correo", expanded=False):
                         st.write(f"Intento: {attempt+1}/{max_attempts}")
@@ -405,10 +442,8 @@ def send_email_with_attachment(recipient_emails, subject, body_html, attachment_
                         except Exception:
                             if text:
                                 st.code(text)
-
                 if status == 202:
                     return True, f"✅ Correo enviado exitosamente a {len(recipient_emails)} destinatario(s)"
-
                 if status == 401 and attempt < max_attempts - 1:
                     token = get_graph_access_token(force_renew=True)
                     sleep_s = backoff_seconds[attempt]
@@ -417,7 +452,6 @@ def send_email_with_attachment(recipient_emails, subject, body_html, attachment_
                     if sleep_s:
                         time.sleep(sleep_s)
                     continue
-
                 if (status == 429 or 500 <= status < 600) and attempt < max_attempts - 1:
                     sleep_s = backoff_seconds[attempt]
                     if debug_mode:
@@ -425,14 +459,12 @@ def send_email_with_attachment(recipient_emails, subject, body_html, attachment_
                     if sleep_s:
                         time.sleep(sleep_s)
                     continue
-
                 if status == 400:
                     try:
                         detail = json.loads(text).get("error", {}).get("message", "")
                     except Exception:
                         detail = text
                     return False, f"❌ Error 400 (Bad Request): {detail}"
-
                 if status == 403:
                     return False, (
                         "❌ Error 403: Acceso denegado.\n"
@@ -441,9 +473,7 @@ def send_email_with_attachment(recipient_emails, subject, body_html, attachment_
                         "3) Buzón válido para el remitente\n"
                         f"Detalles: {text}"
                     )
-
                 return False, f"❌ Error al enviar correo. Código: {status}\nRespuesta: {text}"
-
             except requests.exceptions.Timeout:
                 if attempt < max_attempts - 1:
                     sleep_s = backoff_seconds[attempt]
@@ -500,8 +530,14 @@ def principal_page():
         for key in ["academica_excel_data", "excel_data", "df_ventas", "df_preventas", "df_gestion", "df_empleo_informe"]:
             if key in st.session_state:
                 del st.session_state[key]
-        st.cache_data.clear()
-        st.cache_resource.clear()
+        try:
+            st.cache_data.clear()
+        except Exception:
+            pass
+        try:
+            st.cache_resource.clear()
+        except Exception:
+            pass
         st.success("Caché limpiada y datos recargados.")
 
     load_academica_data()
@@ -526,31 +562,37 @@ def principal_page():
 
     # ===== VENTAS =====
     if os.path.exists(VENTAS_FILE):
-        df_ventas = pd.read_excel(VENTAS_FILE)
-        df_ventas.columns = df_ventas.columns.str.strip().str.lower()
-        if "fecha de cierre" in df_ventas.columns:
-            df_ventas['fecha de cierre'] = pd.to_datetime(df_ventas['fecha de cierre'], errors='coerce')
-            df_ventas = df_ventas.dropna(subset=['fecha de cierre'])
-            df_ventas = df_ventas[df_ventas['fecha de cierre'].dt.year == anio_actual]
-            if 'importe' not in df_ventas.columns:
-                df_ventas['importe'] = 0
-            else:
-                df_ventas['importe'] = pd.to_numeric(df_ventas['importe'], errors='coerce').fillna(0)
-            df_ventas['mes'] = df_ventas['fecha de cierre'].dt.month
-            total_matriculas = len(df_ventas)
-            for m in range(1, 13):
-                df_mes = df_ventas[df_ventas['mes'] == m]
-                matriculas_por_mes[m] = len(df_mes)
-                importes_por_mes[m] = df_mes['importe'].sum()
+        try:
+            df_ventas = pd.read_excel(VENTAS_FILE)
+            df_ventas.columns = df_ventas.columns.str.strip().str.lower()
+            if "fecha de cierre" in df_ventas.columns:
+                df_ventas['fecha de cierre'] = pd.to_datetime(df_ventas['fecha de cierre'], errors='coerce')
+                df_ventas = df_ventas.dropna(subset=['fecha de cierre'])
+                df_ventas = df_ventas[df_ventas['fecha de cierre'].dt.year == anio_actual]
+                if 'importe' not in df_ventas.columns:
+                    df_ventas['importe'] = 0
+                else:
+                    df_ventas['importe'] = pd.to_numeric(df_ventas['importe'], errors='coerce').fillna(0)
+                df_ventas['mes'] = df_ventas['fecha de cierre'].dt.month
+                total_matriculas = len(df_ventas)
+                for m in range(1, 13):
+                    df_mes = df_ventas[df_ventas['mes'] == m]
+                    matriculas_por_mes[m] = len(df_mes)
+                    importes_por_mes[m] = df_mes['importe'].sum()
+        except Exception as e:
+            st.warning(f"⚠️ Error leyendo {VENTAS_FILE}: {e}")
 
     # ===== PREVENTAS =====
     if os.path.exists(PREVENTAS_FILE):
-        df_preventas = pd.read_excel(PREVENTAS_FILE)
-        df_preventas.columns = df_preventas.columns.str.strip().str.lower()
-        total_preventas = len(df_preventas)
-        columnas_importe = [c for c in df_preventas.columns if "importe" in c]
-        if columnas_importe:
-            total_preventas_importe = df_preventas[columnas_importe].sum(numeric_only=True).sum()
+        try:
+            df_preventas = pd.read_excel(PREVENTAS_FILE)
+            df_preventas.columns = df_preventas.columns.str.strip().str.lower()
+            total_preventas = len(df_preventas)
+            columnas_importe = [c for c in df_preventas.columns if "importe" in c]
+            if columnas_importe:
+                total_preventas_importe = df_preventas[columnas_importe].sum(numeric_only=True).sum()
+        except Exception as e:
+            st.warning(f"⚠️ Error leyendo {PREVENTAS_FILE}: {e}")
 
     # ===== GESTIÓN DE COBRO (EIP) =====
     st.markdown("---")
@@ -560,7 +602,10 @@ def principal_page():
     if "excel_data_eip" in st.session_state and st.session_state["excel_data_eip"] is not None:
         df_gestion = st.session_state["excel_data_eip"].copy()
     elif os.path.exists(GESTION_FILE):
-        df_gestion = pd.read_excel(GESTION_FILE)
+        try:
+            df_gestion = pd.read_excel(GESTION_FILE)
+        except Exception:
+            df_gestion = None
 
     if df_gestion is None or df_gestion.empty:
         st.info("No hay datos de Gestión de Cobro disponibles.")
@@ -593,7 +638,6 @@ def principal_page():
                 )
                 df_resumen["Total"] = df_resumen[columnas_validas].sum(axis=1)
 
-                # === Totales por estado (robusto con acentos) ===
                 def _norm_estado(s):
                     s = ''.join(ch for ch in unicodedata.normalize('NFD', str(s)) if unicodedata.category(ch) != 'Mn')
                     s = re.sub(r'\s+', ' ', s).strip().upper()
@@ -608,7 +652,6 @@ def principal_page():
                 incobrable       = tot_por_estado.get("INCROBRABLE", tot_por_estado.get("INCOBRABLE", 0.0))
                 no_cobrado       = tot_por_estado.get("NO COBRADO", 0.0)
 
-                # ===== Pendiente (con deuda / futuro) =====
                 pending_ss = st.session_state.get("EIP_PENDIENTE")
                 if pending_ss:
                     pend_con_deuda = float(pending_ss.get("con_deuda", 0.0))
@@ -671,29 +714,28 @@ def principal_page():
         data = st.session_state["academica_excel_data"]
         hoja = "CONSOLIDADO ACADÉMICO"
         if hoja in data:
-            df = data[hoja]
             st.markdown("---")
             st.markdown("## 🎓 Indicadores Académicos")
             try:
                 indicadores = [
-                    ("🧑‍🎓 Alumnos/as", int(df.iloc[1, 1])),
-                    ("🎯 Éxito académico", f"{df.iloc[2, 2]:.2%}".replace(".", ",")),
-                    ("🚫 Absentismo", f"{df.iloc[3, 2]:.2%}".replace(".", ",")),
-                    ("⚠️ Riesgo", f"{df.iloc[4, 2]:.2%}".replace(".", ",")),
-                    ("📅 Cumpl. Fechas Docente", f"{df.iloc[5, 2]:.0%}".replace(".", ",")),
-                    ("📅 Cumpl. Fechas Alumnado", f"{df.iloc[6, 2]:.0%}".replace(".", ",")),
-                    ("📄 Cierre Exp. Académico", f"{df.iloc[7, 2]:.2%}".replace(".", ",")),
-                    ("😃 Satisfacción Alumnado", f"{df.iloc[8, 2]:.2%}".replace(".", ",")),
-                    ("⭐ Reseñas", f"{df.iloc[9, 2]:.2%}".replace(".", ",")),
-                    ("📢 Recomendación Docente", int(df.iloc[10, 2])),
-                    ("📣 Reclamaciones", int(df.iloc[11, 2]))
+                    ("🧑‍🎓 Alumnos/as", int(data[hoja].iloc[1, 1])),
+                    ("🎯 Éxito académico", f"{data[hoja].iloc[2, 2]:.2%}".replace(".", ",")),
+                    ("🚫 Absentismo", f"{data[hoja].iloc[3, 2]:.2%}".replace(".", ",")),
+                    ("⚠️ Riesgo", f"{data[hoja].iloc[4, 2]:.2%}".replace(".", ",")),
+                    ("📅 Cumpl. Fechas Docente", f"{data[hoja].iloc[5, 2]:.0%}".replace(".", ",")),
+                    ("📅 Cumpl. Fechas Alumnado", f"{data[hoja].iloc[6, 2]:.0%}".replace(".", ",")),
+                    ("📄 Cierre Exp. Académico", f"{data[hoja].iloc[7, 2]:.2%}".replace(".", ",")),
+                    ("😃 Satisfacción Alumnado", f"{data[hoja].iloc[8, 2]:.2%}".replace(".", ",")),
+                    ("⭐ Reseñas", f"{data[hoja].iloc[9, 2]:.2%}".replace(".", ",")),
+                    ("📢 Recomendación Docente", int(data[hoja].iloc[10, 2])),
+                    ("📣 Reclamaciones", int(data[hoja].iloc[11, 2]))
                 ]
                 for i in range(0, len(indicadores), 4):
                     cols = st.columns(4)
                     for j, (titulo, valor) in enumerate(indicadores[i:i+4]):
                         cols[j].markdown(render_import_card(titulo, valor, "#f0f4c3"), unsafe_allow_html=True)
                 st.markdown("### 🏅 Certificaciones")
-                total_cert = int(df.iloc[13, 2])
+                total_cert = int(data[hoja].iloc[13, 2])
                 st.markdown(render_import_card("🎖️ Total Certificaciones", total_cert, "#dcedc8"), unsafe_allow_html=True)
             except Exception as e:
                 st.warning("⚠️ Error al procesar los indicadores académicos.")
@@ -866,7 +908,6 @@ def principal_page():
         else:
             st.dataframe(df_incompletos, use_container_width=True)
 
-            from io import BytesIO
             def to_excel_bytes(df_):
                 output = BytesIO()
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -875,12 +916,10 @@ def principal_page():
 
             excel_bytes = to_excel_bytes(df_incompletos)
 
-            # Descarga rápida
             b64 = base64.b64encode(excel_bytes).decode()
             href = f'<a href="data:application/octet-stream;base64,{b64}" download="clientes_incompletos.xlsx">📥 Descargar Excel</a>'
             st.markdown(href, unsafe_allow_html=True)
 
-            # ======== NUEVO: envío por correo (SOLO ADMIN) ========
             es_admin = st.session_state.get("role") == "admin"
             if es_admin:
                 st.markdown("### 📧 Enviar por correo (incompletos España)")
@@ -891,7 +930,6 @@ def principal_page():
                     help="Usa @eiposgrados.com y separa por comas o punto y coma."
                 )
                 debug_mode = st.checkbox("🔍 Modo Debug (mostrar detalles técnicos)", value=False, key="debug_incompletos")
-
                 if st.button("📤 Enviar Excel de 'Clientes incompletos' por Outlook", type="primary", use_container_width=True):
                     if not destinatarios_input:
                         st.error("❌ Por favor ingresa al menos un email.")
@@ -903,10 +941,8 @@ def principal_page():
                             with st.spinner(f"Enviando a {len(emails_validos)} destinatario(s)…"):
                                 fecha_actual = datetime.now().strftime("%d/%m/%Y")
                                 asunto = f"Clientes España con Provincia/Localidad vacías — {fecha_actual}"
-
                                 destinatarios_html = "<br/>".join([f"• {e}" for e in emails_validos])
                                 total_reg = len(df_incompletos)
-
                                 cuerpo_html = f"""
                                 <html>
                                 <head>
@@ -922,23 +958,18 @@ def principal_page():
                                 </head>
                                 <body>
                                   <h2>🧾 Clientes únicos en España con Provincia o Localidad vacías</h2>
-
                                   <div class="note">
                                     Para una mejor toma de decisión, agradecemos actualizar en <strong>FE</strong>
                                     los campos que figuran en blanco en el Excel adjunto.
                                   </div>
-
                                   <p>Adjunto generado el <strong>{fecha_actual}</strong>.</p>
-
                                   <p><strong>Total de clientes incompletos:</strong> {total_reg}</p>
-
                                   <hr/>
                                   <p class="meta"><em>Correo enviado desde la aplicación Streamlit — Grupo Mainjobs.</em></p>
                                   <p><strong>Enviado a:</strong><br/>{destinatarios_html}</p>
                                 </body>
                                 </html>
                                 """
-
                                 exito, mensaje = send_email_with_attachment(
                                     recipient_emails=emails_validos,
                                     subject=asunto,
@@ -952,4 +983,7 @@ def principal_page():
                                     st.balloons()
                                 else:
                                     st.error(mensaje)
-            # ======== FIN envío por correo ========
+
+# si quieres ejecutar la página como script para debug local:
+if __name__ == "__main__":
+    principal_page()

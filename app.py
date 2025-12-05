@@ -1,10 +1,16 @@
-# app.py
+# ===============================================================
+# app.py — Sistema de Gestión + Guirnalda CURVADA (Opción A: curva suave)
+# ===============================================================
+
 import importlib
 import streamlit as st
+import streamlit.components.v1 as components
 from auth import login_page
 from sidebar import show_sidebar
 
-# ===================== Inicialización de sesión =====================
+# ===============================================================
+#                 SESIÓN / ESTADO
+# ===============================================================
 DEFAULTS = {
     "logged_in": False,
     "username": "",
@@ -14,57 +20,291 @@ DEFAULTS = {
     "excel_filename": "",
     "excel_data": None,
     "upload_time": None,
-    "unidad": "EIP",  # EIP / EIM / Mainjobs B2C
+    "unidad": "EIP",
 }
+
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# Mantener memoria del ámbito anterior para detectar cambios
 if "_unidad_prev" not in st.session_state:
     st.session_state["_unidad_prev"] = st.session_state["unidad"]
 
-# ===================== Config de página =====================
+# ===============================================================
+#                     CONFIGURACIÓN PÁGINA
+# ===============================================================
 st.set_page_config(
     page_title="Sistema de Gestión",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="collapsed" if not st.session_state["logged_in"] else "expanded",
+    initial_sidebar_state="expanded",
 )
 
-# ===================== Estilos =====================
+# ===============================================================
+#                   CSS GENERAL OPCIONAL
+# ===============================================================
 def add_custom_css():
-    st.markdown(
-        """
+    st.markdown("""
         <style>
         [data-testid="stSidebarNav"] { display: none !important; }
-        .main-header {
-            text-align: center; padding: 1.5rem; background-color: #f0f2f6;
-            border-radius: 10px; margin-bottom: 2rem;
-        }
-        .card {
-            padding: 1.5rem; border-radius: 10px; background-color: #f8f9fa;
-            box-shadow: 0 0.25rem 0.75rem rgba(0,0,0,0.05); margin-bottom: 1rem;
-        }
-        .sidebar .sidebar-content { background-color: #f8f9fa; }
         </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    """, unsafe_allow_html=True)
 
-    if not st.session_state["logged_in"]:
-        st.markdown(
-            """
-            <style>
-            [data-testid="stSidebar"],
-            section[data-testid="stSidebarUserContent"] { display: none !important; }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
+# ===============================================================
+#        🎄 GUIRNALDA CURVADA con BOMBILLAS pegadas a la curva (Opción A)
+# ===============================================================
+def add_garland_follow_curve():
+    html = """
+    <style>
+    :root {
+        --bulb-size: 12px;
+        --gap-size: 9px;
+        --top-pos: -5px;
+    }
 
-# ===================== Router =====================
-# ---- Rutas para EIP (/pages) ----
+    .garland-wrap {
+        position: fixed;
+        top: var(--top-pos);
+        left: 0;
+        right: 0;
+        height: 110px;
+        pointer-events: none;
+        z-index: 999999;
+        overflow: visible;
+    }
+
+    /* el SVG que dibuja la cuerda curva */
+    .garland-svg {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        overflow: visible;
+        z-index: 1;
+    }
+
+    /* contenedor donde se colocan los elementos (bombillas / especiales) */
+    .garland-items {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 110px;
+        pointer-events: none;
+        z-index: 2;
+    }
+
+    .garland-item {
+        position: absolute;
+        transform: translate(-50%, -10%); /* centrar sobre el punto y colgar algo */
+        pointer-events: none;
+        z-index: 3;
+    }
+
+    /* casquillo delante del cable */
+    .garland-item .bulb {
+        width: var(--bulb-size);
+        height: calc(var(--bulb-size) * 1.9);
+        border-radius: 50% 50% 40% 40%;
+        position: relative;
+        opacity: .55;
+        transition: opacity 0.3s ease, filter 0.3s ease;
+        z-index: 4;
+        display: inline-block;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.06), inset 0 -6px 12px rgba(0,0,0,0.02);
+    }
+    .garland-item .bulb.on {
+        opacity: 1;
+        filter: drop-shadow(0 6px 18px rgba(255,220,140,0.12));
+    }
+
+    .garland-item .bulb::before {
+        content: "";
+        position: absolute;
+        top: -6px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: calc(var(--bulb-size) * 0.9);
+        height: 6px;
+        background: linear-gradient(180deg, #6b6b6b, #3b3b3b);
+        border-radius: 3px;
+        z-index: 6;
+    }
+
+    /* colores */
+    .c1 { background: linear-gradient(180deg,#FFE88A,#FFD84D); box-shadow:0 4px 14px rgba(255,215,77,0.22); }
+    .c2 { background: linear-gradient(180deg,#90CFFF,#4DA6FF); box-shadow:0 4px 14px rgba(77,166,255,0.16); }
+    .c3 { background: linear-gradient(180deg,#FFB2B2,#FF6F6F); box-shadow:0 4px 14px rgba(255,111,111,0.12); }
+    .c4 { background: linear-gradient(180deg,#BFEFB0,#90DE7B); box-shadow:0 4px 14px rgba(144,222,123,0.10); }
+    .c5 { background: linear-gradient(180deg,#E2B6FF,#C16BFF); box-shadow:0 4px 14px rgba(193,107,255,0.12); }
+
+    /* especiales (emoji) */
+    .special {
+        font-size: 25px;
+        line-height: 1;
+        transform: translate(-50%, -6%);
+        z-index: 5;
+    }
+
+    @media (max-width: 900px) {
+        .garland-wrap { display: none !important; }
+    }
+    </style>
+
+    <div class="garland-wrap">
+        <!-- SVG CURVADO: usamos una curva repetitiva con T (smooth) para cubrir ancho -->
+        <svg id="garlandSVG" class="garland-svg" preserveAspectRatio="none" viewBox="0 0 1600 60" width="100%" height="60">
+            <path id="garlandPath" d="M0 30 Q 80 10, 160 30 T 320 30 T 480 30 T 640 30 T 800 30 T 960 30 T 1120 30 T 1280 30 T 1440 30 T 1600 30"
+                stroke="rgba(70,70,70,0.5)" stroke-width="4" stroke-linecap="round" fill="transparent"/>
+        </svg>
+
+        <div id="garlandItems" class="garland-items"></div>
+    </div>
+
+    <script>
+    (function(){
+        function buildGarlandAlongPath() {
+            const itemsContainer = document.getElementById("garlandItems");
+            const svg = document.getElementById("garlandSVG");
+            const path = document.getElementById("garlandPath");
+            const parentDoc = window.parent.document;
+            const sidebar = parentDoc.querySelector('[data-testid="stSidebar"]');
+
+            // valores que deben coincidir con CSS :root
+            const bulbSize = 12;
+            const gap = 9;
+            const unit = bulbSize + gap;
+
+            // compute left edge where we start placing items (aligned to sidebar inner edge)
+            let leftPx = 260; // fallback px
+            if (sidebar) {
+                const rect = sidebar.getBoundingClientRect();
+                const cs = window.parent.getComputedStyle(sidebar);
+                const borderRight = parseFloat(cs.borderRightWidth) || 0;
+                const innerEdge = rect.right - borderRight;
+                // ajuste fino global (cambia -20 si quieres mover)
+                leftPx = Math.round(innerEdge - (bulbSize / 2) - 320);
+            }
+
+            // bounding boxes and scale (because SVG viewBox is 0..1600)
+            const svgRect = svg.getBoundingClientRect();
+            const viewBoxWidth = 1600; // matches viewBox in svg tag
+            const scale = svgRect.width / viewBoxWidth;
+
+            // total path length in SVG coordinate units
+            const pathLen = path.getTotalLength();
+
+            // compute start ratio along svg for leftPx
+            const startRatio = Math.max(0, Math.min(1, (leftPx - svgRect.left) / svgRect.width));
+            const startLen = startRatio * pathLen;
+
+            // available width in px (we leave a small right margin)
+            const totalWidth = window.parent.innerWidth;
+            const availablePx = Math.max(0, totalWidth - leftPx - 40);
+
+            // approximate number of units we can place
+            const approxCount = Math.max(0, Math.floor(availablePx / unit));
+            const totalUnits = approxCount;
+
+            // if nothing fits, exit
+            if (totalUnits <= 0) {
+                itemsContainer.innerHTML = "";
+                return;
+            }
+
+            const availableLenOnPath = (availablePx / svgRect.width) * pathLen;
+            const stepLen = totalUnits > 1 ? availableLenOnPath / (totalUnits - 1) : availableLenOnPath;
+
+            itemsContainer.innerHTML = "";
+
+            const colors = ["c1","c2","c3","c4","c5"];
+            const specials = ["🎅","🎄"];
+            let bulbCount = 0;
+            let specIndex = 0;
+
+            // We will place units sequentially: place up to 10 bulbs then 1 special, repeat,
+            // but never exceed totalUnits.
+            let placed = 0;
+            let i = 0;
+            while (placed < totalUnits) {
+                // place up to 10 bulbs (or remaining)
+                for (let b_i = 0; b_i < 10 && placed < totalUnits; b_i++) {
+                    const curLen = startLen + i * stepLen;
+                    const pt = path.getPointAtLength(curLen);
+                    const screenX = svgRect.left + pt.x * scale;
+                    const screenY = svgRect.top + pt.y * scale;
+                    const contRect = itemsContainer.getBoundingClientRect();
+                    const relX = screenX - contRect.left;
+                    const relY = screenY - contRect.top;
+
+                    const el = document.createElement("div");
+                    el.className = "garland-item";
+                    el.style.left = relX + "px";
+                    el.style.top = (relY + 2) + "px";
+
+                    const bulb = document.createElement("span");
+                    const cls = colors[bulbCount % colors.length];
+                    bulb.className = "bulb " + cls;
+                    bulb.dataset.delay = Math.floor(Math.random() * 1600);
+                    el.appendChild(bulb);
+                    itemsContainer.appendChild(el);
+
+                    bulbCount++;
+                    i++;
+                    placed++;
+                }
+
+                // after 10 bulbs, if still space, place special
+                if (placed < totalUnits) {
+                    const curLen = startLen + i * stepLen;
+                    const pt = path.getPointAtLength(curLen);
+                    const screenX = svgRect.left + pt.x * scale;
+                    const screenY = svgRect.top + pt.y * scale;
+                    const contRect = itemsContainer.getBoundingClientRect();
+                    const relX = screenX - contRect.left;
+                    const relY = screenY - contRect.top;
+
+                    const el = document.createElement("div");
+                    el.className = "garland-item special";
+                    el.style.left = relX + "px";
+                    el.style.top = (relY + 12) + "px";
+                    el.textContent = specials[specIndex % specials.length];
+                    itemsContainer.appendChild(el);
+
+                    specIndex++;
+                    i++;
+                    placed++;
+                }
+            }
+
+            // animate bulbs (glow on/off, fixed position)
+            function animateBulbs() {
+                const bulbs = Array.from(itemsContainer.querySelectorAll(".bulb"));
+                bulbs.forEach((b) => {
+                    const baseDelay = parseInt(b.dataset.delay || "0", 10);
+                    setTimeout(function pulseOnce(){
+                        b.classList.add("on");
+                        setTimeout(()=> b.classList.remove("on"), 400 + Math.random() * 800);
+                        const next = 900 + Math.random() * 3000;
+                        setTimeout(pulseOnce, next);
+                    }, baseDelay + Math.random() * 500);
+                });
+            }
+            setTimeout(animateBulbs, 220);
+        }
+
+        setTimeout(buildGarlandAlongPath, 250);
+        let t;
+        window.addEventListener("resize", function(){ clearTimeout(t); t = setTimeout(buildGarlandAlongPath, 140); });
+    })();
+    </script>
+    """
+    components.html(html, height=110, scrolling=False)
+
+# ===============================================================
+#                     SISTEMA DE RUTAS
+# ===============================================================
 ROUTES_EIP = {
     "Inicio": ("pages.inicio", "inicio_page"),
     "Admisiones": ("pages.admisiones.main_admisiones", "app"),
@@ -74,7 +314,6 @@ ROUTES_EIP = {
     "Principal": ("pages.principal", "principal_page"),
 }
 
-# ---- Rutas para EIM (/pagesEIM) ----
 ROUTES_EIM = {
     "Inicio": ("pagesEIM.inicio", "inicio_page"),
     "Admisiones": ("pagesEIM.admisiones.main_admisiones", "app"),
@@ -82,42 +321,31 @@ ROUTES_EIM = {
     "Principal": ("pagesEIM.principal", "principal_page"),
 }
 
-# ---- Rutas para Mainjobs B2C (/pagesB2C) ----
 ROUTES_B2C = {
     "Principal": ("pagesB2C.principal", "principal_page"),
 }
 
-def _get_routes_for_unidad(unidad: str):
-    if unidad == "EIP":
-        return ROUTES_EIP
-    if unidad == "EIM":
-        return ROUTES_EIM
-    if unidad == "Mainjobs B2C":
-        return ROUTES_B2C
-    return ROUTES_EIP
+def _get_routes(unidad):
+    return {
+        "EIP": ROUTES_EIP,
+        "EIM": ROUTES_EIM,
+        "Mainjobs B2C": ROUTES_B2C
+    }.get(unidad, ROUTES_EIP)
 
 def route_page():
     unidad = st.session_state.get("unidad", "EIP")
     page = st.session_state.get("current_page", "Inicio")
-    routes = _get_routes_for_unidad(unidad)
+    routes = _get_routes(unidad)
 
     if page not in routes:
         st.session_state["current_page"] = list(routes.keys())[0]
         page = st.session_state["current_page"]
 
     module_path, func_name = routes.get(page, (None, None))
-    if not module_path:
-        st.title(f"{page} · {unidad}")
-        st.info("Ruta no definida para esta página.")
-        return
 
     try:
-        importlib.invalidate_caches()  # evita problemas de caché de imports
+        importlib.invalidate_caches()
         mod = importlib.import_module(module_path)
-    except ModuleNotFoundError:
-        st.title(f"{page} · {unidad}")
-        st.info("Esta sección para el ámbito seleccionado aún no existe.")
-        return
     except Exception as e:
         st.title(f"{page} · {unidad}")
         st.exception(e)
@@ -126,49 +354,35 @@ def route_page():
     fn = getattr(mod, func_name, None)
     if fn is None:
         st.title(f"{page} · {unidad}")
-        st.info(f"La página no define la función `{func_name}()`.")
+        st.write("La página no define la función requerida.")
         return
-
-    # Pasar el ámbito al asistente (para personalizar título/datos)
-    if "pages.asistente" in module_path:
-        st.session_state["ambito"] = unidad
 
     st.caption(f"Ámbito activo: **{unidad}**")
     fn()
 
-# ===================== Main =====================
+# ===============================================================
+#                            MAIN
+# ===============================================================
 def main():
+
     add_custom_css()
 
     if not st.session_state["logged_in"]:
         login_page()
         return
 
-    # Guardamos el ámbito antes de que el sidebar lo pueda cambiar
-    prev = st.session_state.get("_unidad_prev", st.session_state["unidad"])
+    prev = st.session_state["_unidad_prev"]
 
-    # Sidebar (selector EIP/EIM/Mainjobs B2C + navegación)
     show_sidebar()
 
-    # Si el usuario cambió el ámbito en el sidebar, hacer rerun inmediato
+    # 🎄 Activamos la guirnalda curva con bulbs pegadas a la línea
+    add_garland_follow_curve()
+
     if st.session_state["unidad"] != prev:
         st.session_state["_unidad_prev"] = st.session_state["unidad"]
-
-        # (opcional) si entras a B2C fuerza "Principal" para evitar páginas inexistentes
-        if st.session_state["unidad"] == "Mainjobs B2C":
-            st.session_state["current_page"] = "Principal"
-
-        # Si vuelves a EIP/EIM y estabas en una página no válida, ajusta a Inicio
-        if st.session_state["unidad"] in ("EIP", "EIM") and (
-            st.session_state.get("current_page") not in _get_routes_for_unidad(st.session_state["unidad"])
-        ):
-            st.session_state["current_page"] = "Inicio"
-
         st.rerun()
 
-    # Router
     route_page()
 
-# ===================== Entry point =====================
 if __name__ == "__main__":
     main()
