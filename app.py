@@ -380,6 +380,25 @@ def main():
 
     add_custom_css()
 
+    # --- BLOQUEO PERMANENTE POR REFORMAS ---
+    # A partir del 15 de diciembre a las 12:00 (hora Madrid) la app queda BLOQUEADA.
+    # La app no volverá a abrirse automáticamente después de esa fecha/hora.
+    # Para restablecer el acceso hay que editar o eliminar este bloque en el código.
+    if TZ_MADRID is not None:
+        now = datetime.now(TZ_MADRID)
+    else:
+        now = datetime.utcnow()
+
+    inicio_bloqueo = now.replace(month=12, day=15, hour=12, minute=0, second=0, microsecond=0)
+
+    if now >= inicio_bloqueo:
+        st.title("Cierre por reformas de Streamlit")
+        st.error(
+            "La aplicación está temporalmente cerrada por reformas de Streamlit.\n\n"
+            "Disculpa las molestias."
+        )
+        st.stop()
+
     if not st.session_state["logged_in"]:
         login_page()
         return
