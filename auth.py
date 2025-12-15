@@ -2,22 +2,7 @@ import streamlit as st
 
 # Base de datos de usuarios
 USUARIOS = {
-    "admin": {"password": "admin", "role": "admin"},
-    "AntonioM": {"password": "Mainjobs=50-", "role": "viewer"},
-    "JorgeG": {"password": "Mainjobs=50-", "role": "viewer"},
-    "GabrielAles": {"password": "Mainjobs=50-", "role": "viewer"},
-    "SusanaPerez": {"password": "Mainjobs=50-", "role": "viewer"},
-    "PalomaS": {"password": "Mainjobs=50-", "role": "viewer"},
-    "AlejandroR": {"password": "Mainjobs$14-", "role": "viewer"},
-    "AguaS": {"password": "Mainjobs$18-", "role": "viewer"},
-    "LauraR": {"password": "Mainjobs$19-", "role": "viewer"},
-    "IsabelJ": {"password": "Mainjobs$22-", "role": "viewer"},
-    "RobertoA": {"password": "Mainjobs$16-", "role": "viewer"},
-    "RemeC": {"password": "Mainjobs$74-", "role": "viewer"},
-    "MamenM": {"password": "Mainjobs$50-", "role": "viewer"},
-    "AnaM": {"password": "Mainjobs$10-", "role": "viewer"},
-    "Juanantonio": {"password": "Mainjobs=50-", "role": "viewer"},
-    "AliciaP": {"password": "Mainjobs=90", "role": "viewer"},
+    "admin1": {"password": "admin1", "role": "admin1"},
 }
 
 # Función para verificar credenciales
